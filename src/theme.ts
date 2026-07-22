@@ -1,0 +1,22 @@
+// Paleta escura do app (portada do standalone original).
+export const C = {
+  bg0: '#1a1a1a',
+  bg1: '#222',
+  bg2: '#2a2a2a',
+  bg3: '#333',
+  border: '#3a3a3a',
+  borderStrong: '#4a4a4a',
+  text: '#f0f0f0',
+  textSec: '#aaa',
+  textMut: '#666',
+  orange: '#e8834a',
+  orangeLight: '#f0a070',
+  orangeDim: '#3a2010',
+  orangeBorder: '#7a4020',
+  green: '#5aaa70',
+  greenDim: '#0f2a18',
+  red: '#cc5555',
+  blue: '#5588cc',
+  blueDim: '#0f1a2a',
+  blueBorder: '#224488',
+} as const
