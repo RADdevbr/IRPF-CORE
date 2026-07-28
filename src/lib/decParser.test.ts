@@ -1,42 +1,82 @@
 import { describe, it, expect } from 'vitest'
 import { parseDec } from './decParser'
 
-describe('parseDec', () => {
+// Constrói uma linha de largura fixa por posição (1-indexado inclusivo).
+function put(base: string[], ini: number, s: string, len: number): void {
+  const v = s.slice(0, len).padEnd(len, ' ')
+  for (let k = 0; k < len; k++) base[ini - 1 + k] = v[k]
+}
+function numField(base: string[], ini: number, cents: number, len = 13): void {
+  put(base, ini, String(cents).padStart(len, '0'), len)
+}
+function blank(n: number): string[] {
+  return new Array(n).fill('0')
+}
+
+// REGISTRO 21: rend PJ — nome 28-87, rendimento 88-100, IR retido 127-139.
+function reg21(nome: string, rendCents: number, irCents: number): string {
+  const b = blank(157)
+  put(b, 1, '21', 2)
+  put(b, 28, nome, 60)
+  numField(b, 88, rendCents)
+  numField(b, 127, irCents)
+  return b.join('')
+}
+// REGISTRO 33: dividendos — nome 34-93, valor 94-106.
+function reg33(nome: string, lucroCents: number): string {
+  const b = blank(127)
+  put(b, 1, '33', 2)
+  put(b, 34, nome, 60)
+  numField(b, 94, lucroCents)
+  return b.join('')
+}
+function reg25(): string {
+  const b = blank(60)
+  put(b, 1, '25', 2)
+  return b.join('')
+}
+
+describe('parseDec — leitura posicional', () => {
   const text =
-    'IRPF  2025 DECLARACAO FULANO DE TAL\r\n' +
-    '27 EMPRESA ABC LTDA 0000024000000 FIM\r\n' + // bloco 0000024000000 → raw 24000000
-    '62 BANCO XYZ SA 0000008400000 FIM\r\n' + // raw 8400000
-    '88 00012345678 00099 X\r\n' // curtos → ignorados (00099 < 10000; 00012345678 tem 11 dígitos → raw grande, mantido)
+    'IRPF 2025 HEADER\r\n' +
+    reg21('CLINICA FICTICIA LTDA', 24000000, 3000000) + '\r\n' + // R$ 240.000 rend, R$ 30.000 IR
+    reg33('MINHA PJ HOLDING LTDA', 84000000) + '\r\n' + // R$ 840.000 dividendo
+    reg25() + '\r\n' +
+    reg25() + '\r\n'
 
-  it('detecta o ano do exercício', () => {
-    expect(parseDec(text).ano).toBe('2025')
-  })
-
-  it('devolve as linhas brutas para o visor', () => {
+  it('extrai rendimento e IR do registro 21 na escala certa (centavos)', () => {
     const r = parseDec(text)
-    expect(r.linhas.length).toBe(4)
-    expect(r.linhas[1]).toContain('EMPRESA ABC')
+    const rend = r.lancamentos.find((l) => l.tipo === '21' && l.rotulo === 'Rendimento')
+    const ir = r.lancamentos.find((l) => l.tipo === '21' && l.rotulo === 'IR retido')
+    expect(rend?.valor).toBeCloseTo(240000, 2)
+    expect(rend?.fonte).toBe('CLINICA FICTICIA LTDA')
+    expect(rend?.alvo).toBe('salario')
+    expect(ir?.valor).toBeCloseTo(30000, 2)
+    expect(ir?.alvo).toBe('salario_ir')
   })
 
-  it('extrai dígitos brutos sem aplicar escala (÷100 fica na UI)', () => {
-    const raws = parseDec(text).candidatos.map((c) => c.raw)
-    expect(raws).toContain(24000000) // UI ÷100 → 240.000,00
-    expect(raws).toContain(8400000) // UI ÷100 → 84.000,00
+  it('extrai dividendos do registro 33 com nome da fonte', () => {
+    const r = parseDec(text)
+    const div = r.lancamentos.find((l) => l.tipo === '33')
+    expect(div?.valor).toBeCloseTo(840000, 2)
+    expect(div?.fonte).toBe('MINHA PJ HOLDING LTDA')
+    expect(div?.alvo).toBe('divBR')
   })
 
-  it('mantém os dígitos originais em cada candidato', () => {
-    const c = parseDec(text).candidatos.find((x) => x.raw === 24000000)
-    expect(c?.digits).toBe('0000024000000')
-    expect(c?.contexto).toContain('EMPRESA ABC')
+  it('conta dependentes pelos registros 25', () => {
+    expect(parseDec(text).ndep).toBe(2)
   })
 
-  it('descarta runs longos (campos colados) para não gerar valor errado', () => {
-    const colado = 'ZZ ' + '0000024000000' + '0000008400000' + ' FIM\r\n'
-    expect(parseDec(colado).candidatos).toHaveLength(0)
+  it('detecta o ano e devolve as linhas brutas', () => {
+    const r = parseDec(text)
+    expect(r.ano).toBe('2025')
+    expect(r.linhas.length).toBe(5)
   })
 
-  it('ordena candidatos do maior para o menor (raw)', () => {
-    const cs = parseDec(text).candidatos
-    for (let i = 1; i < cs.length; i++) expect(cs[i - 1].raw).toBeGreaterThanOrEqual(cs[i].raw)
+  it('ignora campos zerados (não gera lançamento)', () => {
+    const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
+    const r = parseDec(semIR)
+    expect(r.lancamentos.filter((l) => l.rotulo === 'IR retido')).toHaveLength(0)
+    expect(r.lancamentos.filter((l) => l.rotulo === 'Rendimento')).toHaveLength(1)
   })
 })

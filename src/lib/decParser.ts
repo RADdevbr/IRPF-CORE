@@ -1,17 +1,21 @@
-// Leitor best-effort do arquivo .DEC da declaração de IRPF.
+// Leitor posicional do arquivo .DEC da declaração de IRPF.
 //
-// Limitação real: o .DEC tem registros (linhas CRLF) com campos de LARGURA FIXA
-// e CONTÍGUOS (sem separador). O leiaute posicional oficial é gov-gated e muda
-// a cada ano. Sem esse mapa, só é seguro extrair blocos de dígitos ISOLADOS
-// (cercados por não-dígito) e deixar o usuário CONFERIR: escala (centavos vs
-// reais), descrição da linha e atribuição. Nada é aplicado automaticamente, e
-// a divisão por 100 NÃO é assumida aqui — a UI aplica a escala escolhida.
+// O .DEC é largura-fixa: cada linha é um registro identificado pelos 2 primeiros
+// dígitos (NR_REG), com campos em posições fixas. Valores são "13 2 N" = 13
+// posições, 2 casas decimais (centavos → dividir por 100). Layout calibrado pelo
+// leiaute oficial "Especificação do Arquivo de Integração do IRPF" (base 2014).
+// Registros mais novos podem deslocar posições — por isso o app mostra o nome da
+// fonte e a linha bruta para conferência, e nada é aplicado sem o usuário.
 
-export interface DecCandidate {
-  digits: string // bloco bruto de dígitos capturado
-  raw: number // parseInt(digits) — sem escala
-  linha: number // nº da linha (1-based)
-  contexto: string // trecho da linha ao redor do valor (para achar a descrição)
+export interface Lancamento {
+  linha: number
+  tipo: string // ex.: '21'
+  tipoLabel: string
+  fonte: string // nome da fonte pagadora (quando o registro tem)
+  cnpj: string
+  rotulo: string // ex.: 'Rendimento', 'IR retido', 'Dividendo'
+  valor: number // já em reais (÷100)
+  alvo: string // campo sugerido do baseline (key/ir key)
 }
 
 export interface DecRegistro {
@@ -23,50 +27,100 @@ export interface DecRegistro {
 export interface DecResult {
   ano: string | null
   registros: DecRegistro[]
-  candidatos: DecCandidate[]
-  linhas: string[] // registros brutos, para o visor
+  lancamentos: Lancamento[]
+  ndep: number
+  linhas: string[]
   totalLinhas: number
+}
+
+interface CampoSpec {
+  rotulo: string
+  ini: number // 1-indexado, inclusivo
+  fim: number
+  alvo: string
+}
+interface RegistroSpec {
+  label: string
+  nome?: [number, number] // posição do nome da fonte
+  cnpj?: [number, number]
+  campos: CampoSpec[]
+}
+
+// Registros que carregam rendimentos relevantes para a base do IRPFM.
+const REGISTROS: Record<string, RegistroSpec> = {
+  '21': {
+    label: 'Rend. tributável de PJ',
+    cnpj: [14, 27],
+    nome: [28, 87],
+    campos: [
+      { rotulo: 'Rendimento', ini: 88, fim: 100, alvo: 'salario' },
+      { rotulo: 'IR retido', ini: 127, fim: 139, alvo: 'salario_ir' },
+    ],
+  },
+  '22': {
+    label: 'Rend. PF / exterior / carnê-leão',
+    campos: [
+      { rotulo: 'Exterior', ini: 41, fim: 53, alvo: 'exterior' },
+      { rotulo: 'Outros (PF)', ini: 28, fim: 40, alvo: 'outros' },
+      { rotulo: 'IR (carnê-leão)', ini: 119, fim: 131, alvo: 'exterior_ir' },
+    ],
+  },
+  '24': {
+    label: 'Tributação exclusiva',
+    campos: [
+      { rotulo: 'Aplic. financeiras', ini: 53, fim: 65, alvo: 'cdb' },
+      { rotulo: 'Outros exclusivos', ini: 66, fim: 78, alvo: 'outros' },
+      { rotulo: 'Juros s/ capital próprio', ini: 277, fim: 289, alvo: 'outros' },
+    ],
+  },
+  '33': {
+    label: 'Lucros e dividendos',
+    cnpj: [20, 33],
+    nome: [34, 93],
+    campos: [{ rotulo: 'Dividendo', ini: 94, fim: 106, alvo: 'divBR' }],
+  },
+}
+
+function slice1(line: string, ini: number, fim: number): string {
+  return line.slice(ini - 1, fim)
+}
+function num(line: string, ini: number, fim: number): number {
+  const d = slice1(line, ini, fim).replace(/\D/g, '')
+  return d ? parseInt(d, 10) / 100 : 0
 }
 
 export function parseDec(text: string): DecResult {
   const linhas = text.split(/\r\n|\r|\n/).filter((l) => l.trim().length > 0)
 
-  // Ano do exercício: primeiro 20xx no cabeçalho.
   const anoMatch = text.slice(0, 400).match(/20\d{2}/)
   const ano = anoMatch ? anoMatch[0] : null
 
-  // Tipos de registro pela heurística do prefixo (2 primeiros caracteres).
   const tipos = new Map<string, { count: number; amostra: string }>()
-  linhas.forEach((l) => {
-    const t = l.slice(0, 2)
-    const cur = tipos.get(t)
-    if (cur) cur.count += 1
-    else tipos.set(t, { count: 1, amostra: l.slice(0, 60) })
-  })
+  const lancamentos: Lancamento[] = []
+  let ndep = 0
 
-  // Candidatos: blocos de dígitos ISOLADOS (delimitados por não-dígito), de 6 a
-  // 13 caracteres. Runs longos (campos colados) são descartados de propósito.
-  const candidatos: DecCandidate[] = []
   linhas.forEach((l, i) => {
-    const re = /(?<!\d)(\d{6,13})(?!\d)/g
-    let m: RegExpExecArray | null
-    while ((m = re.exec(l)) !== null) {
-      const digits = m[1]
-      const raw = parseInt(digits, 10)
-      if (raw < 10000) continue // descarta códigos pequenos
-      const start = Math.max(0, m.index - 40)
-      const contexto = l
-        .slice(start, m.index + digits.length + 8)
-        .replace(/\s+/g, ' ')
-        .trim()
-      candidatos.push({ digits, raw, linha: i + 1, contexto })
-    }
+    const tipo = l.slice(0, 2)
+    const cur = tipos.get(tipo)
+    if (cur) cur.count += 1
+    else tipos.set(tipo, { count: 1, amostra: l.slice(0, 60) })
+
+    if (tipo === '25') ndep += 1
+
+    const spec = REGISTROS[tipo]
+    if (!spec) return
+    const fonte = spec.nome ? slice1(l, spec.nome[0], spec.nome[1]).trim() : ''
+    const cnpj = spec.cnpj ? slice1(l, spec.cnpj[0], spec.cnpj[1]).trim() : ''
+    spec.campos.forEach((c) => {
+      const valor = num(l, c.ini, c.fim)
+      if (valor <= 0) return
+      lancamentos.push({ linha: i + 1, tipo, tipoLabel: spec.label, fonte, cnpj, rotulo: c.rotulo, valor, alvo: c.alvo })
+    })
   })
-  candidatos.sort((a, b) => b.raw - a.raw)
 
   const registros = [...tipos.entries()]
     .map(([tipo, v]) => ({ tipo, count: v.count, amostra: v.amostra }))
     .sort((a, b) => b.count - a.count)
 
-  return { ano, registros, candidatos: candidatos.slice(0, 60), linhas, totalLinhas: linhas.length }
+  return { ano, registros, lancamentos, ndep, linhas, totalLinhas: linhas.length }
 }
