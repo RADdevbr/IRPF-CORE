@@ -115,6 +115,7 @@ export function parseDec(text: string): DecResult {
     // como no 21/33. Ancoramos em "CNPJ(14) + nome(texto) + valor(13)" — robusto
     // a deslocamento de posição. Só se não achar, cai no layout agregado fixo.
     if (tipo === '24') {
+      // (1) formato por fundo COM nome: código + CNPJ + nome + valor.
       let achou = false
       let m: RegExpExecArray | null
       ANCHOR.lastIndex = 0
@@ -125,6 +126,17 @@ export function parseDec(text: string): DecResult {
         lancamentos.push({ linha: i + 1, tipo: '24', tipoLabel: 'Rend. aplicação financeira', fonte: m[2].trim(), cnpj: m[1], rotulo: 'Rendimento', valor, alvo: 'cdb' })
       }
       if (achou) return
+
+      // (2) formato compacto SEM nome (tipo+CPF+CNPJ+valor), tudo numérico:
+      // valor = últimos 13 dígitos; CNPJ = 14 dígitos antes.
+      const s = l.replace(/\s+$/, '')
+      if (s.length >= 34 && s.length <= 48 && /^\d+$/.test(s)) {
+        const valor = parseInt(s.slice(-13), 10) / 100
+        if (valor > 0) {
+          lancamentos.push({ linha: i + 1, tipo: '24', tipoLabel: 'Rend. aplicação (exclusiva)', fonte: '', cnpj: s.slice(-27, -13), rotulo: 'Rendimento', valor, alvo: 'cdb' })
+          return
+        }
+      }
     }
 
     const spec = REGISTROS[tipo]

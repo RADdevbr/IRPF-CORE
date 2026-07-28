@@ -86,6 +86,17 @@ describe('parseDec — leitura posicional', () => {
     expect(fundo?.alvo).toBe('cdb')
   })
 
+  it('lê Registro 24 compacto sem nome (tipo+CPF+CNPJ+valor)', () => {
+    // 2 + CPF(11) + CNPJ(14) + valor(13) = 40 chars, tudo numérico
+    const linha = '24' + '00000000000' + '00000000000199' + '0000015000000' // R$ 150.000,00
+    expect(linha.length).toBe(40)
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    const lanc = r.lancamentos.find((l) => l.tipo === '24')
+    expect(lanc?.valor).toBeCloseTo(150000, 2)
+    expect(lanc?.cnpj).toBe('00000000000199')
+    expect(lanc?.alvo).toBe('cdb')
+  })
+
   it('ignora campos zerados (não gera lançamento)', () => {
     const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
     const r = parseDec(semIR)
