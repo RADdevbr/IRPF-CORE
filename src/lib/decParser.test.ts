@@ -73,6 +73,19 @@ describe('parseDec — leitura posicional', () => {
     expect(r.linhas.length).toBe(5)
   })
 
+  it('lê Registro 24 por fundo (código + CNPJ + nome + valor) via ancoragem', () => {
+    // 24 + benef(0) + código(06) + CNPJ(14) + nome(60) + valor(13)
+    const cnpj = '00000000000199'
+    const nome = 'FUNDO XP RENDA FIXA FIC'.padEnd(60, ' ')
+    const valor = '0000001500000' // 15.000,00
+    const linha = '24' + '0' + '06' + cnpj + nome + valor + '0000000000'
+    const r = parseDec('IRPF 2025\r\n' + linha + '\r\n')
+    const fundo = r.lancamentos.find((l) => l.tipo === '24')
+    expect(fundo?.valor).toBeCloseTo(15000, 2)
+    expect(fundo?.fonte).toBe('FUNDO XP RENDA FIXA FIC')
+    expect(fundo?.alvo).toBe('cdb')
+  })
+
   it('ignora campos zerados (não gera lançamento)', () => {
     const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
     const r = parseDec(semIR)

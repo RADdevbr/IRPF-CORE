@@ -81,6 +81,10 @@ const REGISTROS: Record<string, RegistroSpec> = {
   },
 }
 
+// Âncora "CNPJ (14 díg.) + nome (texto) + valor (13 díg.)" — o padrão comum aos
+// registros de detalhe (21, 33 e o 24 por fundo). Independe de offset exato.
+const ANCHOR = /(\d{14})([A-Za-zÀ-ÿ][^\d]{0,59}?)\s*(\d{13})/g
+
 function slice1(line: string, ini: number, fim: number): string {
   return line.slice(ini - 1, fim)
 }
@@ -106,6 +110,22 @@ export function parseDec(text: string): DecResult {
     else tipos.set(tipo, { count: 1, amostra: l.slice(0, 60) })
 
     if (tipo === '25') ndep += 1
+
+    // Registro 24 pode vir por FUNDO/linha (código 06 + CNPJ + nome + valor),
+    // como no 21/33. Ancoramos em "CNPJ(14) + nome(texto) + valor(13)" — robusto
+    // a deslocamento de posição. Só se não achar, cai no layout agregado fixo.
+    if (tipo === '24') {
+      let achou = false
+      let m: RegExpExecArray | null
+      ANCHOR.lastIndex = 0
+      while ((m = ANCHOR.exec(l)) !== null) {
+        const valor = parseInt(m[3], 10) / 100
+        if (valor <= 0) continue
+        achou = true
+        lancamentos.push({ linha: i + 1, tipo: '24', tipoLabel: 'Rend. aplicação financeira', fonte: m[2].trim(), cnpj: m[1], rotulo: 'Rendimento', valor, alvo: 'cdb' })
+      }
+      if (achou) return
+    }
 
     const spec = REGISTROS[tipo]
     if (!spec) return
