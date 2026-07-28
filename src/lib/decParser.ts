@@ -24,13 +24,38 @@ export interface DecRegistro {
   amostra: string
 }
 
+// Posição de Bens e Direitos (Registro 27) — o "patrimônio" de investimentos.
+export interface Posicao {
+  linha: number
+  cdBem: string
+  descricao: string
+  saldoAnterior: number // 31/12 do ano anterior
+  saldoAtual: number // 31/12 do ano-base — vira o "valor aplicado" na carteira
+  tipoCarteira: string // classe sugerida p/ a Carteira de renda fixa
+}
+
 export interface DecResult {
   ano: string | null
   registros: DecRegistro[]
   lancamentos: Lancamento[]
+  posicoes: Posicao[]
   ndep: number
   linhas: string[]
   totalLinhas: number
+}
+
+// Classifica a posição na classe da carteira pela descrição do bem.
+function classifica(descricao: string): string {
+  const d = descricao.toUpperCase()
+  if (/POUPAN/.test(d)) return 'poupanca'
+  if (/\bLC[IA]\b|LETRA DE CR[ÉE]DITO/.test(d)) return 'lci'
+  if (/\bCR[IA]\b|CERTIFICAD[OA] DE RECEB/.test(d)) return 'cri'
+  if (/INCENTIVAD/.test(d)) return 'debentureInc'
+  if (/DEB[ÊE]NTURE/.test(d)) return 'debentureComum'
+  if (/TESOURO|NTN-|LFT|LTN/.test(d)) return 'tesouro'
+  if (/\bCDB\b|\bRDB\b/.test(d)) return 'cdb'
+  if (/FUNDO|\bFIC\b|\bFI\b|COTAS/.test(d)) return 'fundo'
+  return 'cdb'
 }
 
 interface CampoSpec {
@@ -101,6 +126,7 @@ export function parseDec(text: string): DecResult {
 
   const tipos = new Map<string, { count: number; amostra: string }>()
   const lancamentos: Lancamento[] = []
+  const posicoes: Posicao[] = []
   let ndep = 0
 
   linhas.forEach((l, i) => {
@@ -110,6 +136,18 @@ export function parseDec(text: string): DecResult {
     else tipos.set(tipo, { count: 1, amostra: l.slice(0, 60) })
 
     if (tipo === '25') ndep += 1
+
+    // Registro 27 — Bens e Direitos (investimentos): descrição (20-531) e saldo
+    // em 31/12 (545-557). País 105 na pos. 17-19 confirmou este layout.
+    if (tipo === '27') {
+      const descricao = slice1(l, 20, 531).replace(/\s+/g, ' ').trim()
+      const saldoAtual = num(l, 545, 557)
+      const saldoAnterior = num(l, 532, 544)
+      if (descricao) {
+        posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+      }
+      return
+    }
 
     // Registro 24 pode vir por FUNDO/linha (código 06 + CNPJ + nome + valor),
     // como no 21/33. Ancoramos em "CNPJ(14) + nome(texto) + valor(13)" — robusto
@@ -154,5 +192,5 @@ export function parseDec(text: string): DecResult {
     .map(([tipo, v]) => ({ tipo, count: v.count, amostra: v.amostra }))
     .sort((a, b) => b.count - a.count)
 
-  return { ano, registros, lancamentos, ndep, linhas, totalLinhas: linhas.length }
+  return { ano, registros, lancamentos, posicoes, ndep, linhas, totalLinhas: linhas.length }
 }

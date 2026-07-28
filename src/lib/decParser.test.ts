@@ -97,6 +97,20 @@ describe('parseDec — leitura posicional', () => {
     expect(lanc?.alvo).toBe('cdb')
   })
 
+  it('lê Registro 27 (Bens e Direitos): descrição + saldo 31/12 + classe', () => {
+    // 27 + CPF(11) + CD_BEM(2) + exterior(1) + país(3=105) + descr(512) + saldoAnt(13) + saldoAtual(13)
+    const descr = 'BB RENDA FIXA LP FUNDO DE INVESTIMENTO EM COTAS'.padEnd(512, ' ')
+    const linha = '27' + '00000000000' + '01' + '0' + '105' + descr + '0000012000000' + '0000015000000'
+    expect(linha.length).toBe(557)
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    expect(r.posicoes).toHaveLength(1)
+    const p = r.posicoes[0]
+    expect(p.descricao).toContain('BB RENDA FIXA')
+    expect(p.saldoAtual).toBeCloseTo(150000, 2)
+    expect(p.saldoAnterior).toBeCloseTo(120000, 2)
+    expect(p.tipoCarteira).toBe('fundo')
+  })
+
   it('ignora campos zerados (não gera lançamento)', () => {
     const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
     const r = parseDec(semIR)
