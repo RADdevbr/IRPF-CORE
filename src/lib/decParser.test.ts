@@ -73,6 +73,44 @@ describe('parseDec — leitura posicional', () => {
     expect(r.linhas.length).toBe(5)
   })
 
+  it('lê Registro 24 por fundo (código + CNPJ + nome + valor) via ancoragem', () => {
+    // 24 + benef(0) + código(06) + CNPJ(14) + nome(60) + valor(13)
+    const cnpj = '00000000000199'
+    const nome = 'FUNDO XP RENDA FIXA FIC'.padEnd(60, ' ')
+    const valor = '0000001500000' // 15.000,00
+    const linha = '24' + '0' + '06' + cnpj + nome + valor + '0000000000'
+    const r = parseDec('IRPF 2025\r\n' + linha + '\r\n')
+    const fundo = r.lancamentos.find((l) => l.tipo === '24')
+    expect(fundo?.valor).toBeCloseTo(15000, 2)
+    expect(fundo?.fonte).toBe('FUNDO XP RENDA FIXA FIC')
+    expect(fundo?.alvo).toBe('cdb')
+  })
+
+  it('lê Registro 24 compacto sem nome (tipo+CPF+CNPJ+valor)', () => {
+    // 2 + CPF(11) + CNPJ(14) + valor(13) = 40 chars, tudo numérico
+    const linha = '24' + '00000000000' + '00000000000199' + '0000015000000' // R$ 150.000,00
+    expect(linha.length).toBe(40)
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    const lanc = r.lancamentos.find((l) => l.tipo === '24')
+    expect(lanc?.valor).toBeCloseTo(150000, 2)
+    expect(lanc?.cnpj).toBe('00000000000199')
+    expect(lanc?.alvo).toBe('cdb')
+  })
+
+  it('lê Registro 27 (Bens e Direitos): descrição + saldo 31/12 + classe', () => {
+    // 27 + CPF(11) + CD_BEM(2) + exterior(1) + país(3=105) + descr(512) + saldoAnt(13) + saldoAtual(13)
+    const descr = 'BB RENDA FIXA LP FUNDO DE INVESTIMENTO EM COTAS'.padEnd(512, ' ')
+    const linha = '27' + '00000000000' + '01' + '0' + '105' + descr + '0000012000000' + '0000015000000'
+    expect(linha.length).toBe(557)
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    expect(r.posicoes).toHaveLength(1)
+    const p = r.posicoes[0]
+    expect(p.descricao).toContain('BB RENDA FIXA')
+    expect(p.saldoAtual).toBeCloseTo(150000, 2)
+    expect(p.saldoAnterior).toBeCloseTo(120000, 2)
+    expect(p.tipoCarteira).toBe('fundo')
+  })
+
   it('ignora campos zerados (não gera lançamento)', () => {
     const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
     const r = parseDec(semIR)
