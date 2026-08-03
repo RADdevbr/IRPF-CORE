@@ -149,6 +149,17 @@ export function parseDec(text: string): DecResult {
       return
     }
 
+    // Registro 88 — rendimentos com tributação exclusiva/definitiva (fundos,
+    // aplicações). Layout confirmado por linha real: nome do fundo em 44-103
+    // (60 chars) e VALOR em 104-116 (13 díg. = centavos).
+    if (tipo === '88') {
+      const valor = num(l, 104, 116)
+      if (valor > 0) {
+        lancamentos.push({ linha: i + 1, tipo: '88', tipoLabel: 'Rend. tributação definitiva', fonte: slice1(l, 44, 103).trim(), cnpj: slice1(l, 30, 43).trim(), rotulo: 'Rendimento', valor, alvo: 'cdb' })
+      }
+      return
+    }
+
     // Registro 24 SÓ quando vem por fundo COM nome (código + CNPJ + nome +
     // valor), ancorando em "CNPJ(14) + nome(texto) + valor(13)". O formato
     // compacto SEM nome NÃO é lido: sem o nome/âncora não dá pra saber a posição

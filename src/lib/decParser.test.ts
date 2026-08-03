@@ -86,6 +86,19 @@ describe('parseDec — leitura posicional', () => {
     expect(fundo?.alvo).toBe('cdb')
   })
 
+  it('lê Registro 88 (tributação definitiva): nome 44-103, valor 104-116', () => {
+    // 88 + CPF(11) + ind(1) + CPFben(11) + cód/CNPJ(18) + nome(60) + valor(13) + resto
+    const linha =
+      '88' + '00000000000' + 'T' + '00000000000' + '000000000000000000' +
+      'BUENA VISTA NEOS GOLD FUNDO DE INDICE'.padEnd(60, ' ') +
+      '0000000007795' + '000002904004873' // valor = R$ 77,95
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    const lanc = r.lancamentos.find((l) => l.tipo === '88')
+    expect(lanc?.valor).toBeCloseTo(77.95, 2)
+    expect(lanc?.fonte).toBe('BUENA VISTA NEOS GOLD FUNDO DE INDICE')
+    expect(lanc?.alvo).toBe('cdb')
+  })
+
   it('NÃO lê Registro 24 compacto sem nome (evita valores absurdos)', () => {
     // Sem nome/âncora não dá pra localizar o valor com segurança → não importa.
     const linha = '24' + '00000000000' + '00000000000199' + '0762477024495'
