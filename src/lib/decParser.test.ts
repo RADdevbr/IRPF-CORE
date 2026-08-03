@@ -138,6 +138,21 @@ describe('parseDec — leitura posicional', () => {
     expect(p.tipoCarteira).toBe('fundo')
   })
 
+  it('Registro 27 de FII: saldo mesmo com descrição longa e campos extras depois', () => {
+    // FII: descrição comprida (não 512), saldos no 1º bloco de 26 díg., e mais
+    // campos após (negociado em bolsa, código, CNPJ do fundo…).
+    const descr = 'URPR11. 750 COTA COTAS FII . CUSTO MEDIO DE 94.214670 QTDE : 825'
+    const linha =
+      '27' + '00000000000' + '03' + '0' + '105' + descr.padEnd(200, ' ') +
+      '0000007066100' + '0000007481867' + // saldos 70.661,00 e 74.818,67
+      '    0000    2    0004600000000    34508872000187    0000000000001URPR11'
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    const p = r.posicoes[0]
+    expect(p.descricao).toContain('URPR11')
+    expect(p.saldoAnterior).toBeCloseTo(70661, 2)
+    expect(p.saldoAtual).toBeCloseTo(74818.67, 2)
+  })
+
   it('ignora campos zerados (não gera lançamento)', () => {
     const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
     const r = parseDec(semIR)

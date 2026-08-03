@@ -133,14 +133,21 @@ export function parseDec(text: string): DecResult {
 
     if (tipo === '25') ndep += 1
 
-    // Registro 27 — Bens e Direitos (investimentos): descrição (20-531) e saldo
-    // em 31/12 (545-557). País 105 na pos. 17-19 confirmou este layout.
+    // Registro 27 — Bens e Direitos. A descrição começa na pos. 20, mas seu
+    // tamanho varia (FII/ações têm descrição longa + campos extras depois), então
+    // a posição fixa do saldo não serve. Ancoramos no PRIMEIRO bloco de 26
+    // dígitos após a descrição = os dois saldos 31/12 (anterior + atual), cada um
+    // 13 díg. em centavos. A descrição não tem run de 26 dígitos (números vêm
+    // quebrados por pontos/barras/espaços), então o 1º bloco de 26 é o saldo.
     if (tipo === '27') {
-      const descricao = slice1(l, 20, 531).replace(/\s+/g, ' ').trim()
-      const saldoAtual = num(l, 545, 557)
-      const saldoAnterior = num(l, 532, 544)
-      if (descricao) {
-        posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+      const m = l.match(/(?<!\d)(\d{13})(\d{13})(?!\d)/)
+      if (m && m.index !== undefined) {
+        const saldoAnterior = parseInt(m[1], 10) / 100
+        const saldoAtual = parseInt(m[2], 10) / 100
+        const descricao = l.slice(19, m.index).replace(/\s+/g, ' ').trim()
+        if (descricao || saldoAtual > 0) {
+          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+        }
       }
       return
     }
