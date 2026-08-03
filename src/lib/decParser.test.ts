@@ -55,12 +55,9 @@ describe('parseDec — leitura posicional', () => {
     expect(ir?.alvo).toBe('salario_ir')
   })
 
-  it('extrai dividendos do registro 33 com nome da fonte', () => {
+  it('NÃO lê dividendos do registro 33 (não usado no arquivo real)', () => {
     const r = parseDec(text)
-    const div = r.lancamentos.find((l) => l.tipo === '33')
-    expect(div?.valor).toBeCloseTo(840000, 2)
-    expect(div?.fonte).toBe('MINHA PJ HOLDING LTDA')
-    expect(div?.alvo).toBe('divBR')
+    expect(r.lancamentos.find((l) => l.tipo === '33')).toBeUndefined()
   })
 
   it('conta dependentes pelos registros 25', () => {
@@ -86,15 +83,45 @@ describe('parseDec — leitura posicional', () => {
     expect(fundo?.alvo).toBe('cdb')
   })
 
-  it('lê Registro 24 compacto sem nome (tipo+CPF+CNPJ+valor)', () => {
-    // 2 + CPF(11) + CNPJ(14) + valor(13) = 40 chars, tudo numérico
-    const linha = '24' + '00000000000' + '00000000000199' + '0000015000000' // R$ 150.000,00
-    expect(linha.length).toBe(40)
+  it('lê Registro 88 (tributação definitiva): nome 44-103, valor 104-116', () => {
+    // 88 + CPF(11) + ind(1) + CPFben(11) + cód/CNPJ(18) + nome(60) + valor(13) + resto
+    const linha =
+      '88' + '00000000000' + 'T' + '00000000000' + '000000000000000000' +
+      'BUENA VISTA NEOS GOLD FUNDO DE INDICE'.padEnd(60, ' ') +
+      '0000000007795' + '000002904004873' // valor = R$ 77,95
     const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
-    const lanc = r.lancamentos.find((l) => l.tipo === '24')
-    expect(lanc?.valor).toBeCloseTo(150000, 2)
-    expect(lanc?.cnpj).toBe('00000000000199')
+    const lanc = r.lancamentos.find((l) => l.tipo === '88')
+    expect(lanc?.valor).toBeCloseTo(77.95, 2)
+    expect(lanc?.fonte).toBe('BUENA VISTA NEOS GOLD FUNDO DE INDICE')
     expect(lanc?.alvo).toBe('cdb')
+  })
+
+  // 84 + CPF(11) + ind(1) + CPFben(11) + código(4) + CNPJ(14) + nome(60) + valor(13) + resto
+  const reg84 = (cod: string, nome: string, cents: number) =>
+    '84' + '00000000000' + 'T' + '00000000000' + cod.padStart(4, '0') + '00000000000191' +
+    nome.padEnd(60, ' ') + String(cents).padStart(13, '0') + '000000000000000'
+
+  it('Registro 84 linha 09 (lucros e dividendos) → Dividendos (base)', () => {
+    const r = parseDec('IRPF 2026\r\n' + reg84('9', 'BCO BRASIL S.A.', 6800) + '\r\n') // R$ 68,00
+    const lanc = r.lancamentos.find((l) => l.tipo === '84')
+    expect(lanc?.valor).toBeCloseTo(68, 2)
+    expect(lanc?.fonte).toBe('BCO BRASIL S.A.')
+    expect(lanc?.tipoLabel).toBe('Lucros e dividendos')
+    expect(lanc?.alvo).toBe('divBR')
+  })
+
+  it('Registro 84 outras linhas (LCI/LCA etc.) → ignorar (fora da base)', () => {
+    const r = parseDec('IRPF 2026\r\n' + reg84('12', 'LCI BANCO X', 500000) + '\r\n')
+    const lanc = r.lancamentos.find((l) => l.tipo === '84')
+    expect(lanc?.valor).toBeCloseTo(5000, 2)
+    expect(lanc?.alvo).toBe('') // isento → não entra na base
+  })
+
+  it('NÃO lê Registro 24 compacto sem nome (evita valores absurdos)', () => {
+    // Sem nome/âncora não dá pra localizar o valor com segurança → não importa.
+    const linha = '24' + '00000000000' + '00000000000199' + '0762477024495'
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    expect(r.lancamentos.filter((l) => l.tipo === '24')).toHaveLength(0)
   })
 
   it('lê Registro 27 (Bens e Direitos): descrição + saldo 31/12 + classe', () => {
@@ -109,6 +136,21 @@ describe('parseDec — leitura posicional', () => {
     expect(p.saldoAtual).toBeCloseTo(150000, 2)
     expect(p.saldoAnterior).toBeCloseTo(120000, 2)
     expect(p.tipoCarteira).toBe('fundo')
+  })
+
+  it('Registro 27 de FII: saldo mesmo com descrição longa e campos extras depois', () => {
+    // FII: descrição comprida (não 512), saldos no 1º bloco de 26 díg., e mais
+    // campos após (negociado em bolsa, código, CNPJ do fundo…).
+    const descr = 'URPR11. 750 COTA COTAS FII . CUSTO MEDIO DE 94.214670 QTDE : 825'
+    const linha =
+      '27' + '00000000000' + '03' + '0' + '105' + descr.padEnd(200, ' ') +
+      '0000007066100' + '0000007481867' + // saldos 70.661,00 e 74.818,67
+      '    0000    2    0004600000000    34508872000187    0000000000001URPR11'
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    const p = r.posicoes[0]
+    expect(p.descricao).toContain('URPR11')
+    expect(p.saldoAnterior).toBeCloseTo(70661, 2)
+    expect(p.saldoAtual).toBeCloseTo(74818.67, 2)
   })
 
   it('ignora campos zerados (não gera lançamento)', () => {

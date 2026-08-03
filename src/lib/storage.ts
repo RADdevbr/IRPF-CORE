@@ -25,6 +25,8 @@ export interface PersistedState {
   carteira?: Carteira
   // Comparador de holding (opcional).
   holding?: HoldingConfig
+  // Projeção de vencimentos (opcional).
+  maturity?: { anoBase: number; rendaRecorrente: number; horizonte: number }
   // Baseline do ano anterior (opcional).
   priorYear?: { aberto: boolean; vals: Record<string, number>; ndep: number }
 }

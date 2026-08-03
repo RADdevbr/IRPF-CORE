@@ -98,13 +98,9 @@ const REGISTROS: Record<string, RegistroSpec> = {
       { rotulo: 'Juros s/ capital próprio', ini: 277, fim: 289, alvo: 'outros' },
     ],
   },
-  '33': {
-    label: 'Lucros e dividendos',
-    cnpj: [20, 33],
-    nome: [34, 93],
-    campos: [{ rotulo: 'Dividendo', ini: 94, fim: 106, alvo: 'divBR' }],
-  },
 }
+// Obs.: os dividendos NÃO são lidos do Registro 33 — no arquivo real eles vêm no
+// Registro 84 linha 09 (junto com LCI/LCA etc.). Ler os dois dobraria o valor.
 
 // Âncora "CNPJ (14 díg.) + nome (texto) + valor (13 díg.)" — o padrão comum aos
 // registros de detalhe (21, 33 e o 24 por fundo). Independe de offset exato.
@@ -137,23 +133,58 @@ export function parseDec(text: string): DecResult {
 
     if (tipo === '25') ndep += 1
 
-    // Registro 27 — Bens e Direitos (investimentos): descrição (20-531) e saldo
-    // em 31/12 (545-557). País 105 na pos. 17-19 confirmou este layout.
+    // Registro 27 — Bens e Direitos. A descrição começa na pos. 20, mas seu
+    // tamanho varia (FII/ações têm descrição longa + campos extras depois), então
+    // a posição fixa do saldo não serve. Ancoramos no PRIMEIRO bloco de 26
+    // dígitos após a descrição = os dois saldos 31/12 (anterior + atual), cada um
+    // 13 díg. em centavos. A descrição não tem run de 26 dígitos (números vêm
+    // quebrados por pontos/barras/espaços), então o 1º bloco de 26 é o saldo.
     if (tipo === '27') {
-      const descricao = slice1(l, 20, 531).replace(/\s+/g, ' ').trim()
-      const saldoAtual = num(l, 545, 557)
-      const saldoAnterior = num(l, 532, 544)
-      if (descricao) {
-        posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+      const m = l.match(/(?<!\d)(\d{13})(\d{13})(?!\d)/)
+      if (m && m.index !== undefined) {
+        const saldoAnterior = parseInt(m[1], 10) / 100
+        const saldoAtual = parseInt(m[2], 10) / 100
+        const descricao = l.slice(19, m.index).replace(/\s+/g, ' ').trim()
+        if (descricao || saldoAtual > 0) {
+          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+        }
       }
       return
     }
 
-    // Registro 24 pode vir por FUNDO/linha (código 06 + CNPJ + nome + valor),
-    // como no 21/33. Ancoramos em "CNPJ(14) + nome(texto) + valor(13)" — robusto
-    // a deslocamento de posição. Só se não achar, cai no layout agregado fixo.
+    // Registros 84/88 — rendimentos por fonte, mesmo layout (confirmado por
+    // linhas reais): código da linha em 26-29, nome do fundo em 44-103 (60
+    // chars) e VALOR em 104-116 (13 díg. = centavos).
+    // - 88 = tributação exclusiva/definitiva → entra na base (CDB).
+    // - 84 = ficha de isentos, VÁRIAS linhas por código:
+    //     · linha 09 = Lucros e dividendos → isento em 2025, mas NA BASE do
+    //       IRPFM 2026+ → mapeia para Dividendos.
+    //     · demais (LCI/LCA/poupança/etc.) → fora da base → "ignorar".
+    if (tipo === '84' || tipo === '88') {
+      const valor = num(l, 104, 116)
+      if (valor > 0) {
+        const fonte = slice1(l, 44, 103).trim()
+        const cnpj = slice1(l, 30, 43).trim()
+        const cod = parseInt(slice1(l, 26, 29).replace(/\D/g, '') || '0', 10)
+        let tipoLabel = 'Rend. isento / não tributável'
+        let alvo = ''
+        if (tipo === '88') {
+          tipoLabel = 'Rend. tributação definitiva'
+          alvo = 'cdb'
+        } else if (cod === 9) {
+          tipoLabel = 'Lucros e dividendos'
+          alvo = 'divBR'
+        }
+        lancamentos.push({ linha: i + 1, tipo, tipoLabel, fonte, cnpj, rotulo: 'Rendimento', valor, alvo })
+      }
+      return
+    }
+
+    // Registro 24 SÓ quando vem por fundo COM nome (código + CNPJ + nome +
+    // valor), ancorando em "CNPJ(14) + nome(texto) + valor(13)". O formato
+    // compacto SEM nome NÃO é lido: sem o nome/âncora não dá pra saber a posição
+    // do valor com segurança, e chutar gerava valores absurdos (bilhões).
     if (tipo === '24') {
-      // (1) formato por fundo COM nome: código + CNPJ + nome + valor.
       let achou = false
       let m: RegExpExecArray | null
       ANCHOR.lastIndex = 0
@@ -164,17 +195,6 @@ export function parseDec(text: string): DecResult {
         lancamentos.push({ linha: i + 1, tipo: '24', tipoLabel: 'Rend. aplicação financeira', fonte: m[2].trim(), cnpj: m[1], rotulo: 'Rendimento', valor, alvo: 'cdb' })
       }
       if (achou) return
-
-      // (2) formato compacto SEM nome (tipo+CPF+CNPJ+valor), tudo numérico:
-      // valor = últimos 13 dígitos; CNPJ = 14 dígitos antes.
-      const s = l.replace(/\s+$/, '')
-      if (s.length >= 34 && s.length <= 48 && /^\d+$/.test(s)) {
-        const valor = parseInt(s.slice(-13), 10) / 100
-        if (valor > 0) {
-          lancamentos.push({ linha: i + 1, tipo: '24', tipoLabel: 'Rend. aplicação (exclusiva)', fonte: '', cnpj: s.slice(-27, -13), rotulo: 'Rendimento', valor, alvo: 'cdb' })
-          return
-        }
-      }
     }
 
     const spec = REGISTROS[tipo]
