@@ -110,6 +110,13 @@ const REGISTROS: Record<string, RegistroSpec> = {
 // registros de detalhe (21, 33 e o 24 por fundo). Independe de offset exato.
 const ANCHOR = /(\d{14})([A-Za-zÀ-ÿ][^\d]{0,59}?)\s*(\d{13})/g
 
+// Registros de rendimento por fonte com layout compartilhado (nome 44-103,
+// valor 104-116). alvo '' = não entra na base (isento) → sugerido "ignorar".
+const REND_8X: Record<string, { label: string; alvo: string }> = {
+  '84': { label: 'Rend. isento / não tributável', alvo: '' },
+  '88': { label: 'Rend. tributação definitiva', alvo: 'cdb' },
+}
+
 function slice1(line: string, ini: number, fim: number): string {
   return line.slice(ini - 1, fim)
 }
@@ -149,13 +156,15 @@ export function parseDec(text: string): DecResult {
       return
     }
 
-    // Registro 88 — rendimentos com tributação exclusiva/definitiva (fundos,
-    // aplicações). Layout confirmado por linha real: nome do fundo em 44-103
-    // (60 chars) e VALOR em 104-116 (13 díg. = centavos).
-    if (tipo === '88') {
+    // Registros 84/88 — rendimentos por fonte, mesmo layout (confirmado por
+    // linhas reais): nome do fundo em 44-103 (60 chars) e VALOR em 104-116
+    // (13 díg. = centavos). 88 = tributação definitiva (entra na base → CDB);
+    // 84 = isento/não tributável (NÃO entra na base → "ignorar" por padrão).
+    const r8 = REND_8X[tipo]
+    if (r8) {
       const valor = num(l, 104, 116)
       if (valor > 0) {
-        lancamentos.push({ linha: i + 1, tipo: '88', tipoLabel: 'Rend. tributação definitiva', fonte: slice1(l, 44, 103).trim(), cnpj: slice1(l, 30, 43).trim(), rotulo: 'Rendimento', valor, alvo: 'cdb' })
+        lancamentos.push({ linha: i + 1, tipo, tipoLabel: r8.label, fonte: slice1(l, 44, 103).trim(), cnpj: slice1(l, 30, 43).trim(), rotulo: 'Rendimento', valor, alvo: r8.alvo })
       }
       return
     }

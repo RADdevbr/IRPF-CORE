@@ -99,6 +99,18 @@ describe('parseDec — leitura posicional', () => {
     expect(lanc?.alvo).toBe('cdb')
   })
 
+  it('lê Registro 84 (isento) no mesmo layout, mas sem entrar na base', () => {
+    const linha =
+      '84' + '00000000000' + 'T' + '00000000000' + '000900000000000191' +
+      'BCO BRASIL S.A.'.padEnd(60, ' ') +
+      '0000000006800' + '000000000000000002761965501' // valor = R$ 68,00
+    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+    const lanc = r.lancamentos.find((l) => l.tipo === '84')
+    expect(lanc?.valor).toBeCloseTo(68, 2)
+    expect(lanc?.fonte).toBe('BCO BRASIL S.A.')
+    expect(lanc?.alvo).toBe('') // isento → não entra na base (ignorar por padrão)
+  })
+
   it('NÃO lê Registro 24 compacto sem nome (evita valores absurdos)', () => {
     // Sem nome/âncora não dá pra localizar o valor com segurança → não importa.
     const linha = '24' + '00000000000' + '00000000000199' + '0762477024495'
