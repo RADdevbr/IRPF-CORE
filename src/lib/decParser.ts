@@ -98,24 +98,13 @@ const REGISTROS: Record<string, RegistroSpec> = {
       { rotulo: 'Juros s/ capital próprio', ini: 277, fim: 289, alvo: 'outros' },
     ],
   },
-  '33': {
-    label: 'Lucros e dividendos',
-    cnpj: [20, 33],
-    nome: [34, 93],
-    campos: [{ rotulo: 'Dividendo', ini: 94, fim: 106, alvo: 'divBR' }],
-  },
 }
+// Obs.: os dividendos NÃO são lidos do Registro 33 — no arquivo real eles vêm no
+// Registro 84 linha 09 (junto com LCI/LCA etc.). Ler os dois dobraria o valor.
 
 // Âncora "CNPJ (14 díg.) + nome (texto) + valor (13 díg.)" — o padrão comum aos
 // registros de detalhe (21, 33 e o 24 por fundo). Independe de offset exato.
 const ANCHOR = /(\d{14})([A-Za-zÀ-ÿ][^\d]{0,59}?)\s*(\d{13})/g
-
-// Registros de rendimento por fonte com layout compartilhado (nome 44-103,
-// valor 104-116). alvo '' = não entra na base (isento) → sugerido "ignorar".
-const REND_8X: Record<string, { label: string; alvo: string }> = {
-  '84': { label: 'Rend. isento / não tributável', alvo: '' },
-  '88': { label: 'Rend. tributação definitiva', alvo: 'cdb' },
-}
 
 function slice1(line: string, ini: number, fim: number): string {
   return line.slice(ini - 1, fim)
@@ -157,14 +146,29 @@ export function parseDec(text: string): DecResult {
     }
 
     // Registros 84/88 — rendimentos por fonte, mesmo layout (confirmado por
-    // linhas reais): nome do fundo em 44-103 (60 chars) e VALOR em 104-116
-    // (13 díg. = centavos). 88 = tributação definitiva (entra na base → CDB);
-    // 84 = isento/não tributável (NÃO entra na base → "ignorar" por padrão).
-    const r8 = REND_8X[tipo]
-    if (r8) {
+    // linhas reais): código da linha em 26-29, nome do fundo em 44-103 (60
+    // chars) e VALOR em 104-116 (13 díg. = centavos).
+    // - 88 = tributação exclusiva/definitiva → entra na base (CDB).
+    // - 84 = ficha de isentos, VÁRIAS linhas por código:
+    //     · linha 09 = Lucros e dividendos → isento em 2025, mas NA BASE do
+    //       IRPFM 2026+ → mapeia para Dividendos.
+    //     · demais (LCI/LCA/poupança/etc.) → fora da base → "ignorar".
+    if (tipo === '84' || tipo === '88') {
       const valor = num(l, 104, 116)
       if (valor > 0) {
-        lancamentos.push({ linha: i + 1, tipo, tipoLabel: r8.label, fonte: slice1(l, 44, 103).trim(), cnpj: slice1(l, 30, 43).trim(), rotulo: 'Rendimento', valor, alvo: r8.alvo })
+        const fonte = slice1(l, 44, 103).trim()
+        const cnpj = slice1(l, 30, 43).trim()
+        const cod = parseInt(slice1(l, 26, 29).replace(/\D/g, '') || '0', 10)
+        let tipoLabel = 'Rend. isento / não tributável'
+        let alvo = ''
+        if (tipo === '88') {
+          tipoLabel = 'Rend. tributação definitiva'
+          alvo = 'cdb'
+        } else if (cod === 9) {
+          tipoLabel = 'Lucros e dividendos'
+          alvo = 'divBR'
+        }
+        lancamentos.push({ linha: i + 1, tipo, tipoLabel, fonte, cnpj, rotulo: 'Rendimento', valor, alvo })
       }
       return
     }

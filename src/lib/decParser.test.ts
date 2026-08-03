@@ -55,12 +55,9 @@ describe('parseDec — leitura posicional', () => {
     expect(ir?.alvo).toBe('salario_ir')
   })
 
-  it('extrai dividendos do registro 33 com nome da fonte', () => {
+  it('NÃO lê dividendos do registro 33 (não usado no arquivo real)', () => {
     const r = parseDec(text)
-    const div = r.lancamentos.find((l) => l.tipo === '33')
-    expect(div?.valor).toBeCloseTo(840000, 2)
-    expect(div?.fonte).toBe('MINHA PJ HOLDING LTDA')
-    expect(div?.alvo).toBe('divBR')
+    expect(r.lancamentos.find((l) => l.tipo === '33')).toBeUndefined()
   })
 
   it('conta dependentes pelos registros 25', () => {
@@ -99,16 +96,25 @@ describe('parseDec — leitura posicional', () => {
     expect(lanc?.alvo).toBe('cdb')
   })
 
-  it('lê Registro 84 (isento) no mesmo layout, mas sem entrar na base', () => {
-    const linha =
-      '84' + '00000000000' + 'T' + '00000000000' + '000900000000000191' +
-      'BCO BRASIL S.A.'.padEnd(60, ' ') +
-      '0000000006800' + '000000000000000002761965501' // valor = R$ 68,00
-    const r = parseDec('IRPF 2026\r\n' + linha + '\r\n')
+  // 84 + CPF(11) + ind(1) + CPFben(11) + código(4) + CNPJ(14) + nome(60) + valor(13) + resto
+  const reg84 = (cod: string, nome: string, cents: number) =>
+    '84' + '00000000000' + 'T' + '00000000000' + cod.padStart(4, '0') + '00000000000191' +
+    nome.padEnd(60, ' ') + String(cents).padStart(13, '0') + '000000000000000'
+
+  it('Registro 84 linha 09 (lucros e dividendos) → Dividendos (base)', () => {
+    const r = parseDec('IRPF 2026\r\n' + reg84('9', 'BCO BRASIL S.A.', 6800) + '\r\n') // R$ 68,00
     const lanc = r.lancamentos.find((l) => l.tipo === '84')
     expect(lanc?.valor).toBeCloseTo(68, 2)
     expect(lanc?.fonte).toBe('BCO BRASIL S.A.')
-    expect(lanc?.alvo).toBe('') // isento → não entra na base (ignorar por padrão)
+    expect(lanc?.tipoLabel).toBe('Lucros e dividendos')
+    expect(lanc?.alvo).toBe('divBR')
+  })
+
+  it('Registro 84 outras linhas (LCI/LCA etc.) → ignorar (fora da base)', () => {
+    const r = parseDec('IRPF 2026\r\n' + reg84('12', 'LCI BANCO X', 500000) + '\r\n')
+    const lanc = r.lancamentos.find((l) => l.tipo === '84')
+    expect(lanc?.valor).toBeCloseTo(5000, 2)
+    expect(lanc?.alvo).toBe('') // isento → não entra na base
   })
 
   it('NÃO lê Registro 24 compacto sem nome (evita valores absurdos)', () => {
