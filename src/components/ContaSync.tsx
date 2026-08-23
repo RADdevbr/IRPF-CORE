@@ -121,17 +121,36 @@ export function ContaSync({
             onClick={() => rodar(async () => {
               await r.enviarCodigo(email.trim())
               setEtapa('codigo')
-              setMsg('Código enviado. Olhe seu e-mail.')
+              setMsg('Enviado. Abra o e-mail e clique no link — você volta para cá já conectado.')
             })}
           >
-            Enviar código
+            Enviar link de acesso
           </button>
         </div>
       )}
 
       {etapa === 'codigo' && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="código de 6 dígitos" style={{ ...inp, fontFamily: 'monospace' }} />
+          <span style={{ fontSize: 12.5, color: C.textSec, width: '100%', lineHeight: 1.5 }}>
+            <strong>Clique no link do e-mail.</strong> Ele traz você de volta para cá já conectado — não precisa digitar nada aqui.
+          </span>
+          <button
+            style={btn}
+            disabled={ocupado}
+            onClick={() => rodar(async () => {
+              const u = await r.usuario()
+              if (!u) throw new Error('Ainda não vejo a sessão. Clique no link do e-mail e volte para esta aba.')
+              setQuem(u.email)
+              setEtapa('logado')
+              setMsg('Conectado.')
+            })}
+          >
+            Já cliquei no link
+          </button>
+          <span style={{ fontSize: 11.5, color: C.textMut, width: '100%', marginTop: 4 }}>
+            Alternativa, só se o seu projeto tiver o código no template do e-mail:
+          </span>
+          <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="código de 6 dígitos (opcional)" style={{ ...inp, fontFamily: 'monospace' }} />
           <button
             style={btnPrim}
             disabled={ocupado || !codigo}

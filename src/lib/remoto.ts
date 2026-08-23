@@ -96,7 +96,16 @@ export function remotoSupabase(): Remoto {
     },
 
     async enviarCodigo(email) {
-      const { error } = await cli().auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
+      const { error } = await cli().auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+          // Sem isto o link do e-mail cai no Site URL do projeto, que por padrão
+          // é localhost:3000 — ou seja, no nada. Com isto ele volta para onde o
+          // app está rodando de fato (produção ou preview).
+          emailRedirectTo: typeof window === 'undefined' ? undefined : window.location.origin,
+        },
+      })
       if (error) throw new Error(error.message)
     },
 
