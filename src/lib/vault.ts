@@ -15,12 +15,14 @@ import {
   decifrarCofre,
   podeRemover,
   removerWrap,
+  gerarVaultId,
   paraB64,
   deB64,
   type CofreCompleto,
   type Wrap,
 } from './crypto'
 import type { PersistedState } from './storage'
+import type { EstadoSync } from './sync'
 
 const VAULT_KEY = 'irpfm2027:vault:v1'
 const LEGADO_KEY = 'irpfm2027:state:v1'
@@ -29,6 +31,7 @@ const SESSAO_KEY = 'irpfm2027:dek:v1'
 // negativo no Android. Vereditos daquela versão não são comparáveis — trocar a
 // chave os descarta em vez de manter a biometria escondida de quem já testou.
 const PRF_KEY = 'irpfm2027:prf:v2'
+const SYNC_KEY = 'irpfm2027:sync:v1'
 
 /** Só o que usamos de Storage — permite injetar um falso nos testes. */
 export type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -60,7 +63,19 @@ export function lerCofre(st?: Store): CofreCompleto | null {
     const raw = s.getItem(VAULT_KEY)
     if (!raw) return null
     const c = JSON.parse(raw) as CofreCompleto
-    return c && Array.isArray(c.wraps) && c.cofre ? c : null
+    if (!c || !Array.isArray(c.wraps) || !c.cofre) return null
+    if (!c.vaultId) {
+      // Cofre criado na Fase 0, antes de o sync existir: ganha identidade agora,
+      // enquanto ainda não há com o que confundi-lo.
+      const comId = { ...c, vaultId: gerarVaultId() }
+      try {
+        s.setItem(VAULT_KEY, JSON.stringify(comId))
+      } catch {
+        /* só em memória, tudo bem */
+      }
+      return comId
+    }
+    return c
   } catch {
     return null
   }
@@ -228,4 +243,34 @@ export function lembrarSuportePrf(v: SuportePrf, st?: Store): void {
 export function suportePrfLembrado(st?: Store): SuportePrf {
   const v = store(st)?.getItem(PRF_KEY)
   return v === 'ok' || v === 'nao' ? v : 'desconhecido'
+}
+
+// ---------------------------------------------------------------- estado do sync
+
+// Só números de versão e uma flag — nada sensível, não precisa de cifra.
+const SYNC_ZERO: EstadoSync = { baseVersion: null, sujo: false }
+
+export function lerEstadoSync(st?: Store): EstadoSync {
+  try {
+    const raw = store(st)?.getItem(SYNC_KEY)
+    if (!raw) return SYNC_ZERO
+    const e = JSON.parse(raw) as EstadoSync
+    return typeof e?.sujo === 'boolean' ? e : SYNC_ZERO
+  } catch {
+    return SYNC_ZERO
+  }
+}
+
+export function gravarEstadoSync(e: EstadoSync, st?: Store): void {
+  try {
+    store(st)?.setItem(SYNC_KEY, JSON.stringify(e))
+  } catch {
+    /* ignora */
+  }
+}
+
+/** Marca que houve edição local depois da última base sincronizada. */
+export function marcarSujo(st?: Store): void {
+  const atual = lerEstadoSync(st)
+  if (!atual.sujo) gravarEstadoSync({ ...atual, sujo: true }, st)
 }
