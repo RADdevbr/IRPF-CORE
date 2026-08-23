@@ -15,6 +15,8 @@ export interface PosicaoAno {
   id: string
   descricao: string
   codigo: string
+  /** Linha original do .DEC. Fica no cofre cifrado, junto do resto. */
+  bruta?: string
   classe: ClassePatrimonio
   regime: Regime
   saldoAnterior: number
@@ -172,6 +174,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
         id: idPosicao(p.descricao, classe),
         descricao: p.descricao,
         codigo: p.codigo,
+        bruta: p.bruta,
         classe,
         regime: REGIME[classe],
         saldoAnterior: p.saldoAnterior,
@@ -325,6 +328,53 @@ export function aplicarOverrides(h: Historico, ov: Overrides): Historico {
     saida[ano] = { ...d, posicoes }
   }
   return saida
+}
+
+// ---------------------------------------------------------------- vínculos entre anos
+
+/**
+ * Ligação manual entre posições de anos diferentes: `id de origem → id canônico`.
+ *
+ * O casamento automático usa classe + descrição normalizada, o que quebra quando
+ * o banco muda o nome do produto entre um ano e outro ("CDB BCO X" vira "CDB
+ * BANCO X S.A."). Sem isso a mesma aplicação vira duas séries curtas e o
+ * rendimento embutido some. Aqui o usuário diz que são a mesma coisa.
+ */
+export type Vinculos = Record<string, string>
+
+export function aplicarVinculos(h: Historico, v: Vinculos): Historico {
+  if (Object.keys(v).length === 0) return h
+  const saida: Historico = {}
+  for (const [ano, d] of Object.entries(h)) {
+    saida[ano] = { ...d, posicoes: d.posicoes.map((p) => (v[p.id] ? { ...p, id: v[p.id] } : p)) }
+  }
+  return saida
+}
+
+/** Overrides e vínculos sempre juntos: as duas correções valem para tudo. */
+export function prepararHistorico(h: Historico, overrides: Overrides, vinculos: Vinculos): Historico {
+  return aplicarVinculos(aplicarOverrides(h, overrides), vinculos)
+}
+
+/** Posições de um ano específico — o mapa deixou de ser só do ano mais recente. */
+export function posicoesDoAno(h: Historico, anoBase: number): PosicaoAno[] {
+  const d = h[String(anoBase)]
+  return d ? [...d.posicoes].sort((a, b) => b.saldoAtual - a.saldoAtual) : []
+}
+
+/** Anos disponíveis, do mais recente para o mais antigo. */
+export function anosDisponiveis(h: Historico): number[] {
+  return Object.values(h)
+    .map((d) => d.anoBase)
+    .sort((a, b) => b - a)
+}
+
+/** Posições dos OUTROS anos — candidatas a vincular com a que está na tela. */
+export function candidatasVinculo(h: Historico, anoBase: number): { anoBase: number; posicoes: PosicaoAno[] }[] {
+  return Object.values(h)
+    .filter((d) => d.anoBase !== anoBase)
+    .sort((a, b) => b.anoBase - a.anoBase)
+    .map((d) => ({ anoBase: d.anoBase, posicoes: [...d.posicoes].sort((a, b) => b.saldoAtual - a.saldoAtual) }))
 }
 
 // ---------------------------------------------------------------- base estocada
