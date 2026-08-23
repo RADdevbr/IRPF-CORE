@@ -121,7 +121,7 @@ export function ContaSync({
             onClick={() => rodar(async () => {
               await r.enviarCodigo(email.trim())
               setEtapa('codigo')
-              setMsg('Código enviado. Olhe seu e-mail.')
+              setMsg('Enviado. No e-mail: clique no link, ou copie o código de 6 dígitos para cá.')
             })}
           >
             Enviar código
@@ -146,6 +146,9 @@ export function ContaSync({
             Entrar
           </button>
           <button style={btn} onClick={() => setEtapa('email')}>Trocar e-mail</button>
+          <span style={{ fontSize: 11.5, color: C.textMut, width: '100%' }}>
+            Se você clicou no link do e-mail e voltou para cá, já está conectado — é só fechar e reabrir este painel.
+          </span>
         </div>
       )}
 
