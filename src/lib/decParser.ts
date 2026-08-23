@@ -29,13 +29,18 @@ export interface Posicao {
   linha: number
   cdBem: string
   /**
-   * Código do bem como aparece no arquivo, extraído do prefixo do registro.
-   * NÃO é usado para classificar: a tabela oficial de grupo/código não pôde ser
-   * conferida contra um arquivo real, e mapear errado seria pior que não mapear.
-   * Fica na tela como evidência — se ele bater com a tabela, vira classificação
-   * automática depois.
+   * Código do bem — posições 14–15, logo depois do CPF (posições 3–13).
+   *
+   * O SIGNIFICADO muda com o ano, confirmado contra três arquivos reais:
+   * · até 2018 é o código antigo de 2 dígitos (21 veículo, 31 ações, 32 quotas,
+   *   41 poupança, 45 renda fixa, 61 conta corrente, 71/73/79 fundos);
+   * · de 2019 em diante é o GRUPO (01…10, 99) e o código vem em `subcodigo`.
+   * Os dois conjuntos não se sobrepõem, então dá para tratar os dois sem
+   * perguntar o ano.
    */
   codigo: string
+  /** Posições 16–17: o código dentro do grupo (2019+); "01" nos arquivos antigos. */
+  subcodigo: string
   /** A linha do arquivo, como veio — permite conferir a leitura sem reimportar. */
   bruta: string
   descricao: string
@@ -156,8 +161,9 @@ export function parseDec(text: string): DecResult {
         const saldoAtual = parseInt(m[2], 10) / 100
         const descricao = l.slice(19, m.index).replace(/\s+/g, ' ').trim()
         if (descricao || saldoAtual > 0) {
-          const codigo = (l.slice(2, 19).match(/\d{2,4}/) ?? [''])[0]
-          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), codigo, bruta: l, descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+          const codigo = slice1(l, 14, 15)
+          const subcodigo = slice1(l, 16, 17)
+          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), codigo, subcodigo, bruta: l, descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
         }
       }
       return

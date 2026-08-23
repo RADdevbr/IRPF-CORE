@@ -15,6 +15,7 @@ export interface PosicaoAno {
   id: string
   descricao: string
   codigo: string
+  subcodigo?: string
   /** Linha original do .DEC. Fica no cofre cifrado, junto do resto. */
   bruta?: string
   classe: ClassePatrimonio
@@ -64,6 +65,7 @@ export type ClassePatrimonio =
   | 'veiculo'
   | 'contaCorrente'
   | 'exterior'
+  | 'participacao'
   | 'desconhecido'
 
 /**
@@ -84,6 +86,7 @@ export const REGIME: Record<ClassePatrimonio, Regime> = {
   fii: 'foraBase', // o rendimento mensal é isento; a VENDA da cota é 'depende'
   contaCorrente: 'foraBase',
   acoes: 'depende',
+  participacao: 'depende',
   imovel: 'depende',
   previdencia: 'depende',
   veiculo: 'depende',
@@ -106,7 +109,62 @@ export const NOME_CLASSE: Record<ClassePatrimonio, string> = {
   veiculo: 'Veículos',
   contaCorrente: 'Conta corrente',
   exterior: 'Exterior',
+  participacao: 'Participação societária (quotas)',
   desconhecido: 'Não classificado',
+}
+
+/**
+ * Código antigo do bem (até o exercício 2018) → classe. Conferido contra um
+ * arquivo real de 2020, cada código batendo com a descrição da própria linha:
+ * 21 com placa de veículo, 31 com ticker e quantidade, 32 com "participação de
+ * X% no capital social", 61 com agência e conta.
+ *
+ * De 2019 em diante o campo passou a ser o GRUPO, e os valores dos dois
+ * esquemas não colidem (antigos 21–79, novos 01–10 e 99), então esta tabela
+ * pode ser consultada sem saber o ano.
+ *
+ * Os códigos de FUNDOS (71, 72, 73, 74, 79) ficam DE FORA de propósito: a
+ * família é clara, o subtipo não, e errar entre "fundo tributável" e "FII"
+ * trocaria isento por tributável — inventaria imposto. E o esquema novo não
+ * entra aqui de jeito nenhum: com as descrições anonimizadas não deu para
+ * confirmar nenhum par grupo/código, e chutar seria pior que deixar em aberto.
+ * Para esses, a tela classifica uma vez e aplica a todos com o mesmo código.
+ */
+export const CLASSE_POR_CODIGO: Record<string, ClassePatrimonio> = {
+  '21': 'veiculo',
+  '31': 'acoes',
+  '32': 'participacao',
+  '41': 'poupanca',
+  '45': 'cdb',
+  '61': 'contaCorrente',
+}
+
+/** Como o código aparece na tela: "45" no esquema antigo, "03·01" no novo. */
+export function rotuloCodigo(codigo?: string, subcodigo?: string): string {
+  const c = (codigo ?? '').trim()
+  if (!c) return ''
+  const s = (subcodigo ?? '').trim()
+  return s && s !== '01' ? `${c}·${s}` : c
+}
+
+/** Chave de agrupamento: bens com o mesmo par recebem a mesma classificação. */
+export const chaveCodigo = (p: { codigo?: string; subcodigo?: string }) =>
+  `${(p.codigo ?? '').trim()}·${(p.subcodigo ?? '').trim()}`
+
+/**
+ * Ids de todas as posições, em todos os anos, que compartilham o código.
+ *
+ * Sem código não há grupo: arquivo antigo (ou linha que o layout cortou) chega
+ * com o campo em branco, e agrupar por "vazio" juntaria bens que não têm nada a
+ * ver — o imóvel viraria renda fixa junto com o resto.
+ */
+export function idsPorCodigo(h: Historico, chave: string): string[] {
+  if (!chave.replace(/[·\s]/g, '')) return []
+  const ids = new Set<string>()
+  for (const d of Object.values(h)) {
+    for (const p of d.posicoes) if (chaveCodigo(p) === chave) ids.add(p.id)
+  }
+  return [...ids]
 }
 
 /**
@@ -132,6 +190,17 @@ export function classificaPatrimonio(descricao: string): ClassePatrimonio {
   if (/EXTERIOR|OFFSHORE|\bUSD\b/.test(d)) return 'exterior'
   if (/FUNDO|\bFIC\b|COTAS/.test(d)) return 'fundo'
   return 'desconhecido'
+}
+
+/**
+ * Classe da posição: a descrição manda quando reconhece algo, porque distingue
+ * o que o código não distingue (LCI/LCA e incentivadas têm o mesmo código de
+ * renda fixa e regime oposto). O código entra quando a descrição não diz nada.
+ */
+export function classificaPosicao(descricao: string, codigo?: string): ClassePatrimonio {
+  const pelaDescricao = classificaPatrimonio(descricao)
+  if (pelaDescricao !== 'desconhecido') return pelaDescricao
+  return (codigo && CLASSE_POR_CODIGO[codigo.trim()]) || 'desconhecido'
 }
 
 /** Soma os lançamentos por campo de destino, ignorando os sem destino. */
@@ -169,11 +238,12 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
   const posicoes: PosicaoAno[] = dec.posicoes
     .filter((p) => p.saldoAtual > 0 || p.saldoAnterior > 0)
     .map((p) => {
-      const classe = classificaPatrimonio(p.descricao)
+      const classe = classificaPosicao(p.descricao, p.codigo)
       return {
         id: idPosicao(p.descricao, classe),
         descricao: p.descricao,
         codigo: p.codigo,
+        subcodigo: p.subcodigo,
         bruta: p.bruta,
         classe,
         regime: REGIME[classe],

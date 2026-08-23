@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   classificaPatrimonio,
+  classificaPosicao,
   REGIME,
   somaPorAlvo,
   idPosicao,
@@ -22,6 +23,9 @@ import {
   serieDaPosicao,
   chaveAporte,
   type Historico,
+  rotuloCodigo,
+  chaveCodigo,
+  idsPorCodigo,
 } from './historico'
 import type { DecResult, Lancamento, Posicao } from './decParser'
 
@@ -36,10 +40,11 @@ const lanc = (alvo: string, valor: number): Lancamento => ({
   alvo,
 })
 
-const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0, codigo = '41'): Posicao => ({
+const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0, codigo = '99', subcodigo = '01'): Posicao => ({
   linha: 1,
   cdBem: '00',
   codigo,
+  subcodigo,
   bruta: `27BENS            ${descricao}`,
   descricao,
   saldoAnterior,
@@ -405,5 +410,70 @@ describe('vínculo manual entre anos', () => {
     expect(anosDisponiveis(h)).toEqual([2025, 2024])
     expect(posicoesDoAno(h, 2024)[0].descricao).toBe('CDB BCO X')
     expect(posicoesDoAno(h, 2025)[0].descricao).toBe('CDB BANCO X S.A.')
+  })
+})
+
+describe('classificação pelo código do bem', () => {
+  it('usa o código quando a descrição não diz nada', () => {
+    expect(classificaPosicao('XXXXXXXX XXXXX', '45')).toBe('cdb')
+    expect(classificaPosicao('XXXXXXXX XXXXX', '32')).toBe('participacao')
+    expect(classificaPosicao('XXXXXXXX XXXXX', '61')).toBe('contaCorrente')
+    expect(classificaPosicao('XXXXXXXX XXXXX', '21')).toBe('veiculo')
+  })
+
+  it('a descrição manda quando reconhece — o código não separa LCA de CDB', () => {
+    // ambos são "aplicação de renda fixa" (45), mas o regime é oposto
+    expect(classificaPosicao('LCA BANCO Y', '45')).toBe('lci')
+    expect(REGIME[classificaPosicao('LCA BANCO Y', '45')]).toBe('foraBase')
+    expect(REGIME[classificaPosicao('CDB BANCO X', '45')]).toBe('inBase')
+  })
+
+  it('códigos de fundo ficam sem classe de propósito — errar aí inventaria imposto', () => {
+    for (const cod of ['71', '72', '73', '74', '79']) {
+      expect(classificaPosicao('XXXXX XXXXX', cod)).toBe('desconhecido')
+      expect(REGIME[classificaPosicao('XXXXX XXXXX', cod)]).toBe('depende')
+    }
+  })
+
+  it('código desconhecido não vira palpite', () => {
+    expect(classificaPosicao('XXXXX', '99')).toBe('desconhecido')
+    expect(classificaPosicao('XXXXX', undefined)).toBe('desconhecido')
+    expect(classificaPosicao('XXXXX', '  ')).toBe('desconhecido')
+  })
+
+  it('participação societária depende de confirmação, não entra na base', () => {
+    expect(REGIME.participacao).toBe('depende')
+  })
+})
+
+describe('código × grupo (o layout do Registro 27 mudou em 2019)', () => {
+  it('rotuloCodigo esconde o subcódigo neutro e mostra o par quando ele informa', () => {
+    expect(rotuloCodigo('45', '01')).toBe('45') // esquema antigo: só o código
+    expect(rotuloCodigo('04', '02')).toBe('04·02') // esquema novo: grupo·código
+    expect(rotuloCodigo('', '02')).toBe('')
+    expect(rotuloCodigo(undefined, undefined)).toBe('')
+  })
+
+  it('chaveCodigo agrupa pelo par, não pelo grupo — 04·01 e 04·02 são bens diferentes', () => {
+    expect(chaveCodigo({ codigo: '04', subcodigo: '01' })).toBe('04·01')
+    expect(chaveCodigo({ codigo: '04', subcodigo: '01' })).not.toBe(chaveCodigo({ codigo: '04', subcodigo: '02' }))
+    expect(chaveCodigo({ codigo: ' 45 ', subcodigo: ' 01 ' })).toBe(chaveCodigo({ codigo: '45', subcodigo: '01' }))
+    expect(chaveCodigo({})).toBe('·')
+  })
+
+  it('idsPorCodigo alcança o mesmo código em todos os anos — é isso que faz o "aplicar a todos" valer para trás', () => {
+    let h: Historico = {}
+    h = upsertDeclaracao(
+      h,
+      montarDeclaracao(dec('2024', [], [pos('CDB BCO X', 100, 0, '45', '01'), pos('APTO', 500, 0, '11', '01'), pos('BEM SEM CODIGO', 10, 0, '  ', '  ')]), 'a.DEC', 'agora')!,
+    )
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2025', [], [pos('CDB BANCO X S.A.', 200, 100, '45', '01')]), 'b.DEC', 'agora')!)
+    const ids = idsPorCodigo(h, '45·01')
+    expect(ids).toHaveLength(2) // a descrição mudou de ano para ano, o código não
+    expect(idsPorCodigo(h, '11·01')).toHaveLength(1)
+    expect(idsPorCodigo(h, '99·99')).toEqual([])
+    // sem código não há grupo: senão todo bem sem código viraria "o mesmo bem"
+    expect(idsPorCodigo(h, '·')).toEqual([])
+    expect(idsPorCodigo(h, '  ·  ')).toEqual([])
   })
 })
