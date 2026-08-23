@@ -25,6 +25,7 @@ import type { PersistedState } from './storage'
 const VAULT_KEY = 'irpfm2027:vault:v1'
 const LEGADO_KEY = 'irpfm2027:state:v1'
 const SESSAO_KEY = 'irpfm2027:dek:v1'
+const PRF_KEY = 'irpfm2027:prf:v1'
 
 /** Só o que usamos de Storage — permite injetar um falso nos testes. */
 export type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -204,4 +205,24 @@ export function esquecerDek(ss?: Store): void {
   } catch {
     /* ignora */
   }
+}
+
+// ---------------------------------------------------------------- suporte a PRF
+
+/**
+ * Guarda o resultado do diagnóstico para o app não insistir num método que já se
+ * provou indisponível neste aparelho — e não esconder o que funciona.
+ */
+export type SuportePrf = 'ok' | 'nao' | 'desconhecido'
+
+export function lembrarSuportePrf(v: SuportePrf, st?: Store): void {
+  const s = store(st)
+  if (!s) return
+  if (v === 'desconhecido') s.removeItem(PRF_KEY)
+  else s.setItem(PRF_KEY, v)
+}
+
+export function suportePrfLembrado(st?: Store): SuportePrf {
+  const v = store(st)?.getItem(PRF_KEY)
+  return v === 'ok' || v === 'nao' ? v : 'desconhecido'
 }

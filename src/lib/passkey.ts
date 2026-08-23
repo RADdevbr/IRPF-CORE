@@ -108,3 +108,85 @@ export async function segredoDaPasskey(credentialId?: string): Promise<{ credent
 
 /** Identificador do wrap desta credencial, no formato usado por `crypto.ts`. */
 export const wrapIdDaPasskey = (credentialId: string) => `passkey:${credentialId}`
+
+// ---------------------------------------------------------------- diagnóstico
+
+/**
+ * Descobre, no aparelho de quem está usando, se a passkey serve para destravar o
+ * cofre. Não adianta consultar tabela de compatibilidade: o suporte a PRF varia
+ * por navegador, por sistema E pelo autenticador — Windows Hello, em especial,
+ * demorou a expor a hmac-secret. Então o app mede em vez de supor.
+ *
+ * O teste registra uma credencial descartável (`residentKey: 'discouraged'` para
+ * sujar o mínimo possível o gerenciador de senhas). O WebAuthn não tem API para
+ * apagar credencial — se ela aparecer na sua lista, dá para remover na mão.
+ */
+export interface Diagnostico {
+  webauthn: boolean
+  plataforma: boolean
+  prf: 'ok' | 'sem-prf' | 'cancelado' | 'indisponivel' | 'erro'
+  detalhe: string
+  ua: string
+}
+
+export async function diagnosticarPasskey(): Promise<Diagnostico> {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const base: Diagnostico = { webauthn: false, plataforma: false, prf: 'indisponivel', detalhe: '', ua }
+
+  if (!suportaPasskey()) {
+    return { ...base, detalhe: 'Este navegador não expõe a API WebAuthn.' }
+  }
+  base.webauthn = true
+  base.plataforma = await temAutenticadorLocal()
+
+  try {
+    const cred = (await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: RP_NOME },
+        user: {
+          id: crypto.getRandomValues(new Uint8Array(16)),
+          name: 'teste de suporte',
+          displayName: 'IRPFM · teste de suporte',
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        authenticatorSelection: { residentKey: 'discouraged', userVerification: 'required' },
+        timeout: 60_000,
+        extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
+      },
+    })) as PublicKeyCredential | null
+    if (!cred) return { ...base, prf: 'cancelado', detalhe: 'Registro cancelado.' }
+
+    const criado = cred.getClientExtensionResults() as { prf?: { enabled?: boolean } }
+    const assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ type: 'public-key', id: cred.rawId as BufferSource }],
+        userVerification: 'required',
+        timeout: 60_000,
+        extensions: { prf: { eval: { first: SALT_PRF } } } as AuthenticationExtensionsClientInputs,
+      },
+    })) as PublicKeyCredential | null
+    if (!assertion) return { ...base, prf: 'cancelado', detalhe: 'Verificação cancelada.' }
+
+    const ext = assertion.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } }
+    const bytes = ext.prf?.results?.first
+    if (bytes && bytes.byteLength >= 32) {
+      return { ...base, prf: 'ok', detalhe: `PRF devolveu ${bytes.byteLength} bytes.` }
+    }
+    return {
+      ...base,
+      prf: 'sem-prf',
+      detalhe: criado.prf?.enabled
+        ? 'O autenticador anunciou PRF no registro, mas não devolveu os bytes.'
+        : 'Este autenticador não implementa a extensão PRF.',
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/NotAllowed/i.test(msg)) return { ...base, prf: 'cancelado', detalhe: 'Cancelado ou tempo esgotado.' }
+    return { ...base, prf: 'erro', detalhe: msg }
+  }
+}
