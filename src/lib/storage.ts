@@ -6,7 +6,7 @@ const SCEN_KEY = 'irpfm2027:scenarios:v1'
 import type { YtdConfig, DivGrid } from '../calc/ytd'
 import type { Carteira } from '../calc/rendafixa'
 import type { HoldingConfig } from '../calc/holding'
-import type { Historico } from './historico'
+import type { Historico, Overrides, Aportes } from './historico'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -32,6 +32,9 @@ export interface PersistedState {
   priorYear?: { aberto: boolean; vals: Record<string, number>; ndep: number }
   // Histórico plurianual das declarações (opcional).
   historico?: Historico
+  // Correções manuais de classe por posição, e aportes informados por ano.
+  classeOverrides?: Overrides
+  aportes?: Aportes
 }
 
 export interface NamedScenario {

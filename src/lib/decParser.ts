@@ -28,6 +28,14 @@ export interface DecRegistro {
 export interface Posicao {
   linha: number
   cdBem: string
+  /**
+   * Código do bem como aparece no arquivo, extraído do prefixo do registro.
+   * NÃO é usado para classificar: a tabela oficial de grupo/código não pôde ser
+   * conferida contra um arquivo real, e mapear errado seria pior que não mapear.
+   * Fica na tela como evidência — se ele bater com a tabela, vira classificação
+   * automática depois.
+   */
+  codigo: string
   descricao: string
   saldoAnterior: number // 31/12 do ano anterior
   saldoAtual: number // 31/12 do ano-base — vira o "valor aplicado" na carteira
@@ -146,7 +154,8 @@ export function parseDec(text: string): DecResult {
         const saldoAtual = parseInt(m[2], 10) / 100
         const descricao = l.slice(19, m.index).replace(/\s+/g, ' ').trim()
         if (descricao || saldoAtual > 0) {
-          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+          const codigo = (l.slice(2, 19).match(/\d{2,4}/) ?? [''])[0]
+          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), codigo, descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
         }
       }
       return
