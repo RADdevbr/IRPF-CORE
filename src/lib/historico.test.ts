@@ -13,6 +13,7 @@ import {
   removerAno,
   reatribuirAno,
   aplicarOverrides,
+  normalizaHistorico,
   baseEstocada,
   serieDaPosicao,
   chaveAporte,
@@ -305,5 +306,47 @@ describe('corrigir o ano depois de importado', () => {
   it('ignora pedido para um ano que não está no histórico', () => {
     const h = base()
     expect(reatribuirAno(h, 2015, 2021)).toBe(h)
+  })
+})
+
+describe('estado gravado por versões anteriores', () => {
+  // Declaração como a fase A gravava: sem `diagnostico`, sem `codigo` nas posições.
+  const antigo = () =>
+    ({
+      '2025': {
+        exercicio: 2026,
+        anoBase: 2025,
+        arquivo: 'IRPF2026.DEC',
+        importadoEm: 'x',
+        vals: { cdb: 500_000 },
+        ndep: 0,
+        base: 500_000,
+        irpfm: 0,
+        patrimonio: 400_000,
+        posicoes: [
+          { id: 'cdb:CDB BANCO X', descricao: 'CDB BANCO X', classe: 'cdb', regime: 'inBase', saldoAnterior: 300_000, saldoAtual: 400_000 },
+        ],
+      },
+    }) as unknown as Historico
+
+  it('preenche os campos que faltam em vez de deixar a leitura quebrar', () => {
+    const h = normalizaHistorico(antigo())
+    expect(h['2025'].diagnostico).toEqual({ registros: [], lancamentos: 0, posicoes: 1, totalLinhas: 0, anoDetectado: true })
+    expect(h['2025'].posicoes[0].codigo).toBe('')
+    expect(h['2025'].base).toBe(500_000)
+  })
+
+  it('as contas seguem funcionando sobre o histórico migrado', () => {
+    const h = normalizaHistorico(antigo())
+    expect(seriePatrimonio(h)[0].inBase).toBe(400_000)
+    expect(baseEstocada(h).total).toBe(100_000)
+  })
+
+  it('aguenta lixo: nulo, indefinido e entradas quebradas', () => {
+    expect(normalizaHistorico(undefined)).toEqual({})
+    expect(normalizaHistorico(null)).toEqual({})
+    expect(normalizaHistorico({ '2020': null } as unknown as Historico)).toEqual({})
+    const semPosicoes = normalizaHistorico({ '2021': { anoBase: 2021 } } as unknown as Historico)
+    expect(semPosicoes['2021'].posicoes).toEqual([])
   })
 })
