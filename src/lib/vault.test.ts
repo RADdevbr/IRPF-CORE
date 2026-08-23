@@ -180,7 +180,14 @@ describe('memória do suporte a PRF', () => {
   it('trata valor corrompido como desconhecido', async () => {
     const { suportePrfLembrado } = await import('./vault')
     const st = fakeStore()
-    st.setItem('irpfm2027:prf:v1', 'talvez')
+    st.setItem('irpfm2027:prf:v2', 'talvez')
+    expect(suportePrfLembrado(st)).toBe('desconhecido')
+  })
+
+  it('ignora o veredito da v1, que vinha de um diagnóstico defeituoso', async () => {
+    const { suportePrfLembrado } = await import('./vault')
+    const st = fakeStore()
+    st.setItem('irpfm2027:prf:v1', 'nao')
     expect(suportePrfLembrado(st)).toBe('desconhecido')
   })
 })

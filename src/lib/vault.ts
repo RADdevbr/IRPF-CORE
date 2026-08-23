@@ -25,7 +25,10 @@ import type { PersistedState } from './storage'
 const VAULT_KEY = 'irpfm2027:vault:v1'
 const LEGADO_KEY = 'irpfm2027:state:v1'
 const SESSAO_KEY = 'irpfm2027:dek:v1'
-const PRF_KEY = 'irpfm2027:prf:v1'
+// v2: o diagnóstico da v1 registrava credencial não-descobrível e dava falso
+// negativo no Android. Vereditos daquela versão não são comparáveis — trocar a
+// chave os descarta em vez de manter a biometria escondida de quem já testou.
+const PRF_KEY = 'irpfm2027:prf:v2'
 
 /** Só o que usamos de Storage — permite injetar um falso nos testes. */
 export type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
