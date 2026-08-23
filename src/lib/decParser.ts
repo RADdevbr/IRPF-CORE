@@ -36,6 +36,8 @@ export interface Posicao {
    * automática depois.
    */
   codigo: string
+  /** A linha do arquivo, como veio — permite conferir a leitura sem reimportar. */
+  bruta: string
   descricao: string
   saldoAnterior: number // 31/12 do ano anterior
   saldoAtual: number // 31/12 do ano-base — vira o "valor aplicado" na carteira
@@ -155,7 +157,7 @@ export function parseDec(text: string): DecResult {
         const descricao = l.slice(19, m.index).replace(/\s+/g, ' ').trim()
         if (descricao || saldoAtual > 0) {
           const codigo = (l.slice(2, 19).match(/\d{2,4}/) ?? [''])[0]
-          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), codigo, descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), codigo, bruta: l, descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
         }
       }
       return

@@ -13,6 +13,10 @@ import {
   removerAno,
   reatribuirAno,
   aplicarOverrides,
+  aplicarVinculos,
+  candidatasVinculo,
+  posicoesDoAno,
+  anosDisponiveis,
   normalizaHistorico,
   baseEstocada,
   serieDaPosicao,
@@ -36,6 +40,7 @@ const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0, codigo = 
   linha: 1,
   cdBem: '00',
   codigo,
+  bruta: `27BENS            ${descricao}`,
   descricao,
   saldoAnterior,
   saldoAtual,
@@ -348,5 +353,57 @@ describe('estado gravado por versões anteriores', () => {
     expect(normalizaHistorico({ '2020': null } as unknown as Historico)).toEqual({})
     const semPosicoes = normalizaHistorico({ '2021': { anoBase: 2021 } } as unknown as Historico)
     expect(semPosicoes['2021'].posicoes).toEqual([])
+  })
+})
+
+describe('vínculo manual entre anos', () => {
+  // Mesma aplicação, nome diferente entre os anos: o casamento automático falha.
+  const montar = (): Historico => {
+    let h: Historico = {}
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2025', [], [pos('CDB BCO X', 300_000, 200_000)]), 'a.DEC', 'agora')!)
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2026', [], [pos('CDB BANCO X S.A.', 500_000, 300_000)]), 'b.DEC', 'agora')!)
+    return h
+  }
+
+  it('sem vínculo, a mesma aplicação vira duas séries curtas', () => {
+    const h = montar()
+    const idNovo = h['2025'].posicoes[0].id
+    expect(serieDaPosicao(h, idNovo).map((p) => p.anoBase)).toEqual([2025])
+  })
+
+  it('com vínculo, a série volta a ser uma só', () => {
+    const h = montar()
+    const idAntigo = h['2024'].posicoes[0].id
+    const idNovo = h['2025'].posicoes[0].id
+    const ligado = aplicarVinculos(h, { [idAntigo]: idNovo })
+    expect(serieDaPosicao(ligado, idNovo).map((p) => p.anoBase)).toEqual([2024, 2025])
+  })
+
+  it('o rendimento embutido passa a somar os dois anos', () => {
+    const h = montar()
+    const idAntigo = h['2024'].posicoes[0].id
+    const idNovo = h['2025'].posicoes[0].id
+    expect(baseEstocada(h).total).toBe(200_000) // só 2025: 500k − 300k
+    expect(baseEstocada(aplicarVinculos(h, { [idAntigo]: idNovo })).total).toBe(300_000) // + 100k de 2024
+  })
+
+  it('sem vínculos, devolve o histórico intocado', () => {
+    const h = montar()
+    expect(aplicarVinculos(h, {})).toBe(h)
+  })
+
+  it('lista as posições dos outros anos como candidatas', () => {
+    const h = montar()
+    const c = candidatasVinculo(h, 2025)
+    expect(c).toHaveLength(1)
+    expect(c[0].anoBase).toBe(2024)
+    expect(c[0].posicoes[0].descricao).toBe('CDB BCO X')
+  })
+
+  it('o mapa pode ser pedido para qualquer ano, não só o mais recente', () => {
+    const h = montar()
+    expect(anosDisponiveis(h)).toEqual([2025, 2024])
+    expect(posicoesDoAno(h, 2024)[0].descricao).toBe('CDB BCO X')
+    expect(posicoesDoAno(h, 2025)[0].descricao).toBe('CDB BANCO X S.A.')
   })
 })
