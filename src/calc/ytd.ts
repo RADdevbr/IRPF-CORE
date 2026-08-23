@@ -69,11 +69,16 @@ export interface DivPjResult {
   nome: string
   sumRealizado: number
   irrfRealizado: number
+  /** Estimativa mensal aplicada aos meses futuros ainda em branco. */
   futMensal: number
   futTotal: number
   irrfFuturo: number
   annual: number
   irrf: number
+  /** Os 12 meses já resolvidos: lançado onde há valor, estimado no resto. */
+  mensal: number[]
+  /** Quais dos 12 vieram de estimativa — a tela mostra esses em cinza. */
+  estimados: boolean[]
 }
 
 export interface DivResult {
@@ -81,28 +86,60 @@ export interface DivResult {
   annual: number
   realized: number
   irrf: number
+  /** Quantos meses do ano já têm valor lançado (fechados ou digitados à frente). */
+  mesesComLancamento: number
 }
 
-// Projeção dos dividendos pela grade [mês × PJ], com IRRF de 10% por célula/
-// mês-projeção quando o valor mensal de uma PJ ultrapassa R$ 50k.
+const irrfDoMes = (v: number) => (v > DIV_TRIGGER ? DIV_ALIQ * v : 0)
+
+/**
+ * Projeção dos dividendos pela grade [mês × PJ].
+ *
+ * A grade tem os 12 meses sempre: o usuário vai lançando conforme o ano corre e
+ * a estimativa anual se ajusta sozinha. Cada mês resolve assim:
+ *   · até o mês de referência → o que foi lançado (realizado);
+ *   · depois dele, com valor digitado → esse valor (planejado por você);
+ *   · depois dele, em branco → a estimativa do método escolhido.
+ *
+ * Antes, valor digitado além do mês de referência era IGNORADO — quem lançasse
+ * um mês à frente via o número sumir da conta.
+ *
+ * O IRRF é calculado mês a mês (Art. 6º-A: 10% sobre o total pago no mês quando
+ * a mesma PJ passa de R$ 50k), então concentrar ou pulverizar muda o resultado.
+ */
 export function divProjection(grid: DivGrid, mesRef: number): DivResult {
   const k = Math.max(0, Math.min(12, mesRef))
   const pjs = grid.pjs.map((pj, j) => {
     const row = grid.cells[j] || []
-    const completed: number[] = []
-    for (let m = 0; m < k; m++) completed.push(row[m] || 0)
-    const sumRealizado = completed.reduce((s, x) => s + x, 0)
-    const irrfRealizado = completed.reduce((s, x) => s + (x > DIV_TRIGGER ? DIV_ALIQ * x : 0), 0)
-    const remaining = 12 - k
-    let futMensal = 0
-    if (remaining > 0) {
-      if (k === 0) futMensal = grid.method === 'manual' ? grid.manualMonthly[j] || 0 : 0
-      else if (grid.method === 'runrate') futMensal = sumRealizado / k
-      else if (grid.method === 'last') futMensal = completed[k - 1] || 0
-      else futMensal = grid.manualMonthly[j] || 0
+    const realizados: number[] = []
+    for (let m = 0; m < k; m++) realizados.push(row[m] || 0)
+    const sumRealizado = realizados.reduce((s, x) => s + x, 0)
+    const irrfRealizado = realizados.reduce((s, x) => s + irrfDoMes(x), 0)
+
+    // Estimativa para os meses futuros que continuam em branco.
+    let futMensal = grid.manualMonthly[j] || 0
+    if (k > 0) {
+      if (grid.method === 'runrate') futMensal = sumRealizado / k
+      else if (grid.method === 'last') futMensal = realizados[k - 1] || 0
     }
-    const futTotal = futMensal * remaining
-    const irrfFuturo = (futMensal > DIV_TRIGGER ? DIV_ALIQ * futMensal : 0) * remaining
+
+    const mensal: number[] = []
+    const estimados: boolean[] = []
+    for (let m = 0; m < 12; m++) {
+      if (m < k) {
+        mensal.push(row[m] || 0)
+        estimados.push(false)
+      } else {
+        const digitado = row[m] || 0
+        mensal.push(digitado > 0 ? digitado : futMensal)
+        estimados.push(!(digitado > 0))
+      }
+    }
+
+    const futuros = mensal.slice(k)
+    const futTotal = futuros.reduce((s, x) => s + x, 0)
+    const irrfFuturo = futuros.reduce((s, x) => s + irrfDoMes(x), 0)
+
     return {
       nome: pj.nome,
       sumRealizado,
@@ -112,13 +149,23 @@ export function divProjection(grid: DivGrid, mesRef: number): DivResult {
       irrfFuturo,
       annual: sumRealizado + futTotal,
       irrf: irrfRealizado + irrfFuturo,
+      mensal,
+      estimados,
     }
   })
+
+  // Um mês conta como lançado quando qualquer PJ tem valor nele.
+  let mesesComLancamento = 0
+  for (let m = 0; m < 12; m++) {
+    if (grid.pjs.some((_, j) => (grid.cells[j]?.[m] || 0) > 0)) mesesComLancamento += 1
+  }
+
   return {
     pjs,
     annual: pjs.reduce((s, p) => s + p.annual, 0),
     realized: pjs.reduce((s, p) => s + p.sumRealizado, 0),
     irrf: pjs.reduce((s, p) => s + p.irrf, 0),
+    mesesComLancamento,
   }
 }
 
