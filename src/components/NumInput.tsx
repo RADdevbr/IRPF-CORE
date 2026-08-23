@@ -8,6 +8,7 @@ export function NumInput({
   readOnly = false,
   height = 38,
   compact = false,
+  rotulo,
 }: {
   value: number
   onChange: (v: number) => void
@@ -15,6 +16,8 @@ export function NumInput({
   readOnly?: boolean
   height?: number
   compact?: boolean
+  /** Nome do campo para leitor de tela — o R$ ao lado não é rótulo de nada. */
+  rotulo?: string
 }) {
   const display =
     value > 0
@@ -36,6 +39,7 @@ export function NumInput({
       <input
         type="text"
         inputMode="numeric"
+        aria-label={rotulo}
         placeholder={placeholder}
         value={display}
         readOnly={readOnly}
