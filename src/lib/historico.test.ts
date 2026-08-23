@@ -11,6 +11,11 @@ import {
   porClasse,
   upsertDeclaracao,
   removerAno,
+  reatribuirAno,
+  aplicarOverrides,
+  baseEstocada,
+  serieDaPosicao,
+  chaveAporte,
   type Historico,
 } from './historico'
 import type { DecResult, Lancamento, Posicao } from './decParser'
@@ -26,9 +31,10 @@ const lanc = (alvo: string, valor: number): Lancamento => ({
   alvo,
 })
 
-const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0): Posicao => ({
+const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0, codigo = '41'): Posicao => ({
   linha: 1,
   cdBem: '00',
+  codigo,
   descricao,
   saldoAnterior,
   saldoAtual,
@@ -180,5 +186,124 @@ describe('séries do histórico', () => {
     h = upsertDeclaracao(h, montarDeclaracao(dec('2026', [lanc('cdb', 10)], []), 'c.DEC', 'agora')!)
     expect(Object.keys(h)).toHaveLength(2)
     expect(h['2025'].base).toBe(10)
+  })
+})
+
+describe('correção manual da classe', () => {
+  const montar = () => {
+    let h: Historico = {}
+    for (const [ex, saldo] of [[2025, 300_000], [2026, 500_000]] as const) {
+      h = upsertDeclaracao(h, montarDeclaracao(dec(String(ex), [], [pos('BEM SEM NOME CLARO', saldo)]), 'x.DEC', 'agora')!)
+    }
+    return h
+  }
+
+  it('uma correção arruma a série inteira, não só o ano visível', () => {
+    const h = montar()
+    const id = h['2025'].posicoes[0].id
+    expect(h['2025'].posicoes[0].regime).toBe('depende')
+
+    const corrigido = aplicarOverrides(h, { [id]: 'cdb' })
+    expect(corrigido['2024'].posicoes[0].regime).toBe('inBase')
+    expect(corrigido['2025'].posicoes[0].regime).toBe('inBase')
+  })
+
+  it('sem correções, devolve o histórico intocado', () => {
+    const h = montar()
+    expect(aplicarOverrides(h, {})).toBe(h)
+  })
+})
+
+describe('base estocada', () => {
+  const montar = () => {
+    let h: Historico = {}
+    // CDB: 300k → 400k → 600k. Sem aporte informado, o crescimento inteiro conta.
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2025', [], [pos('CDB BANCO X', 400_000, 300_000)]), 'a.DEC', 'agora')!)
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2026', [], [pos('CDB BANCO X', 600_000, 400_000)]), 'b.DEC', 'agora')!)
+    return h
+  }
+
+  it('acumula o crescimento das posições que caem na base', () => {
+    const r = baseEstocada(montar())
+    expect(r.total).toBe(300_000) // 100k em 2024 + 200k em 2025
+    expect(r.algumEstimado).toBe(true)
+    expect(r.itens[0].porAno.map((a) => a.anoBase)).toEqual([2024, 2025])
+  })
+
+  it('aporte informado sai da conta — e a linha deixa de ser estimativa', () => {
+    const h = montar()
+    const id = h['2025'].posicoes[0].id
+    const r = baseEstocada(h, { [chaveAporte(id, 2024)]: 100_000, [chaveAporte(id, 2025)]: 150_000 })
+    expect(r.total).toBe(50_000) // só o que sobrou de rendimento
+    expect(r.algumEstimado).toBe(false)
+  })
+
+  it('não deixa o embutido ficar negativo quando o aporte supera o crescimento', () => {
+    const h = montar()
+    const id = h['2025'].posicoes[0].id
+    const r = baseEstocada(h, { [chaveAporte(id, 2024)]: 999_000, [chaveAporte(id, 2025)]: 999_000 })
+    expect(r.total).toBe(0)
+  })
+
+  it('ignora o que está fora da base — LCA não estoca base de IRPFM', () => {
+    let h: Historico = {}
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2026', [], [pos('LCA BANCO Y', 500_000, 300_000)]), 'x.DEC', 'agora')!)
+    expect(baseEstocada(h).total).toBe(0)
+  })
+
+  it('acompanha a mesma posição entre anos pelo id', () => {
+    const h = montar()
+    const id = h['2025'].posicoes[0].id
+    expect(serieDaPosicao(h, id).map((p) => p.saldo)).toEqual([400_000, 600_000])
+  })
+})
+
+describe('arquivos de anos antigos', () => {
+  it('registra o que foi lido, para dar o que conversar quando o leiaute muda', () => {
+    const d = montarDeclaracao(
+      { ...dec('2021', [lanc('cdb', 1000)], [pos('CDB', 5000)]), registros: [{ tipo: '27', count: 3, amostra: '' }], totalLinhas: 42 },
+      'IRPF2021.DEC',
+      'agora',
+    )!
+    expect(d.diagnostico).toEqual({
+      registros: [{ tipo: '27', count: 3 }],
+      lancamentos: 1,
+      posicoes: 1,
+      totalLinhas: 42,
+      anoDetectado: true,
+    })
+  })
+
+  it('importa com o ano informado à mão quando o arquivo não diz qual é', () => {
+    const d = montarDeclaracao(dec(null, [lanc('cdb', 1000)], []), 'antigo.DEC', 'agora', 2021)!
+    expect(d.anoBase).toBe(2020)
+    expect(d.diagnostico.anoDetectado).toBe(false)
+  })
+
+  it('não perde o rendimento de um arquivo antigo só porque o ano veio à mão', () => {
+    const d = montarDeclaracao(dec(null, [lanc('cdb', 700_000)], []), 'antigo.DEC', 'agora', 2021)!
+    expect(d.base).toBe(700_000)
+    expect(d.irpfm).toBeGreaterThan(0)
+  })
+})
+
+describe('corrigir o ano depois de importado', () => {
+  const base = () =>
+    upsertDeclaracao({}, montarDeclaracao(dec('2000', [lanc('cdb', 90_000)], [pos('CDB', 250_000)]), 'antigo.DEC', 'agora')!)
+
+  it('move a declaração para o ano certo, sem perder os dados', () => {
+    const h = base()
+    expect(Object.keys(h)).toEqual(['1999'])
+
+    const corrigido = reatribuirAno(h, 1999, 2021)
+    expect(Object.keys(corrigido)).toEqual(['2020'])
+    expect(corrigido['2020'].exercicio).toBe(2021)
+    expect(corrigido['2020'].base).toBe(90_000)
+    expect(corrigido['2020'].posicoes[0].saldoAtual).toBe(250_000)
+  })
+
+  it('ignora pedido para um ano que não está no histórico', () => {
+    const h = base()
+    expect(reatribuirAno(h, 2015, 2021)).toBe(h)
   })
 })
