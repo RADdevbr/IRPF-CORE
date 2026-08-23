@@ -259,6 +259,29 @@ export function porClasse(h: Historico): { classe: ClassePatrimonio; regime: Reg
     .sort((a, b) => b.total - a.total)
 }
 
+const DIAGNOSTICO_VAZIO: Diagnostico = { registros: [], lancamentos: 0, posicoes: 0, totalLinhas: 0, anoDetectado: true }
+
+/**
+ * Migra histórico gravado por versões anteriores. Declarações da fase A não têm
+ * `diagnostico` nem `codigo` nas posições — ler esses campos sem checar derrubava
+ * o app inteiro na tela preta. Estado velho encontrando código novo é a classe de
+ * bug mais provável num app que guarda dados por anos; então a leitura conserta.
+ */
+export function normalizaHistorico(h: Historico | undefined | null): Historico {
+  if (!h || typeof h !== 'object') return {}
+  const saida: Historico = {}
+  for (const [ano, d] of Object.entries(h)) {
+    if (!d || typeof d !== 'object') continue
+    const posicoes = (Array.isArray(d.posicoes) ? d.posicoes : []).map((p) => ({ ...p, codigo: p.codigo ?? '' }))
+    saida[ano] = {
+      ...d,
+      posicoes,
+      diagnostico: d.diagnostico ?? { ...DIAGNOSTICO_VAZIO, posicoes: posicoes.length },
+    }
+  }
+  return saida
+}
+
 export function upsertDeclaracao(h: Historico, d: Declaracao): Historico {
   return { ...h, [String(d.anoBase)]: d }
 }
