@@ -163,3 +163,31 @@ describe('sessão lembrada', () => {
     await expect(lerDadosCifrados(new Uint8Array(32).fill(1), st)).rejects.toThrow()
   })
 })
+
+describe('memória do suporte a PRF', () => {
+  it('guarda, devolve e esquece o resultado do diagnóstico', async () => {
+    const { lembrarSuportePrf, suportePrfLembrado } = await import('./vault')
+    const st = fakeStore()
+    expect(suportePrfLembrado(st)).toBe('desconhecido')
+    lembrarSuportePrf('nao', st)
+    expect(suportePrfLembrado(st)).toBe('nao')
+    lembrarSuportePrf('ok', st)
+    expect(suportePrfLembrado(st)).toBe('ok')
+    lembrarSuportePrf('desconhecido', st)
+    expect(suportePrfLembrado(st)).toBe('desconhecido')
+  })
+
+  it('trata valor corrompido como desconhecido', async () => {
+    const { suportePrfLembrado } = await import('./vault')
+    const st = fakeStore()
+    st.setItem('irpfm2027:prf:v2', 'talvez')
+    expect(suportePrfLembrado(st)).toBe('desconhecido')
+  })
+
+  it('ignora o veredito da v1, que vinha de um diagnóstico defeituoso', async () => {
+    const { suportePrfLembrado } = await import('./vault')
+    const st = fakeStore()
+    st.setItem('irpfm2027:prf:v1', 'nao')
+    expect(suportePrfLembrado(st)).toBe('desconhecido')
+  })
+})

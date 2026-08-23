@@ -249,8 +249,20 @@ export function codigoParaBytes(codigo: string): Uint8Array {
 
 export interface CofreCompleto {
   schemaVersion: 1
+  /**
+   * Identidade do cofre. Dois aparelhos que criaram cofres separados têm DEKs
+   * diferentes: juntar os métodos de desbloqueio deles produziria embrulhos que
+   * não abrem nada. O id é o que permite detectar isso no sync em vez de
+   * corromper o acesso em silêncio. Opcional porque cofres da Fase 0 nasceram
+   * sem ele — `garantirVaultId` preenche na primeira leitura.
+   */
+  vaultId?: string
   wraps: Wrap[]
   cofre: Cofre
+}
+
+export function gerarVaultId(): string {
+  return paraB64(aleatorio(12)).replace(/[+/=]/g, '').slice(0, 16)
 }
 
 /** Cria um cofre novo já com o primeiro método de desbloqueio. */
@@ -262,7 +274,7 @@ export async function criarCofre(
 ): Promise<{ cofre: CofreCompleto; dek: Uint8Array }> {
   const dek = gerarDek()
   const wrap = await novoWrap(dek, primeiro, agora, params)
-  return { cofre: { schemaVersion: 1, wraps: [wrap], cofre: await cifrarCofre(dek, dados) }, dek }
+  return { cofre: { schemaVersion: 1, vaultId: gerarVaultId(), wraps: [wrap], cofre: await cifrarCofre(dek, dados) }, dek }
 }
 
 /** Embrulha a DEK para mais um método. A DEK precisa estar aberta (sessão destravada). */

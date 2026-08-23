@@ -53,32 +53,34 @@ export async function temAutenticadorLocal(): Promise<boolean> {
  * do segredo do PRF. Quando a passkey virar também fator de LOGIN no provedor, o
  * challenge tem de vir do servidor.
  */
-export async function criarPasskey(usuario: { id: string; email: string }): Promise<CredencialCriada> {
+async function registrar(usuario: { id: Uint8Array; nome: string }): Promise<{ cred: PublicKeyCredential; prfAnunciado: boolean }> {
   if (!suportaPasskey()) throw new Error('Este navegador não suporta passkey.')
   const cred = (await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       rp: { name: RP_NOME },
-      user: {
-        id: new TextEncoder().encode(usuario.id),
-        name: usuario.email,
-        displayName: usuario.email,
-      },
+      user: { id: usuario.id as BufferSource, name: usuario.nome, displayName: usuario.nome },
       pubKeyCredParams: [
         { type: 'public-key', alg: -7 }, // ES256
         { type: 'public-key', alg: -257 }, // RS256
       ],
+      // 'required' (credencial descobrível) NÃO é detalhe: no Android o
+      // gerenciador do Google só oferece PRF para credencial descobrível. Testar
+      // com 'discouraged' dava falso negativo — por isso o diagnóstico usa este
+      // mesmo caminho, e não uma variante "mais limpa".
       authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
       timeout: 60_000,
       extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
     },
   })) as PublicKeyCredential | null
   if (!cred) throw new Error('Registro da passkey cancelado.')
-
-  // `enabled` diz se o autenticador topa o PRF. Alguns só devolvem o valor no
-  // get() seguinte — por isso aqui só verificamos a disponibilidade.
   const ext = cred.getClientExtensionResults() as { prf?: { enabled?: boolean } }
-  return { credentialId: paraB64Url(cred.rawId), prfDisponivel: ext.prf?.enabled !== false }
+  return { cred, prfAnunciado: ext.prf?.enabled !== false }
+}
+
+export async function criarPasskey(usuario: { id: string; email: string }): Promise<CredencialCriada> {
+  const { cred, prfAnunciado } = await registrar({ id: new TextEncoder().encode(usuario.id), nome: usuario.email })
+  return { credentialId: paraB64Url(cred.rawId), prfDisponivel: prfAnunciado }
 }
 
 /**
@@ -108,3 +110,57 @@ export async function segredoDaPasskey(credentialId?: string): Promise<{ credent
 
 /** Identificador do wrap desta credencial, no formato usado por `crypto.ts`. */
 export const wrapIdDaPasskey = (credentialId: string) => `passkey:${credentialId}`
+
+// ---------------------------------------------------------------- diagnóstico
+
+/**
+ * Descobre, no aparelho de quem está usando, se a passkey serve para destravar o
+ * cofre. Não adianta consultar tabela de compatibilidade: o suporte a PRF varia
+ * por navegador, por sistema E pelo autenticador — Windows Hello, em especial,
+ * demorou a expor a hmac-secret. Então o app mede em vez de supor.
+ *
+ * O teste roda o MESMO caminho da criação real — mesmo registro, mesmo pedido de
+ * PRF. Uma versão "mais limpa", com credencial não-descobrível, dava falso
+ * negativo no Android, onde o gerenciador do Google só oferece PRF para
+ * credencial descobrível. Como resultado, a credencial de teste fica salva no
+ * gerenciador; o WebAuthn não tem API para apagá-la.
+ */
+export interface Diagnostico {
+  webauthn: boolean
+  plataforma: boolean
+  prf: 'ok' | 'sem-prf' | 'cancelado' | 'indisponivel' | 'erro'
+  detalhe: string
+  ua: string
+}
+
+export async function diagnosticarPasskey(): Promise<Diagnostico> {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const base: Diagnostico = { webauthn: false, plataforma: false, prf: 'indisponivel', detalhe: '', ua }
+
+  if (!suportaPasskey()) {
+    return { ...base, detalhe: 'Este navegador não expõe a API WebAuthn.' }
+  }
+  base.webauthn = true
+  base.plataforma = await temAutenticadorLocal()
+
+  try {
+    // Roda exatamente o caminho real (mesmo registrar + mesmo segredoDaPasskey).
+    // Se divergir daqui, o diagnóstico volta a poder mentir.
+    const { cred, prfAnunciado } = await registrar({
+      id: crypto.getRandomValues(new Uint8Array(16)),
+      nome: 'IRPFM · teste de suporte',
+    })
+    const { segredo } = await segredoDaPasskey(paraB64Url(cred.rawId))
+    if (segredo.length >= 32) {
+      return { ...base, prf: 'ok', detalhe: `PRF devolveu ${segredo.length} bytes.` }
+    }
+    return { ...base, prf: 'sem-prf', detalhe: 'O PRF devolveu menos bytes que o necessário.' }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/não fornece a extensão PRF/i.test(msg)) {
+      return { ...base, prf: 'sem-prf', detalhe: 'Este autenticador não implementa a extensão PRF.' }
+    }
+    if (/NotAllowed/i.test(msg)) return { ...base, prf: 'cancelado', detalhe: 'Cancelado ou tempo esgotado.' }
+    return { ...base, prf: 'erro', detalhe: msg }
+  }
+}

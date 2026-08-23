@@ -5,7 +5,9 @@
 -- mesma chave embrulhada uma vez por método de desbloqueio (passkey, senha,
 -- chave de recuperação, futuramente certificado) — nenhum embrulho abre sozinho.
 --
--- Rodar no SQL Editor do projeto Supabase.
+-- Rodar no SQL Editor do projeto Supabase. É idempotente: rodar de novo não
+-- quebra nada, e a linha `alter table` abaixo acrescenta a coluna `vault_id` em
+-- quem já tinha rodado a primeira versão deste arquivo.
 
 create table if not exists public.vaults (
   user_id    uuid        not null references auth.users on delete cascade,
@@ -13,6 +15,7 @@ create table if not exists public.vaults (
   ciphertext text        not null,          -- base64 do AES-256-GCM
   iv         text        not null,          -- base64
   version    integer     not null default 1,-- controle de conflito otimista
+  vault_id   text,                            -- identidade do cofre (chaves diferentes = cofres diferentes)
   updated_at timestamptz not null default now(),
   primary key (user_id, doc_id)
 );
@@ -29,6 +32,9 @@ create table if not exists public.vault_wraps (
   criado_em   timestamptz not null default now(),
   primary key (user_id, wrap_id)
 );
+
+-- Para quem rodou a versão anterior deste schema, antes de o sync existir:
+alter table public.vaults add column if not exists vault_id text;
 
 alter table public.vaults      enable row level security;
 alter table public.vault_wraps enable row level security;

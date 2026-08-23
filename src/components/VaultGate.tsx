@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { C } from '../theme'
-import { criarCofreLocal, destravarLocal, metodos, lembrarDek } from '../lib/vault'
+import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado } from '../lib/vault'
+import { PasskeyDoctor } from './PasskeyDoctor'
 import { gerarCodigoRecuperacao, type Wrap } from '../lib/crypto'
 import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
 import type { PersistedState } from '../lib/storage'
@@ -93,6 +94,9 @@ export function VaultGate({
   const [guardei, setGuardei] = useState(false)
   const [senha, setSenha] = useState('')
   const [senha2, setSenha2] = useState('')
+  // Se o diagnóstico já reprovou o PRF neste aparelho, a senha sobe para o topo:
+  // insistir em oferecer biometria que não funciona só gera erro na cara do usuário.
+  const [prfSuportado, setPrfSuportado] = useState(() => suportePrfLembrado())
 
   // desbloqueio
   const wraps = modo === 'destravar' ? metodos() : []
@@ -237,20 +241,26 @@ export function VaultGate({
           </p>
         </div>
 
-        {suportaPasskey() ? (
-          <button style={btnPrim} onClick={escolherPasskey} disabled={ocupado}>
-            {ocupado ? 'Aguardando o sensor…' : 'Usar biometria (passkey)'}
-          </button>
+        {prfSuportado === 'nao' ? (
+          <Aviso texto="O teste indicou que a biometria deste aparelho não entrega a chave (sem extensão PRF). Use senha aqui — o cofre é o mesmo, só muda como você o abre." tom="info" />
         ) : (
-          <Aviso texto="Este navegador não suporta passkey — dá para usar senha." tom="info" />
+          suportaPasskey() && (
+            <button style={btnPrim} onClick={escolherPasskey} disabled={ocupado}>
+              {ocupado ? 'Aguardando o sensor…' : 'Usar biometria (passkey)'}
+            </button>
+          )
         )}
+
+        <PasskeyDoctor onResultado={(d) => setPrfSuportado(d.prf === 'ok' ? 'ok' : d.prf === 'sem-prf' ? 'nao' : 'desconhecido')} />
 
         <div style={{ height: 1, background: C.border }} />
 
-        <p style={{ fontSize: 11, color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>ou com senha</p>
+        <p style={{ fontSize: 11, color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>
+          {prfSuportado === 'nao' ? 'com senha' : 'ou com senha'}
+        </p>
         <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Senha (mín. 8 caracteres)" style={inp} />
         <input type="password" value={senha2} onChange={(e) => setSenha2(e.target.value)} placeholder="Repita a senha" style={inp} />
-        <button style={btn} onClick={escolherSenha} disabled={ocupado || !senha}>Continuar com senha</button>
+        <button style={prfSuportado === 'nao' ? btnPrim : btn} onClick={escolherSenha} disabled={ocupado || !senha}>Continuar com senha</button>
 
         {erro && <Aviso texto={erro} tom="erro" />}
         {onCancelar && (
