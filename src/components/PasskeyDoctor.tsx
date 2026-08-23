@@ -73,8 +73,9 @@ export function PasskeyDoctor({ onResultado }: { onResultado?: (d: Diagnostico) 
           {veredito && <div style={{ fontSize: 12.5, color: veredito.cor, lineHeight: 1.5 }}>{veredito.txt}</div>}
           {d.detalhe && <div style={{ fontSize: 11, color: C.textMut }}>{d.detalhe}</div>}
           <div style={{ fontSize: 11, color: C.textMut, lineHeight: 1.5 }}>
-            O teste registra uma credencial descartável chamada "IRPFM · teste de suporte". O WebAuthn não permite
-            apagá-la por código — se ela aparecer no seu gerenciador de senhas, remova por lá.
+            O teste registra uma passkey chamada "IRPFM · teste de suporte" e ela fica salva no seu gerenciador —
+            é o mesmo tipo de credencial que o cofre usa, e testar com outro tipo daria resposta errada. O WebAuthn
+            não permite apagá-la por código: remova pelo gerenciador quando quiser.
           </div>
         </>
       )}
