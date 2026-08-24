@@ -49,11 +49,38 @@ export interface Posicao {
   tipoCarteira: string // classe sugerida p/ a Carteira de renda fixa
 }
 
+/**
+ * Uma linha de "Pagamentos e Doações Efetuados" (Registro 26).
+ *
+ * Layout conferido posição a posição em três arquivos reais (anos-base 2020,
+ * 2023 e 2025), como foi feito com o Registro 27 — não em documentação:
+ *
+ *   26 | CPF (3–13) | código (14–15) | CNPJ/CPF do beneficiário (16–34)
+ *      | nome (35–105) | valor pago (106–118) | parcela não dedutível (119–131)
+ *
+ * O valor começa na posição 106 nos três anos, apesar de o comprimento da linha
+ * ter mudado de 156 para 671 caracteres no período.
+ */
+export interface Pagamento {
+  linha: number
+  /** Código do pagamento na tabela da Receita (2 dígitos). */
+  codigo: string
+  /** A quem se pagou — é o nome que diz se foi plano de saúde ou previdência. */
+  beneficiario: string
+  /** CNPJ ou CPF de quem recebeu, sem zeros à esquerda. */
+  documento: string
+  valor: number
+  /** Parcela não dedutível / reembolsada, quando informada. */
+  naoDedutivel: number
+  bruta: string
+}
+
 export interface DecResult {
   ano: string | null
   registros: DecRegistro[]
   lancamentos: Lancamento[]
   posicoes: Posicao[]
+  pagamentos: Pagamento[]
   ndep: number
   linhas: string[]
   totalLinhas: number
@@ -138,6 +165,7 @@ export function parseDec(text: string): DecResult {
   const tipos = new Map<string, { count: number; amostra: string }>()
   const lancamentos: Lancamento[] = []
   const posicoes: Posicao[] = []
+  const pagamentos: Pagamento[] = []
   let ndep = 0
 
   linhas.forEach((l, i) => {
@@ -201,6 +229,24 @@ export function parseDec(text: string): DecResult {
     // valor), ancorando em "CNPJ(14) + nome(texto) + valor(13)". O formato
     // compacto SEM nome NÃO é lido: sem o nome/âncora não dá pra saber a posição
     // do valor com segurança, e chutar gerava valores absurdos (bilhões).
+    if (tipo === '26') {
+      const valor = num(l, 106, 118)
+      const beneficiario = slice1(l, 35, 105).trim()
+      // Linha sem valor e sem nome é preenchimento vazio do programa.
+      if (valor > 0 || beneficiario) {
+        pagamentos.push({
+          linha: i + 1,
+          codigo: slice1(l, 14, 15).trim(),
+          beneficiario,
+          documento: slice1(l, 16, 34).replace(/\D/g, '').replace(/^0+/, ''),
+          valor,
+          naoDedutivel: num(l, 119, 131),
+          bruta: l,
+        })
+      }
+      return
+    }
+
     if (tipo === '24') {
       let achou = false
       let m: RegExpExecArray | null
@@ -229,5 +275,5 @@ export function parseDec(text: string): DecResult {
     .map(([tipo, v]) => ({ tipo, count: v.count, amostra: v.amostra }))
     .sort((a, b) => b.count - a.count)
 
-  return { ano, registros, lancamentos, posicoes, ndep, linhas, totalLinhas: linhas.length }
+  return { ano, registros, lancamentos, posicoes, pagamentos, ndep, linhas, totalLinhas: linhas.length }
 }

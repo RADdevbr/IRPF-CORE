@@ -30,7 +30,7 @@ export interface EntradaAno {
    * preenchimento rápido só sobrescreve o que ele mesmo escreveu — número
    * digitado à mão nunca é apagado por uma estimativa.
    */
-  estimado?: boolean
+  estimado?: boolean | { despesas?: boolean; dividas?: boolean }
   /** Dívidas e ônus no fim do ano (financiamentos, empréstimos a pagar). */
   dividas?: number
   /** Venda de bens, empréstimos tomados, doações e heranças recebidas, resgates. */
@@ -42,6 +42,49 @@ export interface EntradaAno {
 }
 
 export type Entradas = Record<string, EntradaAno> // chave: anoBase
+
+export type CampoEstimavel = 'despesas' | 'dividas'
+
+/**
+ * Aquele campo daquele ano veio de estimativa?
+ *
+ * Aceita o formato antigo (`estimado: true` valendo para o ano inteiro) porque
+ * estado já gravado não se joga fora. A marca virou por campo pelo motivo que
+ * apareceu no uso: quem ajustava o custo de vida de um ano perdia o ajuste no
+ * preenchimento rápido seguinte, porque o ano continuava marcado como chute.
+ */
+export function foiEstimado(e: EntradaAno | undefined, campo: CampoEstimavel): boolean {
+  if (!e || e.estimado === undefined) return false
+  if (typeof e.estimado === 'boolean') return e.estimado
+  return e.estimado[campo] === true
+}
+
+const comMarca = (e: EntradaAno, campo: CampoEstimavel, valor: boolean): EntradaAno => {
+  const atual: { despesas?: boolean; dividas?: boolean } =
+    typeof e.estimado === 'boolean' ? { despesas: e.estimado, dividas: e.estimado } : { ...(e.estimado ?? {}) }
+  atual[campo] = valor
+  return { ...e, estimado: atual }
+}
+
+/**
+ * Valor digitado à mão para um ano — e a marca de estimativa daquele campo cai.
+ *
+ * É o que garante o ajuste ano a ano: variação de custo de vida entre anos é a
+ * regra, não a exceção, e o número que a pessoa digitou tem de sobreviver ao
+ * próximo preenchimento rápido.
+ */
+export function definirCampo(
+  entradas: Entradas,
+  ano: number,
+  campo: 'despesas' | 'dividas' | 'receitasNaoRecorrentes',
+  valor: number,
+): Entradas {
+  const chave = String(ano)
+  const atual = entradas[chave] ?? {}
+  const base: EntradaAno =
+    campo === 'receitasNaoRecorrentes' ? { ...atual } : comMarca(atual, campo, false)
+  return { ...entradas, [chave]: { ...base, [campo]: valor } }
+}
 
 export type Classificacao = 'compatível' | 'atenção' | 'inconsistência relevante'
 
@@ -69,6 +112,14 @@ export interface AnoAnalisado {
   /** Não dá para afirmar nada sem custo de vida informado. */
   semDespesas: boolean
   semDividas: boolean
+  /**
+   * Pagamentos que a própria declaração informa (plano de saúde, previdência,
+   * instrução…). É despesa REAL, saída do bolso que não virou patrimônio — e a
+   * única parte do custo de vida que não precisa de chute.
+   */
+  pagamentosDeclarados: number
+  /** Cada linha, para a pessoa reconhecer pelo nome de quem recebeu. */
+  pagamentos: { codigo: string; beneficiario: string; valor: number }[]
 }
 
 export interface Consolidado {
@@ -83,9 +134,30 @@ export interface Consolidado {
   /** Sobra acumulada dos anos anteriores que poderia cobrir o buraco. */
   folgaAcumuladaCobre: boolean
   /** Buracos na série: o patrimônio final de um ano não é o inicial do seguinte. */
-  descontinuidades: { de: number; para: number; diferenca: number }[]
+  descontinuidades: Descontinuidade[]
   /** O que falta informar para a conta valer alguma coisa. */
   faltando: string[]
+}
+
+/** Um bem e quanto ELE contribuiu para o degrau entre dois anos. */
+export interface ItemDegrau {
+  id: string
+  descricao: string
+  /** Positivo: entrou saldo que o ano anterior não tinha. Negativo: sumiu. */
+  diferenca: number
+  motivo: 'apareceu' | 'sumiu' | 'saldo-nao-bate'
+  /** O que o ano seguinte diz que era o saldo anterior deste bem. */
+  declarado: number
+  /** O que o ano anterior fechou para o mesmo bem. */
+  fechado: number
+}
+
+export interface Descontinuidade {
+  de: number
+  para: number
+  diferenca: number
+  /** Quem causou, do maior para o menor em valor absoluto. */
+  itens: ItemDegrau[]
 }
 
 /**
@@ -94,6 +166,15 @@ export interface Consolidado {
  * diferença é arredondamento de classificação, não sinal de nada.
  */
 export const PISO_RELEVANCIA = 50_000
+
+/**
+ * Abaixo de um real, não é diferença.
+ *
+ * A soma de dezenas de saldos em ponto flutuante não fecha exatamente: quem
+ * informa a entrada que cobre o buraco na vírgula acabava vendo "R$ 0,00 sem
+ * cobertura" classificado como atenção — alarme sobre nada.
+ */
+const FOLGA = 1
 
 /** Acima disto a insuficiência deixa de ser ruído, se passar do piso. */
 export const PROPORCAO_RELEVANTE = 0.2
@@ -129,18 +210,102 @@ export function aplicarEstimativa(
     const chave = String(ano)
     const atual = saida[chave] ?? {}
     // só mexe onde está vazio ou onde a estimativa anterior escreveu
-    const podeEscrever = (v: number | undefined) => v === undefined || v === 0 || atual.estimado === true
-    const novo: EntradaAno = { ...atual }
+    const podeEscrever = (v: number | undefined, campo: CampoEstimavel) =>
+      v === undefined || v === 0 || foiEstimado(atual, campo)
+    let novo: EntradaAno = { ...atual }
     let mexeu = false
-    if (valores.despesas !== undefined && podeEscrever(atual.despesas)) {
-      novo.despesas = valores.despesas
+    if (valores.despesas !== undefined && podeEscrever(atual.despesas, 'despesas')) {
+      novo = comMarca({ ...novo, despesas: valores.despesas }, 'despesas', true)
       mexeu = true
     }
-    if (valores.dividas !== undefined && podeEscrever(atual.dividas)) {
-      novo.dividas = valores.dividas
+    if (valores.dividas !== undefined && podeEscrever(atual.dividas, 'dividas')) {
+      novo = comMarca({ ...novo, dividas: valores.dividas }, 'dividas', true)
       mexeu = true
     }
-    if (mexeu) saida[chave] = { ...novo, estimado: true }
+    if (mexeu) saida[chave] = novo
+  }
+  return saida
+}
+
+/**
+ * Quem causou o degrau, bem a bem.
+ *
+ * Cada bem do Registro 27 declara o próprio saldo do ano anterior, e os anos
+ * estão ligados pelo id (inclusive pelas ligações automáticas). Então dá para
+ * abrir o total em parcelas em vez de deixar a pessoa procurando no escuro:
+ *
+ *   · o bem existe nos dois anos e os saldos não batem → restatement, correção;
+ *   · o bem só aparece no ano novo, já com saldo anterior → veio de fora, ou
+ *     estava faltando na declaração passada;
+ *   · o bem sumiu → foi vendido ou resgatado, e o saldo dele saiu da série.
+ *
+ * A soma das parcelas é EXATAMENTE o degrau — é a mesma subtração, reagrupada.
+ */
+export function culpados(
+  anterior: { posicoes: { id: string; descricao: string; saldoAtual: number }[] },
+  atual: { posicoes: { id: string; descricao: string; saldoAnterior: number }[] },
+): ItemDegrau[] {
+  const fechadoPorId = new Map<string, { descricao: string; saldo: number }>()
+  for (const p of anterior.posicoes) {
+    const ja = fechadoPorId.get(p.id)
+    fechadoPorId.set(p.id, { descricao: p.descricao, saldo: (ja?.saldo ?? 0) + p.saldoAtual })
+  }
+
+  const itens: ItemDegrau[] = []
+  const vistos = new Set<string>()
+
+  for (const p of atual.posicoes) {
+    const antes = fechadoPorId.get(p.id)
+    vistos.add(p.id)
+    const fechado = antes?.saldo ?? 0
+    const dif = p.saldoAnterior - fechado
+    if (Math.abs(dif) <= 0.005) continue
+    itens.push({
+      id: p.id,
+      descricao: p.descricao,
+      diferenca: dif,
+      motivo: antes ? 'saldo-nao-bate' : 'apareceu',
+      declarado: p.saldoAnterior,
+      fechado,
+    })
+  }
+
+  for (const [id, antes] of fechadoPorId) {
+    if (vistos.has(id) || Math.abs(antes.saldo) <= 0.005) continue
+    itens.push({
+      id,
+      descricao: antes.descricao,
+      diferenca: -antes.saldo,
+      motivo: 'sumiu',
+      declarado: 0,
+      fechado: antes.saldo,
+    })
+  }
+
+  return itens.sort((a, b) => Math.abs(b.diferenca) - Math.abs(a.diferenca))
+}
+
+/**
+ * Leva os pagamentos declarados para o campo de despesas.
+ *
+ * Não marca como estimativa: o número veio do arquivo, não de chute — e marcar
+ * deixaria o preenchimento rápido apagá-lo depois. Mas é PISO, não o custo de
+ * vida inteiro: a tela diz isso, e o resto se soma por cima.
+ *
+ * Só escreve onde está vazio ou onde a estimativa escreveu. Número digitado à
+ * mão continua sendo o da pessoa.
+ */
+export function usarPagamentosComoDespesa(
+  entradas: Entradas,
+  anos: { anoBase: number; pagamentosDeclarados: number }[],
+): Entradas {
+  let saida = entradas
+  for (const a of anos) {
+    if (a.pagamentosDeclarados <= 0) continue
+    const atual = saida[String(a.anoBase)] ?? {}
+    const vazio = atual.despesas === undefined || atual.despesas === 0
+    if (!vazio && !foiEstimado(atual, 'despesas')) continue
+    saida = definirCampo(saida, a.anoBase, 'despesas', a.pagamentosDeclarados)
   }
   return saida
 }
@@ -175,7 +340,8 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     const necessidade = evolucao + despesas
 
     const saldo = fontes - necessidade
-    const descoberto = Math.max(0, -saldo)
+    const bruto = Math.max(0, -saldo)
+    const descoberto = bruto < FOLGA ? 0 : bruto
 
     anos.push({
       anoBase: d.anoBase,
@@ -197,20 +363,32 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       classificacao: classificar(descoberto, fontes),
       semAnoAnterior: !anterior,
       semDespesas: !(e.despesas && e.despesas > 0),
+      pagamentosDeclarados: (d.pagamentos ?? []).reduce((soma, p) => soma + p.valor, 0),
+      pagamentos: (d.pagamentos ?? [])
+        .filter((p) => p.valor > 0)
+        .map((p) => ({ codigo: p.codigo, beneficiario: p.beneficiario, valor: p.valor }))
+        .sort((a, b) => b.valor - a.valor),
       semDividas: e.dividas === undefined,
     })
   }
 
   // Continuidade: o patrimônio final de um ano tem de ser o inicial do seguinte.
   // Quando não é, ou falta um ano no meio, ou algum bem entrou/saiu sem registro.
-  const descontinuidades: Consolidado['descontinuidades'] = []
+  const descontinuidades: Descontinuidade[] = []
   for (let i = 1; i < decs.length; i++) {
     const anterior = decs[i - 1]
     const atual = decs[i]
     if (atual.anoBase - anterior.anoBase !== 1) continue
     const declarado = atual.posicoes.reduce((s, p) => s + p.saldoAnterior, 0)
     const dif = declarado - anterior.patrimonio
-    if (Math.abs(dif) > 1) descontinuidades.push({ de: anterior.anoBase, para: atual.anoBase, diferenca: dif })
+    if (Math.abs(dif) > 1) {
+      descontinuidades.push({
+        de: anterior.anoBase,
+        para: atual.anoBase,
+        diferenca: dif,
+        itens: culpados(anterior, atual),
+      })
+    }
   }
 
   const comDescoberto = anos.filter((a) => a.descoberto > 0)
@@ -229,7 +407,14 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
   }
 
   const faltando: string[] = []
-  if (anos.some((a) => a.semDespesas)) faltando.push('custo de vida anual (sem ele, a conta fica otimista demais)')
+  const comPagamentos = anos.filter((a) => a.pagamentosDeclarados > 0)
+  if (anos.some((a) => a.semDespesas)) {
+    faltando.push(
+      comPagamentos.length > 0
+        ? 'o resto do custo de vida — a declaração já informa os pagamentos dedutíveis, mas mercado, moradia e viagem não estão nela'
+        : 'custo de vida anual (sem ele, a conta fica otimista demais)',
+    )
+  }
   if (anos.some((a) => a.semDividas)) faltando.push('dívidas e ônus por ano — o .DEC lido aqui não traz essa parte')
   if (comDescoberto.length > 0) {
     faltando.push('comprovantes de venda de bens, empréstimos, doações ou heranças no ano com diferença')

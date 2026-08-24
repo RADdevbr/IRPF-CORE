@@ -26,6 +26,7 @@ const dec = (ano: string, posicoes: Posicao[]): DecResult => ({
   registros: [],
   lancamentos: [],
   posicoes,
+  pagamentos: [],
   ndep: 0,
   linhas: [],
   totalLinhas: 0,
