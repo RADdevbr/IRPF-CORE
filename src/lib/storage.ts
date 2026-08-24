@@ -7,6 +7,7 @@ import type { YtdConfig, DivGrid } from '../calc/ytd'
 import type { Carteira } from '../calc/rendafixa'
 import type { HoldingConfig } from '../calc/holding'
 import type { Historico, Overrides, Aportes, Vinculos } from './historico'
+import type { Entradas } from './consistencia'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -38,6 +39,8 @@ export interface PersistedState {
   vinculos?: Vinculos
   /** Ligação automática entre anos. Ausente = ligada (é o padrão útil). */
   autoLigar?: boolean
+  /** O que só a pessoa sabe, por ano: dívidas, entradas não recorrentes, gastos. */
+  consistencia?: Entradas
 }
 
 export interface NamedScenario {
