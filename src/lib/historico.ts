@@ -358,7 +358,10 @@ export function normalizaHistorico(h: Historico | undefined | null): Historico {
     saida[ano] = {
       ...d,
       posicoes,
-      pagamentos: Array.isArray(d.pagamentos) ? d.pagamentos : [],
+      // undefined de propósito quando não existe: distingue "declaração sem
+      // pagamentos" de "importada antes de o app saber ler pagamentos" — só
+      // assim a tela pode pedir a reimportação em vez de mostrar um vazio mudo
+      pagamentos: Array.isArray(d.pagamentos) ? d.pagamentos : undefined,
       diagnostico: d.diagnostico ?? { ...DIAGNOSTICO_VAZIO, posicoes: posicoes.length },
     }
   }

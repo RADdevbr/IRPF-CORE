@@ -120,6 +120,14 @@ export interface AnoAnalisado {
   pagamentosDeclarados: number
   /** Cada linha, para a pessoa reconhecer pelo nome de quem recebeu. */
   pagamentos: { codigo: string; beneficiario: string; valor: number }[]
+  /**
+   * Este ano foi importado antes de o app saber ler pagamentos.
+   *
+   * Não é o mesmo que "não pagou nada": o arquivo pode ter, e o histórico salvo
+   * simplesmente não guardou. Sem esta distinção a tela ficava muda e a pessoa
+   * ia procurar um bloco que nunca ia aparecer.
+   */
+  importadoSemPagamentos: boolean
 }
 
 export interface Consolidado {
@@ -363,6 +371,7 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       classificacao: classificar(descoberto, fontes),
       semAnoAnterior: !anterior,
       semDespesas: !(e.despesas && e.despesas > 0),
+      importadoSemPagamentos: d.pagamentos === undefined,
       pagamentosDeclarados: (d.pagamentos ?? []).reduce((soma, p) => soma + p.valor, 0),
       pagamentos: (d.pagamentos ?? [])
         .filter((p) => p.valor > 0)
@@ -408,6 +417,12 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
 
   const faltando: string[] = []
   const comPagamentos = anos.filter((a) => a.pagamentosDeclarados > 0)
+  const desatualizados = anos.filter((a) => a.importadoSemPagamentos)
+  if (desatualizados.length > 0) {
+    faltando.push(
+      `reimportar o .DEC de ${desatualizados.map((a) => a.anoBase).join(', ')} — esses anos foram lidos antes de o app extrair os pagamentos (plano de saúde, previdência)`,
+    )
+  }
   if (anos.some((a) => a.semDespesas)) {
     faltando.push(
       comPagamentos.length > 0
