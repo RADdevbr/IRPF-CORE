@@ -149,4 +149,13 @@ describe('cofres criados separadamente', () => {
     expect(estado().wraps.map((w) => w.wrapId).sort()).toEqual(['passkey:windows', 'recuperacao'])
     expect(estado().doc?.vaultId).toBe('MEU')
   })
+
+  it('conta vazia diz o que fazer, não só que não há nada', async () => {
+    const r = servidorFalso().r
+    const res = await sincronizar(r, null, LIMPO)
+    expect(res.acao).toBe('nada')
+    // quem lê isto é alguém no aparelho novo esperando os dados do outro
+    expect(res.mensagem).toMatch(/aparelho onde estão os dados/)
+    expect(res.mensagem).toMatch(/Sincronizar agora/)
+  })
 })

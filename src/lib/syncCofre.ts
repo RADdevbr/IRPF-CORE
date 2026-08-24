@@ -34,8 +34,17 @@ export async function sincronizar(
 ): Promise<ResultadoSync> {
   const doc = await r.lerDoc(docId)
 
+  // Nem aqui nem na conta. Quem chega por este caminho quase sempre é alguém no
+  // aparelho NOVO esperando os dados do outro: dizer só "nada para sincronizar"
+  // deixa a pessoa achando que perdeu tudo, quando o que falta é um passo no
+  // aparelho onde os dados estão.
   if (!local && !doc) {
-    return { acao: 'nada', estado: SEM_MUDANCA, mensagem: 'Nada para sincronizar ainda.' }
+    return {
+      acao: 'nada',
+      estado: SEM_MUDANCA,
+      mensagem:
+        'Sua conta ainda não tem cofre. No aparelho onde estão os dados, abra Conta e clique em "Sincronizar agora" — depois volte aqui.',
+    }
   }
 
   // Aparelho novo: não há nada local para conflitar, então é só trazer.
