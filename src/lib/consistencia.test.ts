@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { analisarConsistencia, aplicarEstimativa, PISO_RELEVANCIA, type Entradas } from './consistencia'
+import {
+  analisarConsistencia,
+  aplicarEstimativa,
+  definirCampo,
+  foiEstimado,
+  culpados,
+  PISO_RELEVANCIA,
+  type Entradas,
+} from './consistencia'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
 import type { DecResult, Lancamento, Posicao } from './decParser'
 
@@ -206,14 +214,14 @@ describe('preenchimento rápido', () => {
     const r = aplicarEstimativa({}, [2022, 2023, 2024], { despesas: 180_000 })
     expect(r['2022'].despesas).toBe(180_000)
     expect(r['2024'].despesas).toBe(180_000)
-    expect(r['2023'].estimado).toBe(true)
+    expect(foiEstimado(r['2023'], 'despesas')).toBe(true)
   })
 
   it('não pisa no que foi digitado à mão', () => {
     const mao: Entradas = { 2023: { despesas: 250_000 } }
     const r = aplicarEstimativa(mao, [2022, 2023], { despesas: 180_000 })
     expect(r['2023'].despesas).toBe(250_000) // o número conferido fica
-    expect(r['2023'].estimado).toBeUndefined()
+    expect(foiEstimado(r['2023'], 'despesas')).toBe(false)
     expect(r['2022'].despesas).toBe(180_000)
   })
 
@@ -239,5 +247,134 @@ describe('preenchimento rápido', () => {
     const a = analisarConsistencia(h, entradas).anos.find((x) => x.anoBase === 2024)!
     expect(a.descoberto).toBe(150_000)
     expect(a.semDespesas).toBe(false)
+  })
+})
+
+describe('de quem é o degrau', () => {
+  const antes = (bens: [string, number][]) => ({
+    posicoes: bens.map(([descricao, saldoAtual]) => ({ id: descricao, descricao, saldoAtual })),
+  })
+  const depois = (bens: [string, number][]) => ({
+    posicoes: bens.map(([descricao, saldoAnterior]) => ({ id: descricao, descricao, saldoAnterior })),
+  })
+
+  it('série contínua não tem culpado nenhum', () => {
+    expect(culpados(antes([['CDB', 100], ['IMOVEL', 500]]), depois([['CDB', 100], ['IMOVEL', 500]]))).toEqual([])
+  })
+
+  it('acha o bem cujo saldo anterior foi corrigido', () => {
+    const itens = culpados(antes([['CDB', 100_000], ['IMOVEL', 500_000]]), depois([['CDB', 101_626.85], ['IMOVEL', 500_000]]))
+    expect(itens).toHaveLength(1)
+    expect(itens[0]).toMatchObject({ descricao: 'CDB', motivo: 'saldo-nao-bate' })
+    expect(itens[0].diferenca).toBeCloseTo(1_626.85, 6)
+  })
+
+  it('bem que aparece já com saldo anterior é apontado como tal', () => {
+    const itens = culpados(antes([['CDB', 100]]), depois([['CDB', 100], ['FUNDO NOVO', 36_841.86]]))
+    expect(itens).toHaveLength(1)
+    expect(itens[0]).toMatchObject({ descricao: 'FUNDO NOVO', motivo: 'apareceu', diferenca: 36_841.86 })
+  })
+
+  it('bem que sumiu leva o saldo dele embora, com sinal negativo', () => {
+    const itens = culpados(antes([['CDB', 100], ['RESGATADO', 36_841.86]]), depois([['CDB', 100]]))
+    expect(itens).toHaveLength(1)
+    expect(itens[0]).toMatchObject({ descricao: 'RESGATADO', motivo: 'sumiu', diferenca: -36_841.86 })
+  })
+
+  it('a soma das parcelas é exatamente o degrau — é a mesma subtração, reagrupada', () => {
+    const a = antes([['CDB', 100_000], ['ACOES', 50_000], ['VENDIDO', 30_000]])
+    const b = depois([['CDB', 101_000], ['ACOES', 50_000], ['NOVO', 7_000]])
+    const degrau = b.posicoes.reduce((s, p) => s + p.saldoAnterior, 0) - a.posicoes.reduce((s, p) => s + p.saldoAtual, 0)
+    const soma = culpados(a, b).reduce((s, i) => s + i.diferenca, 0)
+    expect(soma).toBeCloseTo(degrau, 6)
+  })
+
+  it('ordena pelo tamanho, não pelo sinal — o maior culpado vem primeiro', () => {
+    const itens = culpados(antes([['A', 1_000], ['B', 40_000]]), depois([['A', 3_000], ['B', 100]]))
+    expect(itens.map((i) => i.descricao)).toEqual(['B', 'A'])
+  })
+
+  it('centavos de arredondamento não viram culpado', () => {
+    expect(culpados(antes([['CDB', 100]]), depois([['CDB', 100.004]]))).toEqual([])
+  })
+
+  it('a análise entrega o degrau já com os culpados dentro', () => {
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2025', rendas: [], bens: [pos('CDB', 1_500_000, 1_000_000), pos('HERANCA', 400_000, 400_000)] },
+    )
+    const d = analisarConsistencia(h).descontinuidades[0]
+    expect(d.diferenca).toBe(400_000)
+    expect(d.itens).toHaveLength(1)
+    expect(d.itens[0]).toMatchObject({ motivo: 'apareceu', diferenca: 400_000 })
+    expect(d.itens[0].descricao).toMatch(/HERANCA/)
+  })
+})
+
+describe('estimativa por campo e ajuste por ano', () => {
+  it('digitar o valor de um ano tira a marca de estimado daquele campo', () => {
+    const comChute = aplicarEstimativa({}, [2023, 2024], { despesas: 120_000 })
+    expect(foiEstimado(comChute['2024'], 'despesas')).toBe(true)
+    const ajustado = definirCampo(comChute, 2024, 'despesas', 200_000)
+    expect(foiEstimado(ajustado['2024'], 'despesas')).toBe(false)
+    expect(foiEstimado(ajustado['2023'], 'despesas')).toBe(true) // o outro ano continua chute
+  })
+
+  it('e o preenchimento rápido seguinte não pisa mais nesse ano', () => {
+    // era o caso que quebrava: ajustava um ano, mexia no chute e perdia o ajuste
+    let e = aplicarEstimativa({}, [2023, 2024], { despesas: 120_000 })
+    e = definirCampo(e, 2024, 'despesas', 200_000)
+    e = aplicarEstimativa(e, [2023, 2024], { despesas: 90_000 })
+    expect(e['2024'].despesas).toBe(200_000)
+    expect(e['2023'].despesas).toBe(90_000)
+  })
+
+  it('ajustar o custo de vida não solta a dívida estimada do mesmo ano', () => {
+    let e = aplicarEstimativa({}, [2024], { despesas: 120_000, dividas: 50_000 })
+    e = definirCampo(e, 2024, 'despesas', 200_000)
+    expect(foiEstimado(e['2024'], 'dividas')).toBe(true)
+    e = aplicarEstimativa(e, [2024], { dividas: 70_000 })
+    expect(e['2024'].dividas).toBe(70_000)
+    expect(e['2024'].despesas).toBe(200_000)
+  })
+
+  it('estado antigo, com a marca valendo para o ano inteiro, continua sendo lido', () => {
+    const antigo: Entradas = { 2024: { despesas: 100, dividas: 200, estimado: true } }
+    expect(foiEstimado(antigo['2024'], 'despesas')).toBe(true)
+    expect(foiEstimado(antigo['2024'], 'dividas')).toBe(true)
+    const ajustado = definirCampo(antigo, 2024, 'despesas', 300)
+    expect(foiEstimado(ajustado['2024'], 'despesas')).toBe(false)
+    expect(foiEstimado(ajustado['2024'], 'dividas')).toBe(true)
+  })
+
+  it('receita não recorrente é sempre da pessoa — não tem marca de chute', () => {
+    const e = definirCampo({}, 2024, 'receitasNaoRecorrentes', 500_000)
+    expect(e['2024'].receitasNaoRecorrentes).toBe(500_000)
+    expect(e['2024'].estimado).toBeUndefined()
+  })
+})
+
+describe('ruído não é diferença', () => {
+  it('diferença de centavos não vira alerta', () => {
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2025', rendas: [lanc('cdb', 300_000)], bens: [pos('CDB', 1_300_000.004, 1_000_000)] },
+    )
+    const a = analisarConsistencia(h).anos.find((x) => x.anoBase === 2024)!
+    expect(a.descoberto).toBe(0)
+    expect(a.classificacao).toBe('compatível')
+  })
+
+  it('informar exatamente o que faltava fecha a conta, sem sobrar ruído', () => {
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_150_000)] },
+      { exercicio: '2025', rendas: [lanc('cdb', 200_000)], bens: [pos('CDB', 1_750_000, 1_150_000), pos('HERANCA', 36_841.86, 36_841.86)] },
+    )
+    const antes = analisarConsistencia(h).anos.find((x) => x.anoBase === 2024)!
+    const depois = analisarConsistencia(h, { 2024: { receitasNaoRecorrentes: antes.descoberto } }).anos.find(
+      (x) => x.anoBase === 2024,
+    )!
+    expect(depois.descoberto).toBe(0)
+    expect(depois.classificacao).toBe('compatível')
   })
 })
