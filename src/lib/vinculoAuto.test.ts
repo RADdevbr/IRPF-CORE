@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { sugerirLigacoes, vinculosAutomaticos, unirVinculos, semelhanca, pontuar, LIMIAR } from './vinculoAuto'
+import {
+  sugerirLigacoes,
+  vinculosAutomaticos,
+  unirVinculos,
+  semelhanca,
+  pontuar,
+  cnpjNaDescricao,
+  candidatosPara,
+  LIMIAR,
+} from './vinculoAuto'
 import { montarDeclaracao, upsertDeclaracao, aplicarVinculos, serieDaPosicao, type Historico } from './historico'
 import type { DecResult, Posicao } from './decParser'
 
@@ -187,5 +196,90 @@ describe('mapa de vínculos', () => {
 
   it('histórico de um ano só não tem o que ligar', () => {
     expect(vinculosAutomaticos(historico({ exercicio: '2026', bens: [pos('CDB', 1)] }))).toEqual({})
+  })
+})
+
+describe('CNPJ na descrição', () => {
+  it('acha o CNPJ pontuado no meio do texto', () => {
+    expect(cnpjNaDescricao('FUNDO XPTO FIC FIM CNPJ 36.443.522/0001-05.')).toBe('36443522000105')
+  })
+
+  it('não chuta: catorze dígitos soltos tanto são conta ou contrato quanto CNPJ', () => {
+    expect(cnpjNaDescricao('CONTA 36443522000105')).toBe(null)
+    expect(cnpjNaDescricao('CPF 123.456.789-00')).toBe(null)
+    expect(cnpjNaDescricao('APLICACAO SEM DOCUMENTO')).toBe(null)
+  })
+})
+
+describe('o CNPJ como sinal', () => {
+  it('mesmo CNPJ com o mesmo código fecha, mesmo com o nome trocado', () => {
+    const velha = comAno(pos('FUNDO ALFA CNPJ 36.443.522/0001-05', 100_000), 2023)
+    const nova = comAno(pos('ALFA MULTIMERCADO FIC 36.443.522/0001-05', 130_000), 2025)
+    const r = pontuar(velha, nova)
+    expect(r.pontos).toBeGreaterThanOrEqual(LIMIAR)
+    expect(r.motivos).toContain('mesmo CNPJ na descrição')
+  })
+
+  it('CNPJ diferente derruba: são dois fundos, não um que mudou de nome', () => {
+    const velha = comAno(pos('FUNDO XP MULTIMERCADO 36.443.522/0001-05', 100_000), 2023)
+    const nova = comAno(pos('FUNDO XP MULTIMERCADO 11.222.333/0001-44', 120_000), 2025)
+    const r = pontuar(velha, nova)
+    expect(r.pontos).toBeLessThan(LIMIAR)
+    expect(r.motivos).toContain('CNPJ diferente na descrição')
+  })
+
+  it('o saldo declarado manda: CNPJ diferente não derruba o que o arquivo afirma', () => {
+    // trocou de administrador no meio do caminho, mas o arquivo diz o saldo
+    const velha = comAno(pos('FUNDO ALFA 36.443.522/0001-05', 100_000), 2024)
+    const nova = comAno(pos('FUNDO ALFA 11.222.333/0001-44', 120_000, 100_000), 2025)
+    expect(pontuar(velha, nova).pontos).toBeGreaterThanOrEqual(LIMIAR)
+  })
+})
+
+describe('vetar uma ligação automática', () => {
+  it('a posição vetada não é ligada de novo — desfazer na tela tem de durar', () => {
+    const h = historico(
+      { exercicio: '2025', bens: [pos('CDB BCO X 2027', 400_000)] },
+      { exercicio: '2026', bens: [pos('CERT DEP BANCARIO BANCO X', 480_000, 400_000)] },
+    )
+    const mapa = vinculosAutomaticos(h)
+    const de = Object.keys(mapa)[0]
+    expect(de).toBeTruthy()
+    expect(vinculosAutomaticos(h, {}, [de])).toEqual({})
+    expect(sugerirLigacoes(h, {}, [de])).toEqual([])
+  })
+})
+
+describe('candidatos para uma linha do mapa', () => {
+  const h = () =>
+    historico(
+      { exercicio: '2025', bens: [pos('APLIC ALFA', 100_000), pos('IMOVEL PRAIA', 500_000, 0, '11', '01')] },
+      { exercicio: '2026', bens: [pos('ALFA RENOMEADA', 130_000, 100_000), pos('OUTRA COISA QUALQUER', 9_000)] },
+    )
+
+  it('o bem que o arquivo afirma ser o mesmo vem na frente, com o motivo', () => {
+    const hist = h()
+    const alvo = hist['2025'].posicoes.find((p) => p.descricao === 'ALFA RENOMEADA')!
+    const cs = candidatosPara(hist, alvo, 2025)
+    expect(cs[0].descricao).toBe('APLIC ALFA')
+    expect(cs[0].motivos[0]).toMatch(/saldo anterior/)
+    expect(cs[0].pontos).toBeGreaterThanOrEqual(LIMIAR)
+    // e o imóvel, que não tem nada a ver, fica atrás
+    expect(cs[cs.length - 1].pontos).toBeLessThan(cs[0].pontos)
+  })
+
+  it('quem já está na série aparece marcado, não como sugestão de ligar', () => {
+    const hist = aplicarVinculos(h(), vinculosAutomaticos(h()))
+    const alvo = hist['2025'].posicoes.find((p) => p.descricao === 'ALFA RENOMEADA')!
+    const cs = candidatosPara(hist, alvo, 2025)
+    expect(cs[0].naSerie).toBe(true)
+    expect(cs[0].anoBase).toBe(2024)
+    expect(cs.filter((c) => c.naSerie)).toHaveLength(1)
+  })
+
+  it('não devolve o próprio ano — ligar um bem a outro do mesmo ano não é série', () => {
+    const hist = h()
+    const alvo = hist['2025'].posicoes[0]
+    expect(candidatosPara(hist, alvo, 2025).every((c) => c.anoBase !== 2025)).toBe(true)
   })
 })

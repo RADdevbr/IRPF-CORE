@@ -37,6 +37,8 @@ export interface PersistedState {
   classeOverrides?: Overrides
   aportes?: Aportes
   vinculos?: Vinculos
+  /** Ligações automáticas desfeitas à mão — o app não as refaz. */
+  vetados?: string[]
   /** Ligação automática entre anos. Ausente = ligada (é o padrão útil). */
   autoLigar?: boolean
   /** O que só a pessoa sabe, por ano: dívidas, entradas não recorrentes, gastos. */

@@ -67,6 +67,23 @@ export function semelhanca(a: string, b: string): number {
 
 const REAL = 0.01
 
+/**
+ * CNPJ escrito no meio da descrição do bem.
+ *
+ * O Registro 27 não tem campo de CNPJ: quando existe, ele está no texto livre
+ * que a pessoa (ou o importador do banco) digitou — "FUNDO X CNPJ
+ * 36.443.522/0001-05". Nos arquivos reais isso aparece em cerca de um quarto
+ * dos bens, e é justamente onde o nome varia mais: fundo, previdência, ações.
+ *
+ * Só o formato pontuado conta. Catorze dígitos soltos numa descrição são conta,
+ * contrato ou nº de apólice com a mesma frequência que são CNPJ — e um palpite
+ * errado aqui junta dois bens diferentes.
+ */
+export function cnpjNaDescricao(texto: string): string | null {
+  const m = texto.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/)
+  return m ? m[0].replace(/\D/g, '') : null
+}
+
 interface ComAno extends PosicaoAno {
   anoBase: number
 }
@@ -82,6 +99,23 @@ export function pontuar(velha: ComAno, nova: ComAno): { pontos: number; motivos:
   if (saldoBate) {
     pontos += 6
     motivos.push('o saldo anterior declarado bate com o saldo do ano passado')
+  }
+
+  // CNPJ é o identificador que não depende de como o nome foi digitado. Sozinho
+  // não fecha: o administrador é o mesmo em vários fundos da mesma casa, e dois
+  // fundos diferentes podem trazer o CNPJ da administradora. Com mais um sinal,
+  // fecha.
+  const cnpjV = cnpjNaDescricao(velha.descricao)
+  const cnpjN = cnpjNaDescricao(nova.descricao)
+  if (cnpjV && cnpjN) {
+    if (cnpjV === cnpjN) {
+      pontos += 3
+      motivos.push('mesmo CNPJ na descrição')
+    } else if (!saldoBate) {
+      // CNPJs diferentes com o arquivo calado: são dois bens, não um
+      pontos -= 3
+      motivos.push('CNPJ diferente na descrição')
+    }
   }
 
   const cod = (p: ComAno) => `${(p.codigo ?? '').trim()}·${(p.subcodigo ?? '').trim()}`
@@ -130,7 +164,8 @@ export function pontuar(velha: ComAno, nova: ComAno): { pontos: number; motivos:
  * dois de 2025. Ligações manuais mandam — o que a pessoa disse não se
  * sobrescreve.
  */
-export function sugerirLigacoes(h: Historico, manuais: Vinculos = {}): LigacaoAuto[] {
+export function sugerirLigacoes(h: Historico, manuais: Vinculos = {}, vetados: string[] = []): LigacaoAuto[] {
+  const veto = new Set(vetados)
   const anos = Object.values(h).sort((a, b) => a.anoBase - b.anoBase)
   const ligacoes: LigacaoAuto[] = []
 
@@ -143,7 +178,7 @@ export function sugerirLigacoes(h: Historico, manuais: Vinculos = {}): LigacaoAu
 
     // Quem já cai no mesmo id não precisa de ligação — o casamento por
     // identidade já resolveu. Tirar do bolo também evita roubar um par.
-    const velhas = comAno(velho).filter((p) => !idsNovos.has(p.id) && !manuais[p.id])
+    const velhas = comAno(velho).filter((p) => !idsNovos.has(p.id) && !manuais[p.id] && !veto.has(p.id))
     const candidatas = novas.filter((p) => !velho.posicoes.some((q) => q.id === p.id))
 
     const pares: LigacaoAuto[] = []
@@ -186,9 +221,9 @@ export function sugerirLigacoes(h: Historico, manuais: Vinculos = {}): LigacaoAu
  * chegar pronta apontando tudo para 2025 — senão o bem de 2020 pararia no meio
  * do caminho e a série continuaria partida.
  */
-export function vinculosAutomaticos(h: Historico, manuais: Vinculos = {}): Vinculos {
+export function vinculosAutomaticos(h: Historico, manuais: Vinculos = {}, vetados: string[] = []): Vinculos {
   const direto: Vinculos = {}
-  for (const l of sugerirLigacoes(h, manuais)) direto[l.de] = l.para
+  for (const l of sugerirLigacoes(h, manuais, vetados)) direto[l.de] = l.para
 
   const destinoFinal = (id: string): string => {
     const vistos = new Set<string>([id])
@@ -211,4 +246,61 @@ export function vinculosAutomaticos(h: Historico, manuais: Vinculos = {}): Vincu
 /** Manual manda: o que a pessoa ligou na mão não é sobrescrito. */
 export function unirVinculos(auto: Vinculos, manuais: Vinculos): Vinculos {
   return { ...auto, ...manuais }
+}
+
+export interface Candidato {
+  id: string
+  anoBase: number
+  descricao: string
+  saldoAtual: number
+  saldoAnterior: number
+  pontos: number
+  motivos: string[]
+  /** Já é a mesma posição: está na série deste bem, não é candidata a ligar. */
+  naSerie: boolean
+}
+
+/**
+ * Os bens dos outros anos, ordenados pelo quanto se parecem com este.
+ *
+ * A lista crua de todos os bens de todos os anos é intragável numa declaração
+ * real — são dezenas por ano, e a pessoa tem de achar UM. Aqui a mesma
+ * pontuação que decide a ligação automática serve para pôr na frente o que tem
+ * chance de ser o mesmo bem, com o motivo escrito do lado: saldo de 31/12,
+ * CNPJ, código, nome.
+ *
+ * `h` já vem com os vínculos aplicados, então quem está na série do bem aparece
+ * marcado — é o que faltava para a tela parar de oferecer o que já está ligado.
+ */
+export function candidatosPara(h: Historico, alvo: PosicaoAno, anoBase: number): Candidato[] {
+  const eu: ComAno = { ...alvo, anoBase }
+  const saida: Candidato[] = []
+
+  for (const d of Object.values(h)) {
+    if (d.anoBase === anoBase) continue
+    for (const p of d.posicoes) {
+      const outro: ComAno = { ...p, anoBase: d.anoBase }
+      const naSerie = p.id === alvo.id
+      const { pontos, motivos } = d.anoBase < anoBase ? pontuar(outro, eu) : pontuar(eu, outro)
+      saida.push({
+        id: p.id,
+        anoBase: d.anoBase,
+        descricao: p.descricao,
+        saldoAtual: p.saldoAtual,
+        saldoAnterior: p.saldoAnterior,
+        pontos,
+        motivos,
+        naSerie,
+      })
+    }
+  }
+
+  // Quem já está na série vem primeiro e em ordem de ano: é o histórico do bem,
+  // não uma sugestão. O resto desce pela pontuação, com o ano mais próximo
+  // desempatando — bem do ano vizinho é mais provável que de cinco anos atrás.
+  return saida.sort((a, b) => {
+    if (a.naSerie !== b.naSerie) return a.naSerie ? -1 : 1
+    if (a.naSerie) return a.anoBase - b.anoBase
+    return b.pontos - a.pontos || Math.abs(a.anoBase - anoBase) - Math.abs(b.anoBase - anoBase) || b.saldoAtual - a.saldoAtual
+  })
 }
