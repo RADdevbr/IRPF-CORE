@@ -146,6 +146,17 @@ export function calcSalarioAnual(anual: number, nd: number): SalarioAnual {
   }
 }
 
+/**
+ * Folga contra ruído de ponto flutuante nas buscas (limiar, teto).
+ *
+ * Quem retém exatamente 10% fica com o IRPFM bruto e a dedução colados no teto
+ * da alíquota mínima: em teoria empatam, na prática a subtração devolve algo
+ * como 1e-9. Sem essa folga, esse ruído era lido como "nasceu imposto" e
+ * inventava limiares e tetos que não existem. Um real é irrelevante em imposto
+ * e grande demais para qualquer erro de arredondamento.
+ */
+export const FOLGA_IMPOSTO = 1
+
 // Alíquota mínima progressiva do IRPFM (Art. 16-A): 0 até 600k, rampa linear
 // até 10% em 1,2M, fixa em 10% acima.
 export function aliqMinima(base: number): number {
