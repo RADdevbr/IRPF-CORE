@@ -460,5 +460,16 @@ describe('pagamentos que o próprio arquivo declara', () => {
     const a = analisarConsistencia(h).anos[0]
     expect(a.pagamentosDeclarados).toBe(0)
     expect(a.pagamentos).toEqual([])
+    // e o ano se declara desatualizado, senão a tela mostra um vazio mudo
+    // e o usuário procura pelos pagamentos que nunca foram lidos
+    expect(a.importadoSemPagamentos).toBe(true)
+    expect(analisarConsistencia(h).faltando.join(' ')).toMatch(/reimportar/)
+  })
+
+  it('declaração relida com o app atual não pede reimportação', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB', 100)] })
+    const a = analisarConsistencia(h).anos[0]
+    expect(a.importadoSemPagamentos).toBe(false)
+    expect(analisarConsistencia(h).faltando.join(' ')).not.toMatch(/reimportar/)
   })
 })
