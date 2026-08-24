@@ -36,6 +36,8 @@ export interface PersistedState {
   classeOverrides?: Overrides
   aportes?: Aportes
   vinculos?: Vinculos
+  /** Ligação automática entre anos. Ausente = ligada (é o padrão útil). */
+  autoLigar?: boolean
 }
 
 export interface NamedScenario {

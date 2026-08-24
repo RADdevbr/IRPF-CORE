@@ -3,6 +3,7 @@ import { C } from '../theme'
 import { metodos, adicionarMetodoLocal, removerMetodoLocal, motivoParaNaoRemover, apagarCofre } from '../lib/vault'
 import type { Wrap } from '../lib/crypto'
 import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
+import { rotuloDispositivo } from '../lib/dispositivo'
 
 // Tela A4 dos mocks: os N embrulhos da mesma chave. Cada linha é um caminho de
 // volta independente — e o cofre nunca fica com menos de dois.
@@ -61,7 +62,7 @@ export function UnlockMethods({ dek, onFechar }: { dek: Uint8Array; onFechar: ()
     rodar(async () => {
       const cred = await criarPasskey({ id: 'irpfm-local', email: 'cofre local' })
       const { segredo, credentialId } = await segredoDaPasskey(cred.credentialId)
-      await adicionarMetodoLocal(dek, { wrapId: wrapIdDaPasskey(credentialId), metodo: 'passkey', rotulo: 'Este dispositivo', segredo }, new Date().toISOString())
+      await adicionarMetodoLocal(dek, { wrapId: wrapIdDaPasskey(credentialId), metodo: 'passkey', rotulo: rotuloDispositivo(), segredo }, new Date().toISOString())
       setMsg('Passkey adicionada.')
     })
 

@@ -4,6 +4,7 @@ import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrad
 import { PasskeyDoctor } from './PasskeyDoctor'
 import { gerarCodigoRecuperacao, type Wrap } from '../lib/crypto'
 import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
+import { rotuloDispositivo, deOutroAparelho } from '../lib/dispositivo'
 import type { PersistedState } from '../lib/storage'
 
 // Telas A1–A3 dos mocks: criar o cofre e destravá-lo. O caminho padrão é a
@@ -50,17 +51,6 @@ const painel: React.CSSProperties = {
   maxWidth: 420,
 }
 
-/** Rótulo amigável do aparelho, só para a lista de métodos. */
-function rotuloDispositivo(): string {
-  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
-  if (/iPhone/.test(ua)) return 'iPhone · Face ID'
-  if (/iPad/.test(ua)) return 'iPad · Face ID'
-  if (/Android/.test(ua)) return 'Android · biometria'
-  if (/Macintosh/.test(ua)) return 'Mac · Touch ID'
-  if (/Windows/.test(ua)) return 'Windows Hello'
-  return 'Este dispositivo'
-}
-
 function Aviso({ texto, tom }: { texto: string; tom: 'erro' | 'info' | 'alerta' }) {
   const cor = tom === 'erro' ? C.red : tom === 'info' ? C.blue : C.orange
   const fundo = tom === 'erro' ? '#2a1010' : tom === 'info' ? C.blueDim : C.orangeDim
@@ -104,6 +94,7 @@ export function VaultGate({
   // desbloqueio
   const wraps = modo === 'destravar' ? metodos() : []
   const wrapPasskey = wraps.find((w) => w.metodo === 'passkey')
+  const passkeyDeOutro = deOutroAparelho(wrapPasskey?.rotulo)
   const temSenha = wraps.some((w) => w.metodo === 'senha')
   const [segredoDigitado, setSegredoDigitado] = useState('')
   const [via, setVia] = useState<'senha' | 'recuperacao'>(temSenha ? 'senha' : 'recuperacao')
@@ -207,10 +198,29 @@ export function VaultGate({
           </div>
         )}
 
-        {wrapPasskey && suportaPasskey() && (
+        {/* Passkey de outro aparelho não pode ser o botão principal: ela mora
+            lá, e oferecê-la aqui como caminho de entrada empurra a senha —
+            a única que funciona neste aparelho — para o rodapé. */}
+        {wrapPasskey && suportaPasskey() && !passkeyDeOutro && (
           <button style={btnPrim} onClick={destravarPorPasskey} disabled={ocupado}>
             Destravar com {wrapPasskey.rotulo ?? 'passkey'}
           </button>
+        )}
+        {wrapPasskey && passkeyDeOutro && (
+          <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.textSec, lineHeight: 1.55 }}>
+            Este cofre tem uma passkey cadastrada em <strong>{wrapPasskey.rotulo}</strong> — ela não vem junto, mora
+            naquele aparelho. Aqui, destrave com senha ou chave de recuperação; depois dá para cadastrar uma passkey
+            deste aparelho, em "Cofre".
+            {suportaPasskey() && (
+              <button
+                onClick={destravarPorPasskey}
+                disabled={ocupado}
+                style={{ background: 'none', border: 'none', color: C.textMut, cursor: 'pointer', fontSize: 11.5, textDecoration: 'underline', padding: '4px 0 0' }}
+              >
+                tentar mesmo assim
+              </button>
+            )}
+          </div>
         )}
 
         <div style={{ display: 'flex', gap: 6 }}>
