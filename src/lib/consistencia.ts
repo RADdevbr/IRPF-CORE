@@ -112,6 +112,14 @@ export interface AnoAnalisado {
   /** Não dá para afirmar nada sem custo de vida informado. */
   semDespesas: boolean
   semDividas: boolean
+  /**
+   * Pagamentos que a própria declaração informa (plano de saúde, previdência,
+   * instrução…). É despesa REAL, saída do bolso que não virou patrimônio — e a
+   * única parte do custo de vida que não precisa de chute.
+   */
+  pagamentosDeclarados: number
+  /** Cada linha, para a pessoa reconhecer pelo nome de quem recebeu. */
+  pagamentos: { codigo: string; beneficiario: string; valor: number }[]
 }
 
 export interface Consolidado {
@@ -277,6 +285,31 @@ export function culpados(
   return itens.sort((a, b) => Math.abs(b.diferenca) - Math.abs(a.diferenca))
 }
 
+/**
+ * Leva os pagamentos declarados para o campo de despesas.
+ *
+ * Não marca como estimativa: o número veio do arquivo, não de chute — e marcar
+ * deixaria o preenchimento rápido apagá-lo depois. Mas é PISO, não o custo de
+ * vida inteiro: a tela diz isso, e o resto se soma por cima.
+ *
+ * Só escreve onde está vazio ou onde a estimativa escreveu. Número digitado à
+ * mão continua sendo o da pessoa.
+ */
+export function usarPagamentosComoDespesa(
+  entradas: Entradas,
+  anos: { anoBase: number; pagamentosDeclarados: number }[],
+): Entradas {
+  let saida = entradas
+  for (const a of anos) {
+    if (a.pagamentosDeclarados <= 0) continue
+    const atual = saida[String(a.anoBase)] ?? {}
+    const vazio = atual.despesas === undefined || atual.despesas === 0
+    if (!vazio && !foiEstimado(atual, 'despesas')) continue
+    saida = definirCampo(saida, a.anoBase, 'despesas', a.pagamentosDeclarados)
+  }
+  return saida
+}
+
 export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Consolidado {
   const decs = Object.values(h).sort((a, b) => a.anoBase - b.anoBase)
   const anos: AnoAnalisado[] = []
@@ -330,6 +363,11 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       classificacao: classificar(descoberto, fontes),
       semAnoAnterior: !anterior,
       semDespesas: !(e.despesas && e.despesas > 0),
+      pagamentosDeclarados: (d.pagamentos ?? []).reduce((soma, p) => soma + p.valor, 0),
+      pagamentos: (d.pagamentos ?? [])
+        .filter((p) => p.valor > 0)
+        .map((p) => ({ codigo: p.codigo, beneficiario: p.beneficiario, valor: p.valor }))
+        .sort((a, b) => b.valor - a.valor),
       semDividas: e.dividas === undefined,
     })
   }
@@ -369,7 +407,14 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
   }
 
   const faltando: string[] = []
-  if (anos.some((a) => a.semDespesas)) faltando.push('custo de vida anual (sem ele, a conta fica otimista demais)')
+  const comPagamentos = anos.filter((a) => a.pagamentosDeclarados > 0)
+  if (anos.some((a) => a.semDespesas)) {
+    faltando.push(
+      comPagamentos.length > 0
+        ? 'o resto do custo de vida — a declaração já informa os pagamentos dedutíveis, mas mercado, moradia e viagem não estão nela'
+        : 'custo de vida anual (sem ele, a conta fica otimista demais)',
+    )
+  }
   if (anos.some((a) => a.semDividas)) faltando.push('dívidas e ônus por ano — o .DEC lido aqui não traz essa parte')
   if (comDescoberto.length > 0) {
     faltando.push('comprovantes de venda de bens, empréstimos, doações ou heranças no ano com diferença')

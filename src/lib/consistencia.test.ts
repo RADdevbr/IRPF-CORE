@@ -5,11 +5,22 @@ import {
   definirCampo,
   foiEstimado,
   culpados,
+  usarPagamentosComoDespesa,
   PISO_RELEVANCIA,
   type Entradas,
 } from './consistencia'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
-import type { DecResult, Lancamento, Posicao } from './decParser'
+import type { DecResult, Lancamento, Pagamento, Posicao } from './decParser'
+
+const pag = (codigo: string, beneficiario: string, valor: number): Pagamento => ({
+  linha: 1,
+  codigo,
+  beneficiario,
+  documento: '33719485000127',
+  valor,
+  naoDedutivel: 0,
+  bruta: '26...',
+})
 
 const lanc = (alvo: string, valor: number): Lancamento => ({
   linha: 1,
@@ -34,20 +45,26 @@ const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0): Posicao 
   tipoCarteira: 'cdb',
 })
 
-const dec = (exercicio: string, l: Lancamento[], p: Posicao[]): DecResult => ({
+const dec = (exercicio: string, l: Lancamento[], p: Posicao[], pgs: Pagamento[] = []): DecResult => ({
   ano: exercicio,
   registros: [],
   lancamentos: l,
   posicoes: p,
+  pagamentos: pgs,
   ndep: 0,
   linhas: [],
   totalLinhas: 0,
 })
 
-const historico = (...anos: { exercicio: string; rendas: Lancamento[]; bens: Posicao[] }[]): Historico => {
+const historico = (
+  ...anos: { exercicio: string; rendas: Lancamento[]; bens: Posicao[]; pagamentos?: Pagamento[] }[]
+): Historico => {
   let h: Historico = {}
   for (const a of anos) {
-    h = upsertDeclaracao(h, montarDeclaracao(dec(a.exercicio, a.rendas, a.bens), `${a.exercicio}.DEC`, 'agora')!)
+    h = upsertDeclaracao(
+      h,
+      montarDeclaracao(dec(a.exercicio, a.rendas, a.bens, a.pagamentos), `${a.exercicio}.DEC`, 'agora')!,
+    )
   }
   return h
 }
@@ -376,5 +393,72 @@ describe('ruído não é diferença', () => {
     )!
     expect(depois.descoberto).toBe(0)
     expect(depois.classificacao).toBe('compatível')
+  })
+})
+
+describe('pagamentos que o próprio arquivo declara', () => {
+  const comPagamentos = () =>
+    historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      {
+        exercicio: '2025',
+        rendas: [lanc('cdb', 300_000)],
+        bens: [pos('CDB', 1_200_000, 1_000_000)],
+        pagamentos: [pag('26', 'PLANO DE SAUDE X', 15_247.74), pag('36', 'PREVIDENCIA Y', 28_399.47)],
+      },
+    )
+
+  it('soma o que foi pago e guarda cada linha, da maior para a menor', () => {
+    const a = analisarConsistencia(comPagamentos()).anos.find((x) => x.anoBase === 2024)!
+    expect(a.pagamentosDeclarados).toBeCloseTo(43_647.21, 2)
+    expect(a.pagamentos.map((p) => p.beneficiario)).toEqual(['PREVIDENCIA Y', 'PLANO DE SAUDE X'])
+  })
+
+  it('pagamento declarado não entra sozinho na conta — quem decide é a pessoa', () => {
+    // é despesa real, mas o app não escreve no campo sem que se mande
+    const a = analisarConsistencia(comPagamentos()).anos.find((x) => x.anoBase === 2024)!
+    expect(a.despesas).toBe(0)
+    expect(a.semDespesas).toBe(true)
+  })
+
+  it('mandando usar, vira despesa daquele ano — e não fica marcado como chute', () => {
+    const r = analisarConsistencia(comPagamentos())
+    const e = usarPagamentosComoDespesa({}, r.anos)
+    expect(e['2024'].despesas).toBeCloseTo(43_647.21, 2)
+    expect(foiEstimado(e['2024'], 'despesas')).toBe(false)
+    // e o preenchimento rápido não apaga o que veio do arquivo
+    const depois = aplicarEstimativa(e, [2024], { despesas: 120_000 })
+    expect(depois['2024'].despesas).toBeCloseTo(43_647.21, 2)
+  })
+
+  it('não pisa no número digitado à mão', () => {
+    const r = analisarConsistencia(comPagamentos())
+    const e = usarPagamentosComoDespesa(definirCampo({}, 2024, 'despesas', 200_000), r.anos)
+    expect(e['2024'].despesas).toBe(200_000)
+  })
+
+  it('mas substitui a estimativa, que era chute', () => {
+    const r = analisarConsistencia(comPagamentos())
+    const comChute = aplicarEstimativa({}, [2024], { despesas: 120_000 })
+    const e = usarPagamentosComoDespesa(comChute, r.anos)
+    expect(e['2024'].despesas).toBeCloseTo(43_647.21, 2)
+  })
+
+  it('ano sem pagamento declarado fica como está', () => {
+    expect(usarPagamentosComoDespesa({}, [{ anoBase: 2024, pagamentosDeclarados: 0 }])).toEqual({})
+  })
+
+  it('com pagamentos no arquivo, a lista do que falta pede só o RESTO do custo de vida', () => {
+    const faltando = analisarConsistencia(comPagamentos()).faltando.join(' ')
+    expect(faltando).toMatch(/resto do custo de vida/)
+    expect(faltando).toMatch(/mercado, moradia e viagem/)
+  })
+
+  it('histórico gravado antes desta versão não quebra — só vem sem pagamentos', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB', 100)] })
+    delete (h['2024'] as { pagamentos?: unknown }).pagamentos
+    const a = analisarConsistencia(h).anos[0]
+    expect(a.pagamentosDeclarados).toBe(0)
+    expect(a.pagamentos).toEqual([])
   })
 })

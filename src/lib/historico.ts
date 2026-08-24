@@ -5,7 +5,7 @@
 // cresceu, se a lei nova teria pegado os anos passados, e — o ponto do pedido —
 // QUANTO do patrimônio, se resgatado, joga rendimento na base do IRPFM.
 
-import type { DecResult, Lancamento } from './decParser'
+import type { DecResult, Lancamento, Pagamento } from './decParser'
 import { computeIrpfm } from '../calc/irpfm'
 
 /** O que acontece com a base do IRPFM quando este bem vira dinheiro. */
@@ -42,6 +42,14 @@ export interface Declaracao {
   vals: Record<string, number>
   ndep: number
   posicoes: PosicaoAno[]
+  /**
+   * Pagamentos e doações efetuados (Registro 26) — plano de saúde, previdência,
+   * instrução, e o que mais tiver sido declarado.
+   *
+   * Opcional porque histórico já gravado não tem: quem importou antes continua
+   * abrindo o app, com a lista vazia até reimportar o .DEC.
+   */
+  pagamentos?: Pagamento[]
   base: number // base do IRPFM com a renda daquele ano
   irpfm: number // o que teria sido devido sob a Lei 15.270
   patrimonio: number
@@ -253,6 +261,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     })
 
   return {
+    pagamentos: dec.pagamentos ?? [],
     diagnostico: {
       registros: dec.registros.map((r) => ({ tipo: r.tipo, count: r.count })),
       lancamentos: dec.lancamentos.length,
@@ -349,6 +358,7 @@ export function normalizaHistorico(h: Historico | undefined | null): Historico {
     saida[ano] = {
       ...d,
       posicoes,
+      pagamentos: Array.isArray(d.pagamentos) ? d.pagamentos : [],
       diagnostico: d.diagnostico ?? { ...DIAGNOSTICO_VAZIO, posicoes: posicoes.length },
     }
   }
