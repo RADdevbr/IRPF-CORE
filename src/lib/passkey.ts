@@ -87,12 +87,27 @@ export async function criarPasskey(usuario: { id: string; email: string }): Prom
  * Pede ao autenticador os 32 bytes do PRF. Mesma credencial + mesmo salt =
  * sempre os mesmos bytes; é isso que faz a KEK ser reproduzível sem guardar nada.
  */
-export async function segredoDaPasskey(credentialId?: string): Promise<{ credentialId: string; segredo: Uint8Array }> {
+/**
+ * Segredo PRF de UMA das credenciais oferecidas.
+ *
+ * Aceita a lista inteira de propósito: depois de sincronizar, o cofre tem as
+ * passkeys de todos os aparelhos, e cada aparelho só tem a sua. Oferecendo
+ * todas, o autenticador escolhe a que ele possui e devolve QUAL foi — que é a
+ * única fonte confiável disso. Enquanto só a primeira era oferecida, quem
+ * cadastrou no Windows e depois foi destravar no Android via o app insistir na
+ * credencial errada, com a certa parada dentro do mesmo cofre.
+ */
+export async function segredoDaPasskey(
+  credentialId?: string | string[],
+): Promise<{ credentialId: string; segredo: Uint8Array }> {
   if (!suportaPasskey()) throw new Error('Este navegador não suporta passkey.')
+  const ids = credentialId === undefined ? [] : Array.isArray(credentialId) ? credentialId : [credentialId]
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: credentialId ? [{ type: 'public-key', id: deB64Url(credentialId) as BufferSource }] : undefined,
+      allowCredentials: ids.length
+        ? ids.map((id) => ({ type: 'public-key' as const, id: deB64Url(id) as BufferSource }))
+        : undefined,
       userVerification: 'required',
       timeout: 60_000,
       extensions: { prf: { eval: { first: SALT_PRF } } } as AuthenticationExtensionsClientInputs,
