@@ -23,6 +23,14 @@ import type { Historico } from './historico'
 
 /** O que só a pessoa sabe — o arquivo não conta. */
 export interface EntradaAno {
+  /**
+   * Veio do preenchimento rápido, não de um número conferido.
+   *
+   * Marcar importa por dois motivos: a tela mostra que aquilo é chute, e o
+   * preenchimento rápido só sobrescreve o que ele mesmo escreveu — número
+   * digitado à mão nunca é apagado por uma estimativa.
+   */
+  estimado?: boolean
   /** Dívidas e ônus no fim do ano (financiamentos, empréstimos a pagar). */
   dividas?: number
   /** Venda de bens, empréstimos tomados, doações e heranças recebidas, resgates. */
@@ -101,6 +109,40 @@ function classificar(descoberto: number, fontes: number): Classificacao {
   const prop = fontes > 0 ? descoberto / fontes : 1
   if (prop >= PROPORCAO_RELEVANTE && descoberto >= PISO_RELEVANCIA) return 'inconsistência relevante'
   return 'atenção'
+}
+
+/**
+ * Aplica a mesma estimativa a todos os anos, sem pisar no que foi digitado.
+ *
+ * Custo de vida é a peça que falta em toda análise, e ninguém tem o número
+ * exato de seis anos atrás — mas quase todo mundo sabe dizer quanto gasta por
+ * mês. Um chute igual em todos os anos vale muito mais do que zero, que é o que
+ * havia antes e fazia a conta parecer boa.
+ */
+export function aplicarEstimativa(
+  entradas: Entradas,
+  anos: number[],
+  valores: { despesas?: number; dividas?: number },
+): Entradas {
+  const saida: Entradas = { ...entradas }
+  for (const ano of anos) {
+    const chave = String(ano)
+    const atual = saida[chave] ?? {}
+    // só mexe onde está vazio ou onde a estimativa anterior escreveu
+    const podeEscrever = (v: number | undefined) => v === undefined || v === 0 || atual.estimado === true
+    const novo: EntradaAno = { ...atual }
+    let mexeu = false
+    if (valores.despesas !== undefined && podeEscrever(atual.despesas)) {
+      novo.despesas = valores.despesas
+      mexeu = true
+    }
+    if (valores.dividas !== undefined && podeEscrever(atual.dividas)) {
+      novo.dividas = valores.dividas
+      mexeu = true
+    }
+    if (mexeu) saida[chave] = { ...novo, estimado: true }
+  }
+  return saida
 }
 
 export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Consolidado {

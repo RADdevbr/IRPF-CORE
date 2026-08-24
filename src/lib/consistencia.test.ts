@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { analisarConsistencia, PISO_RELEVANCIA, type Entradas } from './consistencia'
+import { analisarConsistencia, aplicarEstimativa, PISO_RELEVANCIA, type Entradas } from './consistencia'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
 import type { DecResult, Lancamento, Posicao } from './decParser'
 
@@ -198,5 +198,46 @@ describe('leitura dos anos juntos', () => {
     expect(r.anos).toEqual([])
     expect(r.totalDescoberto).toBe(0)
     expect(r.prioritarios).toEqual([])
+  })
+})
+
+describe('preenchimento rápido', () => {
+  it('põe o mesmo chute em todos os anos', () => {
+    const r = aplicarEstimativa({}, [2022, 2023, 2024], { despesas: 180_000 })
+    expect(r['2022'].despesas).toBe(180_000)
+    expect(r['2024'].despesas).toBe(180_000)
+    expect(r['2023'].estimado).toBe(true)
+  })
+
+  it('não pisa no que foi digitado à mão', () => {
+    const mao: Entradas = { 2023: { despesas: 250_000 } }
+    const r = aplicarEstimativa(mao, [2022, 2023], { despesas: 180_000 })
+    expect(r['2023'].despesas).toBe(250_000) // o número conferido fica
+    expect(r['2023'].estimado).toBeUndefined()
+    expect(r['2022'].despesas).toBe(180_000)
+  })
+
+  it('mas corrige o próprio chute quando o valor muda', () => {
+    const primeiro = aplicarEstimativa({}, [2022, 2023], { despesas: 180_000 })
+    const segundo = aplicarEstimativa(primeiro, [2022, 2023], { despesas: 200_000 })
+    expect(segundo['2022'].despesas).toBe(200_000)
+  })
+
+  it('não apaga o que não foi pedido', () => {
+    const antes: Entradas = { 2023: { receitasNaoRecorrentes: 400_000, nota: 'venda' } }
+    const r = aplicarEstimativa(antes, [2023], { despesas: 100_000 })
+    expect(r['2023'].receitasNaoRecorrentes).toBe(400_000)
+    expect(r['2023'].nota).toBe('venda')
+  })
+
+  it('o chute entra na conta e aperta o resultado, como qualquer despesa', () => {
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2025', rendas: [lanc('cdb', 300_000)], bens: [pos('CDB', 1_200_000, 1_000_000)] },
+    )
+    const entradas = aplicarEstimativa({}, [2024], { despesas: 250_000 })
+    const a = analisarConsistencia(h, entradas).anos.find((x) => x.anoBase === 2024)!
+    expect(a.descoberto).toBe(150_000)
+    expect(a.semDespesas).toBe(false)
   })
 })
