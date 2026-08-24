@@ -106,7 +106,9 @@ export function ContaSync({
         <div>
           <p style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Conta e sincronização</p>
           <p style={{ fontSize: 12, color: C.textMut, margin: '2px 0 0' }}>
-            Sobe o cofre cifrado para você abrir no outro aparelho. A chave não vai junto.
+            {cofre
+              ? 'Sobe o cofre cifrado para você abrir no outro aparelho. A chave não vai junto.'
+              : 'Este aparelho ainda não tem cofre. Entre com o mesmo e-mail e sincronize para trazer o que está na conta.'}
           </p>
         </div>
         <button style={btn} onClick={onFechar}>Fechar</button>
@@ -168,6 +170,14 @@ export function ContaSync({
         </div>
       )}
 
+      {etapa === 'logado' && !cofre && (
+        <p style={{ fontSize: 12, color: C.textSec, margin: 0, lineHeight: 1.6 }}>
+          Sincronize para baixar o cofre. Ele vem cifrado: a passkey do outro aparelho não vem junto (ela mora lá), então
+          destrave aqui com a <strong>senha</strong> ou a <strong>chave de recuperação</strong>. Depois dá para cadastrar
+          uma passkey neste aparelho.
+        </p>
+      )}
+
       {etapa === 'logado' && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: 12.5, color: C.textSec, flex: 1, minWidth: 140 }}>{quem}</span>
@@ -176,7 +186,7 @@ export function ContaSync({
             disabled={ocupado}
             onClick={() => rodar(async () => aplicar(await sincronizar(r, cofre, lerEstadoSync())))}
           >
-            {ocupado ? 'Sincronizando…' : 'Sincronizar agora'}
+            {ocupado ? 'Sincronizando…' : cofre ? 'Sincronizar agora' : 'Trazer o cofre da conta'}
           </button>
           <button
             style={btn}
