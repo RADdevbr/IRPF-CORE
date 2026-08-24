@@ -95,6 +95,11 @@ export function remotoSupabase(): Remoto {
       return data.user?.email ? { email: data.user.email } : null
     },
 
+    aoMudarSessao(cb) {
+      const { data } = cli().auth.onAuthStateChange((_evento, sessao) => cb(sessao?.user?.email ?? null))
+      return () => data.subscription.unsubscribe()
+    },
+
     async enviarCodigo(email) {
       const { error } = await cli().auth.signInWithOtp({
         email,
