@@ -52,17 +52,56 @@ export function ContaSync({
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [pendencia, setPendencia] = useState<ResultadoSync | null>(null)
+  const [conferindo, setConferindo] = useState(Boolean(r))
 
+  // A sessão pode chegar DEPOIS desta tela abrir: o link do e-mail costuma abrir
+  // noutra aba (ou no app de e-mail) e a volta é um recarregamento inteiro. Uma
+  // conferência só na montagem deixava a pessoa parada no campo de e-mail,
+  // conectada e sem saber. Agora: confere ao montar, escuta a mudança de sessão
+  // e reconfere quando a aba volta para a frente.
   useEffect(() => {
     if (!r) return
-    r.usuario()
-      .then((u) => {
-        if (u) {
+    let vivo = true
+    const conferir = () =>
+      r
+        .usuario()
+        .then((u) => {
+          if (!vivo || !u) return
           setQuem(u.email)
           setEtapa('logado')
-        }
-      })
-      .catch(() => {})
+        })
+        .catch((e) => {
+          // Engolir isto era o pior dos mundos: sem sessão e sem explicação.
+          if (vivo) setErro(e instanceof Error ? e.message : 'Não consegui conferir a sessão.')
+        })
+        .finally(() => {
+          if (vivo) setConferindo(false)
+        })
+
+    conferir()
+    const pararDeEscutar = r.aoMudarSessao?.((email) => {
+      if (!vivo) return
+      setConferindo(false)
+      if (email) {
+        setQuem(email)
+        setEtapa('logado')
+        setErro('')
+      } else {
+        setQuem(null)
+        setEtapa('email')
+      }
+    })
+    const aoVoltar = () => {
+      if (document.visibilityState === 'visible') conferir()
+    }
+    document.addEventListener('visibilitychange', aoVoltar)
+    window.addEventListener('focus', aoVoltar)
+    return () => {
+      vivo = false
+      pararDeEscutar?.()
+      document.removeEventListener('visibilitychange', aoVoltar)
+      window.removeEventListener('focus', aoVoltar)
+    }
   }, [])
 
   const rodar = async (fn: () => Promise<void>) => {
@@ -114,7 +153,11 @@ export function ContaSync({
         <button style={btn} onClick={onFechar}>Fechar</button>
       </div>
 
-      {etapa === 'email' && (
+      {conferindo && (
+        <span style={{ fontSize: 12, color: C.textMut }}>Vendo se você já está conectado…</span>
+      )}
+
+      {etapa === 'email' && !conferindo && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" style={inp} />
           <button

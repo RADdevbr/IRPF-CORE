@@ -77,11 +77,14 @@ export function VaultGate({
   estadoAtual,
   onPronto,
   onCancelar,
+  aviso,
 }: {
   modo: 'criar' | 'destravar'
   estadoAtual: PersistedState
   onPronto: (dek: Uint8Array, dados: PersistedState | null) => void
   onCancelar?: () => void
+  /** Recado que precisa ser visto ANTES de destravar — ex.: voltou do link do e-mail. */
+  aviso?: string
 }) {
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -195,6 +198,14 @@ export function VaultGate({
             Seus dados estão cifrados neste navegador. Destrave para continuar.
           </p>
         </div>
+
+        {/* Voltar do link do e-mail e cair numa tela que não menciona a conta faz
+            parecer que o login não funcionou. Ele funcionou — falta destravar. */}
+        {aviso && (
+          <div style={{ background: C.blueDim, border: `0.5px solid ${C.blueBorder}`, borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: C.blue, lineHeight: 1.5 }}>
+            {aviso}
+          </div>
+        )}
 
         {wrapPasskey && suportaPasskey() && (
           <button style={btnPrim} onClick={destravarPorPasskey} disabled={ocupado}>

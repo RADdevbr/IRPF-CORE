@@ -62,6 +62,13 @@ export interface DocRemoto {
 /** O que o app precisa de um servidor — Supabase hoje, outro amanhã. */
 export interface Remoto {
   usuario(): Promise<{ email: string } | null>
+  /**
+   * Avisa quando a sessão aparece ou some. Sem isto, a tela conferia a sessão
+   * uma vez ao montar: quem voltava do link do e-mail depois disso ficava
+   * olhando para o campo de e-mail, sem nada dizendo que já estava conectado.
+   * Opcional porque os servidores de mentira dos testes não precisam disso.
+   */
+  aoMudarSessao?(cb: (email: string | null) => void): () => void
   enviarCodigo(email: string): Promise<void>
   conferirCodigo(email: string, codigo: string): Promise<void>
   sair(): Promise<void>
