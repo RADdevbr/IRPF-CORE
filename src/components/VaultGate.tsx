@@ -93,8 +93,13 @@ export function VaultGate({
 
   // desbloqueio
   const wraps = modo === 'destravar' ? metodos() : []
-  const wrapPasskey = wraps.find((w) => w.metodo === 'passkey')
-  const passkeyDeOutro = deOutroAparelho(wrapPasskey?.rotulo)
+  // TODAS as passkeys, não a primeira: depois de sincronizar o cofre tem a de
+  // cada aparelho, e olhar só para uma fazia o app insistir na credencial errada.
+  const wrapsPasskey = wraps.filter((w) => w.metodo === 'passkey')
+  const wrapPasskey = wrapsPasskey[0]
+  // Só avisa "é de outro aparelho" quando NENHUMA delas parece ser daqui.
+  const passkeyDeOutro = wrapsPasskey.length > 0 && wrapsPasskey.every((w) => deOutroAparelho(w.rotulo))
+  const outras = wrapsPasskey.filter((w) => deOutroAparelho(w.rotulo)).map((w) => w.rotulo ?? 'outro aparelho')
   const temSenha = wraps.some((w) => w.metodo === 'senha')
   const [segredoDigitado, setSegredoDigitado] = useState('')
   const [via, setVia] = useState<'senha' | 'recuperacao'>(temSenha ? 'senha' : 'recuperacao')
@@ -149,10 +154,26 @@ export function VaultGate({
 
   const destravarPorPasskey = () =>
     comOcupado(async () => {
-      if (!wrapPasskey) throw new Error('Nenhuma passkey cadastrada neste cofre.')
-      const credId = wrapPasskey.wrapId.replace(/^passkey:/, '')
-      const { segredo } = await segredoDaPasskey(credId)
-      const { dek, dados } = await destravarLocal(wrapPasskey.wrapId, segredo)
+      if (wrapsPasskey.length === 0) throw new Error('Nenhuma passkey cadastrada neste cofre.')
+      const ids = wrapsPasskey.map((w) => w.wrapId.replace(/^passkey:/, ''))
+      let credentialId: string
+      let segredo: Uint8Array
+      try {
+        ;({ credentialId, segredo } = await segredoDaPasskey(ids))
+      } catch (e) {
+        // O navegador diz a mesma coisa para "cancelei" e para "não tenho
+        // nenhuma dessas credenciais". Como a segunda é a que confunde quem
+        // acabou de sincronizar, ela precisa aparecer na resposta.
+        const msg = e instanceof Error ? e.message : ''
+        if (/PRF/.test(msg)) throw e
+        throw new Error(
+          'Não deu para usar a biometria: ou você cancelou, ou nenhuma passkey deste cofre está neste aparelho. ' +
+            'Destrave com senha ou chave de recuperação e depois cadastre uma passkey daqui, em "Cofre".',
+        )
+      }
+      // Quem responde diz qual credencial usou — é por ela que se acha o wrap.
+      const wrap = wrapsPasskey.find((w) => w.wrapId === wrapIdDaPasskey(credentialId)) ?? wrapPasskey
+      const { dek, dados } = await destravarLocal(wrap.wrapId, segredo)
       if (confiar) lembrarDek(dek)
       onPronto(dek, dados)
     })
@@ -203,12 +224,14 @@ export function VaultGate({
             a única que funciona neste aparelho — para o rodapé. */}
         {wrapPasskey && suportaPasskey() && !passkeyDeOutro && (
           <button style={btnPrim} onClick={destravarPorPasskey} disabled={ocupado}>
-            Destravar com {wrapPasskey.rotulo ?? 'passkey'}
+            {wrapsPasskey.length > 1
+              ? 'Destravar com a passkey deste aparelho'
+              : `Destravar com ${wrapPasskey.rotulo ?? 'passkey'}`}
           </button>
         )}
         {wrapPasskey && passkeyDeOutro && (
           <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.textSec, lineHeight: 1.55 }}>
-            Este cofre tem uma passkey cadastrada em <strong>{wrapPasskey.rotulo}</strong> — ela não vem junto, mora
+            Este cofre tem passkey cadastrada em <strong>{outras.join(', ')}</strong> — ela não vem junto, mora
             naquele aparelho. Aqui, destrave com senha ou chave de recuperação; depois dá para cadastrar uma passkey
             deste aparelho, em "Cofre".
             {suportaPasskey() && (
