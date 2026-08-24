@@ -4,6 +4,7 @@ import { remotoSupabase } from '../lib/remoto'
 import { supabaseConfigurado } from '../lib/supabaseConfig'
 import { sincronizar, resolverComLocal, resolverComRemoto, type ResultadoSync } from '../lib/syncCofre'
 import { lerEstadoSync, gravarEstadoSync } from '../lib/vault'
+import { lembrarConta, esquecerConta } from '../lib/sessaoLembrada'
 import type { CofreCompleto } from '../lib/crypto'
 
 // Tela A5 dos mocks. O que sobe daqui é sempre o cofre CIFRADO — a chave fica
@@ -86,9 +87,11 @@ export function ContaSync({
         setQuem(email)
         setEtapa('logado')
         setErro('')
+        lembrarConta(email)
       } else {
         setQuem(null)
         setEtapa('email')
+        esquecerConta()
       }
     })
     const aoVoltar = () => {
@@ -143,14 +146,27 @@ export function ContaSync({
     <div style={{ background: C.bg1, border: `0.5px solid ${C.border}`, borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <div>
-          <p style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Conta e sincronização</p>
+          <p style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Sincronizar entre aparelhos</p>
           <p style={{ fontSize: 12, color: C.textMut, margin: '2px 0 0' }}>
             {cofre
-              ? 'Sobe o cofre cifrado para você abrir no outro aparelho. A chave não vai junto.'
-              : 'Este aparelho ainda não tem cofre. Entre com o mesmo e-mail e sincronize para trazer o que está na conta.'}
+              ? 'Guarda uma cópia fechada dos seus dados, para abrir no celular ou no computador.'
+              : 'Este aparelho ainda não tem seus dados. Entre com o mesmo e-mail para trazê-los.'}
           </p>
         </div>
         <button style={btn} onClick={onFechar}>Fechar</button>
+      </div>
+
+      <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: C.textSec, lineHeight: 1.65 }}>
+        São <strong>duas coisas diferentes</strong>, e é fácil confundir:
+        <div style={{ marginTop: 6 }}>
+          · <strong>O e-mail</strong> diz de quem é a cópia guardada no servidor. Não tem senha de conta: você digita o
+          e-mail, chega um link, você clica e pronto.
+        </div>
+        <div>
+          · <strong>A senha do cofre</strong> (ou a chave de recuperação) é o que ABRE seus dados. Ela nunca sai deste
+          aparelho — nem para o servidor, nem para mim. Por isso o que está lá em cima é ilegível para quem não tiver
+          essa chave, inclusive para quem administra o banco.
+        </div>
       </div>
 
       {conferindo && (
@@ -169,7 +185,7 @@ export function ContaSync({
               setMsg('Enviado. Abra o e-mail e clique no link — você volta para cá já conectado.')
             })}
           >
-            Enviar link de acesso
+            Enviar o link para este e-mail
           </button>
         </div>
       )}
@@ -185,6 +201,7 @@ export function ContaSync({
             onClick={() => rodar(async () => {
               const u = await r.usuario()
               if (!u) throw new Error('Ainda não vejo a sessão. Clique no link do e-mail e volte para esta aba.')
+              lembrarConta(u.email)
               setQuem(u.email)
               setEtapa('logado')
               setMsg('Conectado.')
@@ -202,6 +219,7 @@ export function ContaSync({
             onClick={() => rodar(async () => {
               await r.conferirCodigo(email.trim(), codigo)
               const u = await r.usuario()
+              lembrarConta(u?.email ?? email)
               setQuem(u?.email ?? email)
               setEtapa('logado')
               setMsg('Conectado.')
@@ -236,12 +254,13 @@ export function ContaSync({
             disabled={ocupado}
             onClick={() => rodar(async () => {
               await r.sair()
+              esquecerConta()
               setQuem(null)
               setEtapa('email')
-              setMsg('Desconectado deste aparelho.')
+              setMsg('Este aparelho não está mais ligado à conta. Seus dados continuam aqui.')
             })}
           >
-            Sair
+            Desligar este aparelho da conta
           </button>
         </div>
       )}
