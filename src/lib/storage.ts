@@ -9,6 +9,7 @@ import type { HoldingConfig } from '../calc/holding'
 import type { Historico, Overrides, Aportes, Vinculos } from './historico'
 import type { Entradas } from './consistencia'
 import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bolsa'
+import type { PapelNaCarteira } from './b3posicao'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -68,6 +69,8 @@ export interface PersistedState {
    * seguinte só os tipos novos perguntam de novo.
    */
   b3?: Record<string, 'base' | 'isento' | 'ignorar' | 'indefinido'>
+  /** O mesmo, para a carteira: que movimentação é compra, venda ou evento. */
+  b3Carteira?: Record<string, PapelNaCarteira>
   /**
    * Renda variável: as operações do ano e as duas leituras da lei que ainda
    * estão em aberto. Guarda a ENTRADA da apuração, nunca o resultado — o ganho
