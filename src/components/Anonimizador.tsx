@@ -54,7 +54,7 @@ export function Anonimizador() {
         <button style={btn} onClick={() => fileRef.current?.click()}>
           {arquivo ? 'trocar arquivo' : 'escolher .DEC'}
         </button>
-        <input ref={fileRef} type="file" accept=".DEC,.dec" style={{ display: 'none' }} onChange={(e) => ler(e.target.files?.[0])} />
+        <input ref={fileRef} type="file" accept=".DEC,.dec" aria-label="Arquivo .DEC para anonimizar" style={{ display: 'none' }} onChange={(e) => ler(e.target.files?.[0])} />
         {arquivo && <span style={{ fontSize: 12, color: C.textSec }}>{arquivo.nome}</span>}
       </div>
 
