@@ -8,6 +8,7 @@ import type { Carteira } from '../calc/rendafixa'
 import type { HoldingConfig } from '../calc/holding'
 import type { Historico, Overrides, Aportes, Vinculos } from './historico'
 import type { Entradas } from './consistencia'
+import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bolsa'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -67,6 +68,23 @@ export interface PersistedState {
    * seguinte só os tipos novos perguntam de novo.
    */
   b3?: Record<string, 'base' | 'isento' | 'ignorar' | 'indefinido'>
+  /**
+   * Renda variável: as operações do ano e as duas leituras da lei que ainda
+   * estão em aberto. Guarda a ENTRADA da apuração, nunca o resultado — o ganho
+   * é sempre recalculado, para não congelar um número apurado com uma regra
+   * que mudou depois.
+   */
+  bolsa?: {
+    operacoes: Operacao[]
+    eventos?: EventoQuantidade[]
+    /** Posição em 31/12 do ano anterior, com custo médio de aquisição. */
+    posicaoInicial?: Posicao[]
+    prejuizoAnterior?: Partial<Record<Modalidade, number>>
+    /** ⟨confirmar⟩ Ganho em bolsa entra na base do IRPFM? */
+    entraNaBase: boolean
+    /** ⟨confirmar⟩ A isenção mensal dos R$ 20 mil alcança o mínimo? */
+    isentoEntraNaBase: boolean
+  }
 }
 
 export interface NamedScenario {
