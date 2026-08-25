@@ -1,9 +1,16 @@
-import { describe, it, expect } from 'vitest'
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach } from 'vitest'
 import {
   SCHEMA_VERSION,
   migrarEstado,
   upsertScenario,
   removeScenario,
+  saveState,
+  loadState,
+  saveScenarios,
+  setModoVisita,
+  chavesGravadas,
+  apagarTudoDesteAparelho,
   type PersistedState,
 } from './storage'
 
@@ -90,5 +97,46 @@ describe('cenários', () => {
   it('remove pelo nome', () => {
     const l = upsertScenario(upsertScenario([], 'A', estado, 't'), 'B', estado, 't')
     expect(removeScenario(l, 'A').map((s) => s.name)).toEqual(['B'])
+  })
+})
+
+describe('modo visita', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setModoVisita(false)
+  })
+
+  it('desligado, grava normalmente', () => {
+    saveState({ vals: { cdb: 1 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+    expect(localStorage.getItem('irpfm2027:state:v1')).toBeTruthy()
+  })
+
+  it('ligado, não deixa rastro no aparelho', () => {
+    setModoVisita(true)
+    saveState({ vals: { cdb: 1 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+    saveScenarios([{ name: 'x', savedAt: 'agora', state: { vals: {}, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 } }])
+    expect(chavesGravadas()).toEqual([])
+  })
+
+  it('não apaga o que já estava gravado — só para de gravar', () => {
+    saveState({ vals: { cdb: 1 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+    setModoVisita(true)
+    saveState({ vals: { cdb: 2 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+    expect(loadState()?.vals.cdb).toBe(1)
+  })
+})
+
+describe('apagar tudo deste aparelho', () => {
+  it('varre a família inteira de chaves, não só estado e cenários', () => {
+    localStorage.clear()
+    setModoVisita(false)
+    localStorage.setItem('irpfm2027:state:v1', '{}')
+    localStorage.setItem('irpfm2027:vault:v1', 'x')
+    localStorage.setItem('irpfm2027:dek:v1', 'x')
+    localStorage.setItem('outro-app:coisa', 'fica')
+
+    expect(apagarTudoDesteAparelho()).toBe(3)
+    expect(chavesGravadas()).toEqual([])
+    expect(localStorage.getItem('outro-app:coisa')).toBe('fica')
   })
 })
