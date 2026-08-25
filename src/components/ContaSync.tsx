@@ -68,6 +68,18 @@ export function ContaSync({
   useEffect(() => {
     if (!r) return
     let vivo = true
+    // A RLS de `admins` só devolve a própria linha: se veio, é admin. Vale a
+    // pena reconferir a cada volta — quem acabou de ser marcado no banco não
+    // precisa descobrir sozinho que tem de recarregar a página.
+    const conferirAdmin = () =>
+      admin(clienteSupabase())
+        .souAdmin()
+        .then((v) => {
+          if (vivo) setSouAdmin(v)
+        })
+        .catch(() => {
+          if (vivo) setSouAdmin(false)
+        })
     const conferir = () =>
       r
         .usuario()
@@ -75,6 +87,7 @@ export function ContaSync({
           if (!vivo || !u) return
           setQuem(u.email)
           setEtapa('logado')
+          void conferirAdmin()
         })
         .catch((e) => {
           // Engolir isto era o pior dos mundos: sem sessão e sem explicação.
@@ -90,13 +103,14 @@ export function ContaSync({
       setConferindo(false)
       if (email) {
         setQuem(email)
-        // a RLS de `admins` só devolve a própria linha: se veio, é admin
-        void admin(clienteSupabase()).souAdmin().then(setSouAdmin).catch(() => setSouAdmin(false))
+        void conferirAdmin()
         setEtapa('logado')
         setErro('')
         lembrarConta(email)
       } else {
         setQuem(null)
+        setSouAdmin(false)
+        setVerAdmin(false)
         setEtapa('email')
         esquecerConta()
       }
