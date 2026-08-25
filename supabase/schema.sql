@@ -166,10 +166,12 @@ create trigger tg_exige_conta_liberada before insert on auth.users
 --   · criar, ver e revogar chaves de cadastro
 --   · autorizar um e-mail direto, sem código
 --
--- O que ela NÃO consegue: apagar a linha em `auth.users`. Isso é só no painel do
--- Supabase (Authentication → Users) ou com a service_role, fora do navegador.
--- Bloquear + apagar os dados deixa a conta inerte; a linha de auth que sobra não
--- dá acesso a nada.
+-- Apagar a linha em `auth.users` exige a service_role, que não pode viajar para
+-- o navegador — para isso existe a função de borda `apagar-conta`
+-- (supabase/functions/apagar-conta), que guarda a chave no servidor e confere
+-- quem pediu antes de obedecer. Sem ela implantada, a tela ainda apaga os dados
+-- e bloqueia: a conta fica inerte e a linha de auth que sobra não dá acesso a
+-- nada. Nos dois casos a tela diz o que aconteceu.
 --
 -- DEPOIS de rodar isto, marque-se como admin (uma vez):
 --

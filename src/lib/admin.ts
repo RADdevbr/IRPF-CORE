@@ -71,14 +71,31 @@ export function conviteEsgotado(c: Convite, agora = new Date()): boolean {
   return c.expiraEm !== undefined && new Date(c.expiraEm) <= agora
 }
 
-/**
- * Apagar usuário de verdade não dá — e a tela precisa dizer isso, não sumir com
- * o botão e deixar a pessoa procurando.
- */
-export const podeApagarUsuario = false
+/** O que a exclusão conseguiu fazer de fato. */
+export type ModoExclusao = 'conta' | 'dados'
+
+export interface ResultadoExclusao {
+  modo: ModoExclusao
+  /** Por que caiu no plano B, quando caiu. */
+  motivo?: string
+}
 
 export const AVISO_APAGAR =
-  'Apaga o cofre e os métodos de desbloqueio desta conta, e a deixa bloqueada. A linha de login continua existindo no Supabase (só o painel de lá apaga), mas sem dados e sem acesso ela não serve para nada.'
+  'Apaga a conta inteira: cofre, métodos de desbloqueio e o login. Sem a função de borda implantada, apaga os dados e bloqueia a conta — a linha de login sobra, sem dados e sem acesso.'
+
+/**
+ * A função de borda não está lá — dá para seguir com o plano B?
+ *
+ * Só quando o pedido não chegou a ser avaliado: função não implantada, rede
+ * caída. Um "não" da própria função (403 de quem não é admin, 400 de quem tenta
+ * apagar a si mesmo) é resposta, não ausência — e engolir isso apagando dados
+ * assim mesmo seria obedecer a um pedido que o servidor recusou.
+ */
+export function funcaoAusente(erro: unknown): boolean {
+  const m = (erro instanceof Error ? erro.message : String(erro ?? '')).toLowerCase()
+  if (/403|401|400|não pode apagar|administra/.test(m)) return false
+  return /not found|404|failed to fetch|networkerror|failed to send|non-2xx|edge function/.test(m)
+}
 
 // ---------------------------------------------------------------- rede
 
@@ -129,6 +146,27 @@ export function admin(cliente: SupabaseClient) {
         .update({ bloqueada: bloquear, bloqueada_em: bloquear ? new Date().toISOString() : null })
         .eq('user_id', userId)
       erro(error)
+    },
+
+    /**
+     * Apaga a conta inteira quando a função de borda está implantada; senão,
+     * apaga os dados e bloqueia. Devolve qual dos dois aconteceu — a tela tem
+     * de dizer a verdade, e os dois resultados são diferentes.
+     */
+    async apagarConta(userId: string): Promise<ResultadoExclusao> {
+      try {
+        const { data, error } = await cli().functions.invoke('apagar-conta', { body: { userId } })
+        if (error) throw error
+        if (data?.erro) throw new Error(String(data.erro))
+        return { modo: 'conta' }
+      } catch (e) {
+        if (!funcaoAusente(e)) throw e instanceof Error ? e : new Error(String(e))
+        await this.apagarDados(userId)
+        return {
+          modo: 'dados',
+          motivo: 'a função apagar-conta não está implantada neste projeto',
+        }
+      }
     },
 
     /** Apaga os dados e bloqueia: sem o bloqueio, a conta voltaria a sincronizar. */

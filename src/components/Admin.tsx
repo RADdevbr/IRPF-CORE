@@ -262,7 +262,18 @@ export function Admin({ onFechar }: { onFechar: () => void }) {
                         <button
                           style={{ ...btn, color: C.red, borderColor: '#5a2020' }}
                           disabled={ocupado}
-                          onClick={() => rodar(async () => { await api.apagarDados(c.userId); setConfirmando(null); setMsg(`Dados de ${c.email} apagados, e a conta ficou bloqueada.`); await recarregar() })}
+                          onClick={() =>
+                            rodar(async () => {
+                              const r = await api.apagarConta(c.userId)
+                              setConfirmando(null)
+                              setMsg(
+                                r.modo === 'conta'
+                                  ? `Conta de ${c.email} apagada — login, cofre e métodos de desbloqueio.`
+                                  : `Dados de ${c.email} apagados e a conta ficou bloqueada. O login continua existindo: ${r.motivo}.`,
+                              )
+                              await recarregar()
+                            })
+                          }
                         >
                           confirmar exclusão
                         </button>{' '}
@@ -270,7 +281,7 @@ export function Admin({ onFechar }: { onFechar: () => void }) {
                       </>
                     ) : (
                       <button style={{ ...btn, color: C.textMut }} title={AVISO_APAGAR} disabled={ocupado} onClick={() => setConfirmando(c.userId)}>
-                        excluir dados
+                        excluir conta
                       </button>
                     )}
                   </td>
@@ -279,7 +290,10 @@ export function Admin({ onFechar }: { onFechar: () => void }) {
             </tbody>
           </table>
         </div>
-        <p style={{ ...sub, marginTop: 4 }}>{AVISO_APAGAR}</p>
+        <p style={{ ...sub, marginTop: 4 }}>
+          {AVISO_APAGAR} A função vive em <code>supabase/functions/apagar-conta</code>; o README de lá tem a linha de
+          comando para implantar. Você não consegue apagar a sua própria conta por aqui — isso deixaria o app sem dono.
+        </p>
       </div>
 
       <button style={btn} disabled={ocupado} onClick={() => void recarregar()}>

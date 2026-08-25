@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizaCodigo, validaConvite, conviteEsgotado, podeApagarUsuario, AVISO_APAGAR, type Convite } from './admin'
+import { normalizaCodigo, validaConvite, conviteEsgotado, funcaoAusente, AVISO_APAGAR, type Convite } from './admin'
 
 // A conversa com o banco não dá para testar aqui — quem autoriza é a RLS, e ela
 // mora no Postgres. O que dá é o que decide antes de mandar: o código que a
@@ -59,11 +59,21 @@ describe('convite esgotado', () => {
   })
 })
 
-describe('o que a tela não pode prometer', () => {
-  it('apagar usuário de verdade precisa de service_role — e isso não vive no navegador', () => {
-    expect(podeApagarUsuario).toBe(false)
-    // e o aviso tem de dizer o que sobra, senão a pessoa acha que apagou tudo
-    expect(AVISO_APAGAR).toMatch(/linha de login continua existindo/)
-    expect(AVISO_APAGAR).toMatch(/bloqueada/)
+describe('quando cair no plano B da exclusão', () => {
+  it('função não implantada é ausência: segue e apaga os dados', () => {
+    expect(funcaoAusente(new Error('Function not found'))).toBe(true)
+    expect(funcaoAusente(new Error('Failed to send a request to the Edge Function'))).toBe(true)
+    expect(funcaoAusente(new TypeError('Failed to fetch'))).toBe(true)
+  })
+
+  it('recusa da função é resposta, não ausência — apagar assim mesmo seria desobedecer', () => {
+    expect(funcaoAusente(new Error('só quem administra pode apagar contas'))).toBe(false)
+    expect(funcaoAusente(new Error('você não pode apagar a sua própria conta por aqui'))).toBe(false)
+    expect(funcaoAusente(new Error('403 Forbidden'))).toBe(false)
+  })
+
+  it('o aviso diz o que acontece nos dois casos', () => {
+    expect(AVISO_APAGAR).toMatch(/conta inteira/)
+    expect(AVISO_APAGAR).toMatch(/Sem a função de borda/)
   })
 })
