@@ -87,8 +87,16 @@ describe('cofres com identidades diferentes', () => {
     expect(d).toEqual({ acao: 'baixar' })
   })
 
-  it('não trava quando um dos lados é anterior ao id (cofre da Fase 0)', () => {
-    expect(decidirSync({ baseVersion: 4, sujo: false }, { version: 9, atualizadoEm: 'x' }, 'LOCAL')).toEqual({ acao: 'baixar' })
-    expect(decidirSync({ baseVersion: 4, sujo: false }, { version: 9, atualizadoEm: 'x', vaultId: 'R' }, undefined)).toEqual({ acao: 'baixar' })
+  it('um lado com id e o outro sem também exige escolha — parentesco não provado', () => {
+    // Era aqui que o cofre corrompia: "baixar" com o servidor anterior ao id
+    // montava um cofre com o conteúdo do servidor e os embrulhos locais. Se as
+    // chaves fossem diferentes, todo método passava a abrir o embrulho e falhar
+    // no conteúdo — "chave errada" com a chave certa na mão, sem volta.
+    expect(decidirSync({ baseVersion: 4, sujo: false }, { version: 9, atualizadoEm: 'x' }, 'LOCAL')).toEqual({ acao: 'cofres-diferentes' })
+    expect(decidirSync({ baseVersion: 4, sujo: false }, { version: 9, atualizadoEm: 'x', vaultId: 'R' }, undefined)).toEqual({ acao: 'cofres-diferentes' })
+  })
+
+  it('dois lados sem id (era pré-id dos dois) seguem pelas versões — não há o que comparar', () => {
+    expect(decidirSync({ baseVersion: 4, sujo: false }, { version: 9, atualizadoEm: 'x' }, undefined)).toEqual({ acao: 'baixar' })
   })
 })

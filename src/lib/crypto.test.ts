@@ -49,6 +49,18 @@ describe('cofre — ciclo básico', () => {
     const adulterado = { ...cofre, ciphertext: btoa(String.fromCharCode(...bytes)) }
     await expect(decifrarCofre(dek, adulterado)).rejects.toThrow(/adulterado/i)
   })
+
+  it('embrulho de um cofre com conteúdo de outro: diz que a chave está CERTA e o conteúdo não', async () => {
+    // O estrago que uma sincronização de cofres misturados deixa: o método abre
+    // o embrulho, mas a DEK que sai dele não decifra o conteúdo. A mensagem
+    // não pode culpar a chave — é ela a única coisa certa nessa história.
+    const a = await criarCofre(DADOS, { wrapId: 'senha', metodo: 'senha', segredo: 'senha-do-a-1' }, AGORA, LEVE)
+    const b = await criarCofre(DADOS, { wrapId: 'senha', metodo: 'senha', segredo: 'senha-do-b-2' }, AGORA, LEVE)
+    const misturado: CofreCompleto = { ...a.cofre, cofre: b.cofre.cofre }
+    await expect(destravar(misturado, 'senha', 'senha-do-a-1')).rejects.toThrow(/chave está certa/i)
+    // senha errada continua sendo "não foi possível abrir" — são erros distintos
+    await expect(destravar(misturado, 'senha', 'senha-errada')).rejects.toThrow(/não foi possível abrir/i)
+  })
 })
 
 describe('N embrulhos da mesma chave', () => {

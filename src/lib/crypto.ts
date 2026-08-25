@@ -304,7 +304,20 @@ export async function destravar<T = unknown>(
   if (!wrap) throw new Error('Método de desbloqueio não encontrado neste cofre.')
   const kek = await kekDoWrap(wrap, segredo)
   const dek = await desembrulhar(wrap, kek)
-  return { dek, dados: await decifrarCofre<T>(dek, cofre.cofre) }
+  try {
+    return { dek, dados: await decifrarCofre<T>(dek, cofre.cofre) }
+  } catch {
+    // Chegar aqui prova que o segredo estava CERTO: o embrulho abriu. O que não
+    // bate é o conteúdo — este cofre ficou com embrulhos de uma chave e dados
+    // de outra (uma sincronização misturou dois cofres criados separadamente).
+    // Dizer "chave errada" mandaria a pessoa tentar de novo para sempre.
+    throw new Error(
+      'Sua chave está certa, mas o conteúdo gravado neste navegador não corresponde a ela — ' +
+        'provavelmente uma sincronização misturou dois cofres diferentes. ' +
+        'Nenhuma senha vai abrir este conteúdo. Use "Não consegue destravar?" abaixo para ' +
+        'guardar uma cópia e recomeçar; se você usa a conta, dá para trazer o cofre dela de novo.',
+    )
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { C } from '../theme'
-import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado } from '../lib/vault'
+import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado, lerCofre } from '../lib/vault'
+import { apagarTudoDesteAparelho } from '../lib/storage'
 import { PasskeyDoctor } from './PasskeyDoctor'
 import { gerarCodigoRecuperacao, type Wrap } from '../lib/crypto'
 import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
@@ -79,6 +80,35 @@ export function VaultGate({
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [confiar, setConfiar] = useState(false)
+  // Saída de emergência da tela trancada. Sem ela, um cofre que não abre mais
+  // (corrompido, chave perdida) prendia a pessoa aqui para sempre: o botão de
+  // apagar tudo só existia DENTRO do app — que não montava sem destravar.
+  const [socorroAberto, setSocorroAberto] = useState(false)
+
+  const baixarCopiaDoCofre = () => {
+    const cofre = lerCofre()
+    if (!cofre) return
+    const url = URL.createObjectURL(new Blob([JSON.stringify(cofre, null, 2)], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'irpfm-cofre-cifrado-backup.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const recomecarDoZero = () => {
+    if (
+      !confirm(
+        'Apagar TUDO deste aparelho — cofre, cenários e estado — e recomeçar do zero?\n\n' +
+          'Não dá para desfazer. Se você usa a conta, os dados sincronizados continuam no servidor e podem ser trazidos de novo em "Já tenho conta".',
+      )
+    )
+      return
+    apagarTudoDesteAparelho()
+    window.location.reload()
+  }
 
   // criação
   const [passo, setPasso] = useState<'metodo' | 'codigo'>('metodo')
@@ -270,6 +300,32 @@ export function VaultGate({
         </button>
         {caixaConfiar}
         {erro && <Aviso texto={erro} tom="erro" />}
+
+        <button
+          onClick={() => setSocorroAberto((v) => !v)}
+          aria-expanded={socorroAberto}
+          style={{ background: 'none', border: 'none', color: C.textMut, cursor: 'pointer', fontSize: 12, textDecoration: 'underline', padding: 0, alignSelf: 'flex-start' }}
+        >
+          Não consegue destravar?
+        </button>
+        {socorroAberto && (
+          <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <span style={{ fontSize: 12, color: C.textSec, lineHeight: 1.6 }}>
+              Se nenhum método abre o cofre, o que está gravado neste navegador não serve mais — insistir não vai
+              destravá-lo. Dá para recomeçar do zero: guarde antes uma cópia do cofre (ela sai cifrada, como está;
+              pode ser útil numa recuperação futura) e apague tudo deste aparelho. Se você usa a conta, os dados
+              sincronizados continuam no servidor e voltam pelo botão "Já tenho conta".
+            </span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button style={{ ...btn, flex: 1 }} onClick={baixarCopiaDoCofre}>
+                Baixar cópia do cofre (cifrada)
+              </button>
+              <button style={{ ...btn, flex: 1, color: C.red }} onClick={recomecarDoZero}>
+                Apagar tudo e recomeçar
+              </button>
+            </div>
+          </div>
+        )}
       </>,
     )
   }
