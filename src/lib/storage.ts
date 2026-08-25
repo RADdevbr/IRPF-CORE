@@ -61,6 +61,12 @@ export interface PersistedState {
   dividendosSaoTrabalho?: boolean
   /** CDI/Selic/IPCA informados à mão — chave `indice:ano`, valor em fração. */
   benchmarks?: Record<string, number>
+  /**
+   * O que cada texto de movimentação/evento da B3 significa, respondido uma vez
+   * na tela de import. Guardado porque o catálogo é grande e estável: no ano
+   * seguinte só os tipos novos perguntam de novo.
+   */
+  b3?: Record<string, 'base' | 'isento' | 'ignorar' | 'indefinido'>
 }
 
 export interface NamedScenario {
