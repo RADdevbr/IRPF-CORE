@@ -42,6 +42,13 @@ export function decidirSync(estado: EstadoSync, remoto: ResumoRemoto | null, vau
   // diferentes não são comparáveis, e unir os métodos deles geraria embrulhos
   // que não abrem nada.
   if (remoto.vaultId && vaultIdLocal && remoto.vaultId !== vaultIdLocal) return { acao: 'cofres-diferentes' }
+  // Um lado com id e o outro sem também não prova parentesco — e "baixar" nesse
+  // estado monta um cofre com o conteúdo de um lado e os embrulhos do outro.
+  // Se as chaves não forem a mesma, cada método abre o próprio embrulho mas a
+  // DEK não decifra nada: o cofre trava com "chave errada" mesmo com a chave
+  // certa, e só se descobre no próximo bloqueio. A escolha explícita de um dos
+  // lados (sem misturar) resolve em um passo e não corrompe nenhum dos dois.
+  if (Boolean(remoto.vaultId) !== Boolean(vaultIdLocal)) return { acao: 'cofres-diferentes' }
   const base = estado.baseVersion
   if (base === null) return estado.sujo ? { acao: 'conflito' } : { acao: 'baixar' }
   if (remoto.version === base) return estado.sujo ? { acao: 'enviar', motivo: 'local-novo' } : { acao: 'nada' }
