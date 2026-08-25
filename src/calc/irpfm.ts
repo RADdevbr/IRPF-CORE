@@ -34,6 +34,7 @@ export const FIELDS: Field[] = [
   { key: 'exterior', label: 'Rendimentos no exterior', ir: 'exterior_ir', base: true, autoSal: false, autoCdb: false, info: 'IR pago no exterior pode ser deduzido.' },
   { key: 'aluguel', label: 'Aluguéis', ir: 'aluguel_ir', base: true, autoSal: false, autoCdb: false, info: 'Incluso na base do IRPFM.' },
   { key: 'cdb', label: 'CDB, fundos e invest. tributáveis', ir: 'cdb_ir', base: true, autoSal: false, autoCdb: true, info: 'IR retido exclusivamente na fonte é deduzido.' },
+  { key: 'bolsa', label: 'Ganho em bolsa (renda variável)', ir: 'bolsa_ir', base: true, autoSal: false, autoCdb: false, info: 'Ganho líquido na venda de ações, ETF e FII. A entrada na base do IRPFM é leitura da lei, não texto expresso — veja o painel da apuração.' },
   { key: 'outros', label: 'Outros rendimentos tributáveis', ir: 'outros_ir', base: true, autoSal: false, autoCdb: false, info: 'Qualquer outro rendimento não isento por lei.' },
 ]
 
