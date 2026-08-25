@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { C } from '../theme'
-import { remotoSupabase } from '../lib/remoto'
+import { remotoSupabase, clienteSupabase } from '../lib/remoto'
+import { admin } from '../lib/admin'
+import { Admin } from './Admin'
 import { supabaseConfigurado } from '../lib/supabaseConfig'
 import { sincronizar, resolverComLocal, resolverComRemoto, type ResultadoSync } from '../lib/syncCofre'
 import { lerEstadoSync, gravarEstadoSync } from '../lib/vault'
@@ -46,9 +48,12 @@ export function ContaSync({
 }) {
   const r = supabaseConfigurado() ? remotoSupabase() : null
   const [email, setEmail] = useState('')
+  const [convite, setConvite] = useState('')
   const [codigo, setCodigo] = useState('')
   const [etapa, setEtapa] = useState<'email' | 'codigo' | 'logado'>('email')
   const [quem, setQuem] = useState<string | null>(null)
+  const [souAdmin, setSouAdmin] = useState(false)
+  const [verAdmin, setVerAdmin] = useState(false)
   const [msg, setMsg] = useState('')
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -85,6 +90,8 @@ export function ContaSync({
       setConferindo(false)
       if (email) {
         setQuem(email)
+        // a RLS de `admins` só devolve a própria linha: se veio, é admin
+        void admin(clienteSupabase()).souAdmin().then(setSouAdmin).catch(() => setSouAdmin(false))
         setEtapa('logado')
         setErro('')
         lembrarConta(email)
@@ -174,13 +181,25 @@ export function ContaSync({
       )}
 
       {etapa === 'email' && !conferindo && (
+        <>
+        <span style={{ fontSize: 11.5, color: C.textMut, lineHeight: 1.6 }}>
+          <strong style={{ color: C.textSec }}>Conta nova é por convite.</strong> Se você já tem conta, é só o e-mail —
+          deixe o código em branco. Se é a primeira vez neste app, digite o código que recebeu de quem administra.
+        </span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" style={inp} />
+          <input
+            value={convite}
+            onChange={(e) => setConvite(e.target.value)}
+            placeholder="código de convite (só na primeira vez)"
+            aria-label="código de convite"
+            style={{ ...inp, minWidth: 240 }}
+          />
           <button
             style={btnPrim}
             disabled={ocupado || !email.includes('@')}
             onClick={() => rodar(async () => {
-              await r.enviarCodigo(email.trim())
+              await r.enviarCodigo(email.trim(), convite)
               setEtapa('codigo')
               setMsg('Enviado. Abra o e-mail e clique no link — você volta para cá já conectado.')
             })}
@@ -188,6 +207,7 @@ export function ContaSync({
             Enviar o link para este e-mail
           </button>
         </div>
+        </>
       )}
 
       {etapa === 'codigo' && (
@@ -249,6 +269,11 @@ export function ContaSync({
           >
             {ocupado ? 'Sincronizando…' : cofre ? 'Sincronizar agora' : 'Trazer o cofre da conta'}
           </button>
+          {souAdmin && (
+            <button style={btn} onClick={() => setVerAdmin((v) => !v)}>
+              {verAdmin ? 'Fechar o controle de contas' : 'Controle de contas'}
+            </button>
+          )}
           <button
             style={btn}
             disabled={ocupado}
@@ -262,6 +287,12 @@ export function ContaSync({
           >
             Desligar este aparelho da conta
           </button>
+        </div>
+      )}
+
+      {verAdmin && souAdmin && (
+        <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
+          <Admin onFechar={() => setVerAdmin(false)} />
         </div>
       )}
 

@@ -20,7 +20,7 @@
 
 import { analisarConsistencia, type Entradas } from './consistencia'
 import { composicaoRenda } from './renda'
-import type { Historico } from './historico'
+import { chaveAporte, NOME_CLASSE, type Aportes, type ClassePatrimonio, type Historico } from './historico'
 
 export interface AnoCapital {
   anoBase: number
@@ -104,4 +104,123 @@ export function analiseCapital(
     totalRendimento: anos.reduce((s, a) => s + a.rendimento, 0),
     totalPoupado: anos.reduce((s, a) => s + a.poupado, 0),
   }
+}
+
+// ------------------------------------------------------------ por classe
+
+export interface AnoClasse {
+  anoBase: number
+  /** Valor no começo do ano dos bens que entram na conta. */
+  inicial: number
+  final: number
+  aporte: number
+  /** final − inicial − aporte, só dos bens que ficaram o ano inteiro. */
+  rendimento: number
+  /** Base do retorno: inicial + metade do aporte (entrada no meio do ano). */
+  base: number
+  retorno: number | null
+  /** Valor que ficou de fora por ter entrado ou saído no ano sem aporte informado. */
+  foraDaConta: number
+  /** Algum bem ficou de fora: o retorno é do que ficou parado, não da classe toda. */
+  parcial: boolean
+}
+
+export interface ClasseRetorno {
+  classe: ClassePatrimonio
+  nome: string
+  anos: AnoClasse[]
+  /** Média simples dos anos com base — sem os anos que não deram para medir. */
+  retornoMedio: number | null
+  saldoFinal: number
+  algumParcial: boolean
+}
+
+/**
+ * Retorno de cada classe, ano a ano — sem depender dos vínculos entre anos.
+ *
+ * O saldo de 31/12 do ano anterior vem dentro da própria linha do Registro 27,
+ * então dá para medir a classe sem saber qual bem virou qual: soma o que valia
+ * no começo, soma o que valia no fim, tira o que você aportou.
+ *
+ * A regra que faz o número significar alguma coisa: **só entra o bem que ficou
+ * o ano inteiro**. Bem comprado em julho aparece com saldo anterior zero e o
+ * valor todo viraria "rendimento"; bem vendido some do saldo e viraria
+ * prejuízo. Os dois ficam de fora, e a linha diz quanto ficou. A exceção é o
+ * aporte informado: aí o app sabe quanto foi dinheiro novo e o bem entra na
+ * conta, com a entrada valendo meio ano na base.
+ */
+export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRetorno[] {
+  const porClasse = new Map<ClassePatrimonio, AnoClasse[]>()
+
+  for (const d of Object.values(h).sort((a, b) => a.anoBase - b.anoBase)) {
+    const grupos = new Map<ClassePatrimonio, typeof d.posicoes>()
+    for (const p of d.posicoes) {
+      const atual = grupos.get(p.classe)
+      if (atual) atual.push(p)
+      else grupos.set(p.classe, [p])
+    }
+
+    for (const [classe, posicoes] of grupos) {
+      let inicial = 0
+      let final = 0
+      let aporte = 0
+      let base = 0
+      let foraDaConta = 0
+      let parcial = false
+
+      for (const p of posicoes) {
+        const chave = chaveAporte(p.id, d.anoBase)
+        const informado = chave in aportes
+        const ficouOAnoInteiro = p.saldoAnterior > 0 && p.saldoAtual > 0
+        if (!informado && !ficouOAnoInteiro) {
+          foraDaConta += Math.max(p.saldoAtual, p.saldoAnterior)
+          parcial = true
+          continue
+        }
+        const a = informado ? aportes[chave] : 0
+        inicial += p.saldoAnterior
+        final += p.saldoAtual
+        aporte += a
+        // dinheiro que entrou no meio do ano rendeu meio ano: contar inteiro
+        // afundaria o retorno de quem aportou muito
+        base += p.saldoAnterior + a / 2
+      }
+
+      const rendimento = final - inicial - aporte
+      const linha: AnoClasse = {
+        anoBase: d.anoBase,
+        inicial,
+        final,
+        aporte,
+        rendimento,
+        base,
+        retorno: base > 0 ? rendimento / base : null,
+        foraDaConta,
+        parcial,
+      }
+      const lista = porClasse.get(classe)
+      if (lista) lista.push(linha)
+      else porClasse.set(classe, [linha])
+    }
+  }
+
+  return [...porClasse.entries()]
+    .map(([classe, anos]) => {
+      const medidos = anos.filter((a) => a.retorno !== null)
+      return {
+        classe,
+        nome: NOME_CLASSE[classe],
+        anos,
+        retornoMedio:
+          medidos.length > 0 ? medidos.reduce((s, a) => s + (a.retorno as number), 0) / medidos.length : null,
+        saldoFinal: anos[anos.length - 1]?.final ?? 0,
+        algumParcial: anos.some((a) => a.parcial),
+      }
+    })
+    .sort((a, b) => b.saldoFinal - a.saldoFinal)
+}
+
+/** Retorno descontada a inflação: o que sobrou de poder de compra. */
+export function retornoReal(nominal: number, inflacao: number): number {
+  return (1 + nominal) / (1 + inflacao) - 1
 }

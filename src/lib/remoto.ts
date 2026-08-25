@@ -20,6 +20,12 @@ function cli(): SupabaseClient {
   return cliente
 }
 
+/** O mesmo cliente que o resto do app usa — a tela de admin fala pelas mesmas
+ *  políticas de RLS, sem chave privilegiada nenhuma. */
+export function clienteSupabase() {
+  return cli()
+}
+
 // ---------------------------------------------------------------- mapeamento
 
 export interface LinhaVault {
@@ -80,6 +86,25 @@ export function linhaDoWrap(w: Wrap, userId: string): LinhaWrap & { user_id: str
   }
 }
 
+/**
+ * Traduz o erro de login para o que a pessoa precisa entender.
+ *
+ * Conta bloqueada pelo gatilho do banco volta como "Database error saving new
+ * user" — genérico a ponto de parecer defeito do app. Com o interruptor do
+ * painel desligado, volta em inglês. Nos dois casos o que aconteceu é o mesmo:
+ * este app não abre conta para qualquer um.
+ */
+export function mensagemDeLogin(bruta: string): string {
+  const m = bruta.toLowerCase()
+  if (/convite|não liberada|nao liberada|database error saving new user|signups? not allowed|signup is disabled/.test(m)) {
+    return 'Conta nova neste app é por convite. Peça um código a quem administra e digite no campo "código de convite" — se o seu código já foi usado ou venceu, peça outro. Se a conta é sua e já existe, confira se digitou o mesmo e-mail: quem já tem conta entra sem código.'
+  }
+  if (/rate limit|too many requests/.test(m)) {
+    return 'Muitas tentativas seguidas. Espere um minuto e peça o link de novo.'
+  }
+  return bruta
+}
+
 // ---------------------------------------------------------------- Remoto
 
 export function remotoSupabase(): Remoto {
@@ -100,10 +125,18 @@ export function remotoSupabase(): Remoto {
       return () => data.subscription.unsubscribe()
     },
 
-    async enviarCodigo(email) {
+    async enviarCodigo(email, convite) {
       const { error } = await cli().auth.signInWithOtp({
         email,
         options: {
+          // Vira raw_user_meta_data na criação do usuário, que é onde o gatilho
+          // do banco lê o convite. Conta que já existe ignora isto: quem já
+          // entrou não precisa de convite de novo.
+          data: convite?.trim() ? { convite: convite.trim().toUpperCase() } : undefined,
+          // Continua true: quem decide se a conta pode nascer é o banco (ver
+          // supabase/schema.sql — lista de contas liberadas). Barrar aqui seria
+          // teatro, porque a chave anon está no bundle e dá para chamar o
+          // Supabase direto; e barrar aqui impediria você de convidar alguém.
           shouldCreateUser: true,
           // Sem isto o link do e-mail cai no Site URL do projeto, que por padrão
           // é localhost:3000 — ou seja, no nada. Com isto ele volta para onde o
@@ -111,7 +144,7 @@ export function remotoSupabase(): Remoto {
           emailRedirectTo: typeof window === 'undefined' ? undefined : window.location.origin,
         },
       })
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(mensagemDeLogin(error.message))
     },
 
     async conferirCodigo(email, codigo) {
