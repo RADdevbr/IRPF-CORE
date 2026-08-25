@@ -212,15 +212,25 @@ export function parseDec(text: string): DecResult {
         const cnpj = slice1(l, 30, 43).trim()
         const cod = parseInt(slice1(l, 26, 29).replace(/\D/g, '') || '0', 10)
         let tipoLabel = 'Rend. isento / não tributável'
-        let alvo = ''
+        let rotulo = 'Rendimento'
+        // Isento não entra na base do IRPFM (nenhum FIELD lê `isentos`), mas é
+        // dinheiro que entrou: LCI/LCA, poupança, incentivadas, FII, herança,
+        // indenização. Jogar fora esse valor fazia a análise de consistência
+        // cobrar do patrimônio uma renda que a declaração informa — e no
+        // arquivo real isso é dezenas de milhares por ano.
+        let alvo = 'isentos'
         if (tipo === '88') {
           tipoLabel = 'Rend. tributação definitiva'
           alvo = 'cdb'
         } else if (cod === 9) {
           tipoLabel = 'Lucros e dividendos'
           alvo = 'divBR'
+        } else {
+          // o código da ficha muda de significado com o ano; guardá-lo é o que
+          // permite reconhecer a linha sem inventar um rótulo errado
+          rotulo = `Isento (cód. ${String(cod).padStart(2, '0')})`
         }
-        lancamentos.push({ linha: i + 1, tipo, tipoLabel, fonte, cnpj, rotulo: 'Rendimento', valor, alvo })
+        lancamentos.push({ linha: i + 1, tipo, tipoLabel, fonte, cnpj, rotulo, valor, alvo })
       }
       return
     }
