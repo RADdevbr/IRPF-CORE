@@ -174,6 +174,12 @@ export function ContaSync({
       )}
 
       {etapa === 'email' && !conferindo && (
+        <>
+        <span style={{ fontSize: 11.5, color: C.textMut, lineHeight: 1.6 }}>
+          <strong style={{ color: C.textSec }}>Conta nova é por convite.</strong> O e-mail precisa estar liberado no
+          banco (a lista fica no seu projeto Supabase, em <code>contas_liberadas</code>). Quem já tem conta entra
+          normalmente; um e-mail de fora recebe uma recusa, não uma conta.
+        </span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" style={inp} />
           <button
@@ -188,6 +194,7 @@ export function ContaSync({
             Enviar o link para este e-mail
           </button>
         </div>
+        </>
       )}
 
       {etapa === 'codigo' && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { analiseCapital } from './capital'
+import { analiseCapital, retornoPorClasse, retornoReal } from './capital'
 import { composicaoRenda } from './renda'
 import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
@@ -16,12 +16,12 @@ const lanc = (alvo: string, valor: number): Lancamento => ({
   alvo,
 })
 
-const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0): Posicao => ({
+const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0, codigo = '45'): Posicao => ({
   linha: 1,
   cdBem: '00',
-  codigo: '45',
+  codigo,
   subcodigo: '01',
-  bruta: `27CPF        450100${descricao}`,
+  bruta: `27CPF        ${codigo}0100${descricao}`,
   descricao,
   saldoAnterior,
   saldoAtual,
@@ -186,5 +186,88 @@ describe('benchmarks', () => {
     for (const ano of Object.keys(TABELA.cdi).map(Number)) {
       expect(Math.abs(TABELA.cdi[ano] - TABELA.selic[ano])).toBeLessThan(0.001)
     }
+  })
+})
+
+describe('retorno por classe', () => {
+  it('mede a classe pelo saldo que o próprio arquivo declara, sem depender de vínculo', () => {
+    // CDB 100k → 120k sem aporte: 20k de rendimento sobre média de 110k
+    const h = historico({
+      exercicio: '2025',
+      rendas: [],
+      bens: [pos('CDB BANCO X', 120_000, 100_000)],
+    })
+    const [cdb] = retornoPorClasse(h)
+    expect(cdb.nome).toBe('CDB / RDB')
+    expect(cdb.anos[0].rendimento).toBe(20_000)
+    // base = o que havia no começo do ano
+    expect(cdb.anos[0].retorno).toBeCloseTo(20_000 / 100_000, 6)
+    expect(cdb.retornoMedio).toBeCloseTo(0.2, 6)
+  })
+
+  it('aporte informado sai do rendimento — dinheiro que você pôs não é rendimento', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB BANCO X', 200_000, 100_000)] })
+    const id = h['2024'].posicoes[0].id
+    const [cdb] = retornoPorClasse(h, { [`${id}@2024`]: 80_000 })
+    expect(cdb.anos[0].aporte).toBe(80_000)
+    expect(cdb.anos[0].rendimento).toBe(20_000)
+    // base = 100.000 + 80.000/2
+    expect(cdb.anos[0].retorno).toBeCloseTo(20_000 / 140_000, 6)
+  })
+
+  it('bem que entrou ou saiu no ano fica de fora — e a linha diz quanto ficou', () => {
+    const h = historico({
+      exercicio: '2025',
+      rendas: [],
+      // um que ficou o ano inteiro, um comprado no ano e um vendido
+      bens: [pos('CDB VELHO', 110_000, 100_000), pos('CDB NOVO', 50_000, 0), pos('CDB VENDIDO', 0, 30_000)],
+    })
+    const [cdb] = retornoPorClasse(h)
+    // mede só o que ficou parado: 10k sobre 100k
+    expect(cdb.anos[0].rendimento).toBe(10_000)
+    expect(cdb.anos[0].retorno).toBeCloseTo(0.1, 6)
+    expect(cdb.anos[0].parcial).toBe(true)
+    expect(cdb.anos[0].foraDaConta).toBe(80_000)
+    // e o ano continua medindo: antes ele era descartado inteiro
+    expect(cdb.retornoMedio).toBeCloseTo(0.1, 6)
+  })
+
+  it('com aporte informado, o bem novo entra na conta e a entrada vale meio ano', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB NOVO', 50_000, 0)] })
+    const id = h['2024'].posicoes[0].id
+    const [cdb] = retornoPorClasse(h, { [`${id}@2024`]: 48_000 })
+    expect(cdb.anos[0].parcial).toBe(false)
+    expect(cdb.anos[0].rendimento).toBe(2_000)
+    // base = 0 + 48.000/2
+    expect(cdb.anos[0].retorno).toBeCloseTo(2_000 / 24_000, 6)
+  })
+
+  it('classe inteira que entrou no ano não tem o que medir', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB NOVO', 50_000, 0)] })
+    const [cdb] = retornoPorClasse(h)
+    expect(cdb.anos[0].retorno).toBe(null)
+    expect(cdb.retornoMedio).toBe(null)
+    expect(cdb.anos[0].foraDaConta).toBe(50_000)
+  })
+
+  it('classes vêm da maior para a menor, pelo saldo do fim', () => {
+    const h = historico({
+      exercicio: '2025',
+      rendas: [],
+      bens: [pos('CDB', 100_000, 90_000), pos('APARTAMENTO', 800_000, 800_000, '11')],
+    })
+    expect(retornoPorClasse(h).map((c) => c.classe)).toEqual(['imovel', 'cdb'])
+  })
+})
+
+describe('retorno real', () => {
+  it('desconta a inflação de verdade, não por subtração', () => {
+    // 13% nominal com 5% de inflação não são 8% de poder de compra
+    expect(retornoReal(0.13, 0.05)).toBeCloseTo(1.13 / 1.05 - 1, 9)
+    expect(retornoReal(0.13, 0.05)).toBeLessThan(0.08)
+  })
+
+  it('render menos que a inflação é perder poder de compra', () => {
+    expect(retornoReal(0.03, 0.06)).toBeLessThan(0)
   })
 })

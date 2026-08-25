@@ -62,3 +62,55 @@ $$;
 drop trigger if exists tg_impede_ultimo_wrap on public.vault_wraps;
 create trigger tg_impede_ultimo_wrap before delete on public.vault_wraps
   for each row execute function public.impede_ultimo_wrap();
+
+-- ---------------------------------------------------------------------------
+-- Quem pode criar conta
+--
+-- Sem isto, qualquer pessoa que descubra o endereço do app pede um link mágico
+-- e ganha uma conta no seu projeto Supabase. Ela não enxerga o SEU cofre — a
+-- RLS acima cuida disso — mas consome o seu plano, aparece na sua lista de
+-- usuários e recebe e-mail em seu nome. Conta nova passa a ser convite, não
+-- cadastro.
+--
+-- A checagem tem de ser no banco. Qualquer bloqueio no app seria teatro: a
+-- chave anon está no bundle e dá para chamar o Supabase direto do terminal.
+--
+-- Depois de rodar isto, LIBERE O SEU PRÓPRIO E-MAIL (senão nem você entra numa
+-- conta nova):
+--
+--   insert into public.contas_liberadas (email, nota)
+--   values (lower('voce@exemplo.com'), 'dono')
+--   on conflict (email) do nothing;
+--
+-- Quem já tem conta continua entrando: o gatilho só olha criação.
+--
+-- Para fechar de vez, sem lista nenhuma, há também o interruptor do painel:
+-- Authentication → Sign In / Providers → Email → "Allow new users to sign up".
+-- Desligado ali, nem a lista libera. Os dois juntos: a lista decide quem entra,
+-- o interruptor é o cadeado geral.
+
+create table if not exists public.contas_liberadas (
+  email     text        primary key,
+  nota      text,
+  criado_em timestamptz not null default now()
+);
+
+-- Sem policy nenhuma e com RLS ligada, a lista é invisível pela API pública:
+-- só o painel do Supabase e o gatilho (security definer) enxergam.
+alter table public.contas_liberadas enable row level security;
+
+create or replace function public.exige_conta_liberada() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (
+    select 1 from public.contas_liberadas where email = lower(new.email)
+  ) then
+    raise exception 'conta não liberada para este app';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tg_exige_conta_liberada on auth.users;
+create trigger tg_exige_conta_liberada before insert on auth.users
+  for each row execute function public.exige_conta_liberada();

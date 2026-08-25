@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { docDaLinha, wrapDaLinha, linhaDoWrap, type LinhaVault, type LinhaWrap } from './remoto'
+import { docDaLinha, wrapDaLinha, linhaDoWrap, mensagemDeLogin, type LinhaVault, type LinhaWrap } from './remoto'
 import type { Wrap } from './crypto'
 
 // A conversa com a rede não dá para testar aqui; a tradução entre as colunas do
@@ -67,5 +67,26 @@ describe('tradução das linhas do banco', () => {
       criado_em: '2026-08-23T19:30:00.000Z',
     })
     expect(wrapDaLinha(linha)).toEqual(w)
+  })
+})
+
+describe('erro de login vira frase que explica', () => {
+  it('conta barrada pelo banco não pode parecer defeito do app', () => {
+    // é isso que o Supabase devolve quando o gatilho recusa a conta
+    const m = mensagemDeLogin('Database error saving new user')
+    expect(m).toMatch(/não cria contas novas/)
+    expect(m).toMatch(/liberado/)
+  })
+
+  it('cadastro desligado no painel dá a mesma explicação', () => {
+    expect(mensagemDeLogin('Signups not allowed for otp')).toMatch(/não cria contas novas/)
+  })
+
+  it('excesso de tentativas é outro problema, e outra frase', () => {
+    expect(mensagemDeLogin('Email rate limit exceeded')).toMatch(/Espere um minuto/)
+  })
+
+  it('o que não sabe traduzir, repassa inteiro em vez de engolir', () => {
+    expect(mensagemDeLogin('Falha esquisita do servidor')).toBe('Falha esquisita do servidor')
   })
 })
