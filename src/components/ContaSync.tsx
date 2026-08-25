@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { C } from '../theme'
-import { remotoSupabase } from '../lib/remoto'
+import { remotoSupabase, clienteSupabase } from '../lib/remoto'
+import { admin } from '../lib/admin'
+import { Admin } from './Admin'
 import { supabaseConfigurado } from '../lib/supabaseConfig'
 import { sincronizar, resolverComLocal, resolverComRemoto, type ResultadoSync } from '../lib/syncCofre'
 import { lerEstadoSync, gravarEstadoSync } from '../lib/vault'
@@ -50,6 +52,8 @@ export function ContaSync({
   const [codigo, setCodigo] = useState('')
   const [etapa, setEtapa] = useState<'email' | 'codigo' | 'logado'>('email')
   const [quem, setQuem] = useState<string | null>(null)
+  const [souAdmin, setSouAdmin] = useState(false)
+  const [verAdmin, setVerAdmin] = useState(false)
   const [msg, setMsg] = useState('')
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -86,6 +90,8 @@ export function ContaSync({
       setConferindo(false)
       if (email) {
         setQuem(email)
+        // a RLS de `admins` só devolve a própria linha: se veio, é admin
+        void admin(clienteSupabase()).souAdmin().then(setSouAdmin).catch(() => setSouAdmin(false))
         setEtapa('logado')
         setErro('')
         lembrarConta(email)
@@ -263,6 +269,11 @@ export function ContaSync({
           >
             {ocupado ? 'Sincronizando…' : cofre ? 'Sincronizar agora' : 'Trazer o cofre da conta'}
           </button>
+          {souAdmin && (
+            <button style={btn} onClick={() => setVerAdmin((v) => !v)}>
+              {verAdmin ? 'Fechar o controle de contas' : 'Controle de contas'}
+            </button>
+          )}
           <button
             style={btn}
             disabled={ocupado}
@@ -276,6 +287,12 @@ export function ContaSync({
           >
             Desligar este aparelho da conta
           </button>
+        </div>
+      )}
+
+      {verAdmin && souAdmin && (
+        <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
+          <Admin onFechar={() => setVerAdmin(false)} />
         </div>
       )}
 

@@ -20,6 +20,12 @@ function cli(): SupabaseClient {
   return cliente
 }
 
+/** O mesmo cliente que o resto do app usa — a tela de admin fala pelas mesmas
+ *  políticas de RLS, sem chave privilegiada nenhuma. */
+export function clienteSupabase() {
+  return cli()
+}
+
 // ---------------------------------------------------------------- mapeamento
 
 export interface LinhaVault {
