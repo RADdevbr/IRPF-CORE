@@ -36,6 +36,19 @@ const FONTES: { chave: string; rotulo: string; origem: Origem }[] = [
   { chave: 'outros', rotulo: 'Outros rendimentos', origem: 'indefinido' },
 ]
 
+/**
+ * Ordem canônica das fontes — é o que dá cor estável a cada uma.
+ *
+ * A cor tem de seguir a fonte, não a posição no ranking: se o dividendo é azul
+ * num ano, tem de ser azul em todos, senão a barra muda de significado quando a
+ * ordem muda. As duas fontes sem origem definida ficam de fora — elas usam o
+ * cinza de "a classificar" e não gastam cor de série.
+ */
+export const FONTES_COM_COR = FONTES.filter((f) => f.origem !== 'indefinido').map((f) => f.chave)
+
+/** Todas as fontes, na ordem em que a tela deve empilhá-las dentro do grupo. */
+export const ORDEM_FONTES = FONTES.map((f) => f.chave)
+
 export interface ComposicaoRenda {
   fontes: FonteRenda[]
   total: number
