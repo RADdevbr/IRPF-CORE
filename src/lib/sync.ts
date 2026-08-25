@@ -69,7 +69,8 @@ export interface Remoto {
    * Opcional porque os servidores de mentira dos testes não precisam disso.
    */
   aoMudarSessao?(cb: (email: string | null) => void): () => void
-  enviarCodigo(email: string): Promise<void>
+  /** `convite` só é usado quando a conta ainda não existe. */
+  enviarCodigo(email: string, convite?: string): Promise<void>
   conferirCodigo(email: string, codigo: string): Promise<void>
   sair(): Promise<void>
   lerDoc(docId: string): Promise<DocRemoto | null>

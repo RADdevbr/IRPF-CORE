@@ -74,12 +74,14 @@ describe('erro de login vira frase que explica', () => {
   it('conta barrada pelo banco não pode parecer defeito do app', () => {
     // é isso que o Supabase devolve quando o gatilho recusa a conta
     const m = mensagemDeLogin('Database error saving new user')
-    expect(m).toMatch(/não cria contas novas/)
-    expect(m).toMatch(/liberado/)
+    expect(m).toMatch(/por convite/)
+    expect(m).toMatch(/código/)
+    // e diz o que fazer quem já tem conta e só errou o e-mail
+    expect(m).toMatch(/entra sem código/)
   })
 
   it('cadastro desligado no painel dá a mesma explicação', () => {
-    expect(mensagemDeLogin('Signups not allowed for otp')).toMatch(/não cria contas novas/)
+    expect(mensagemDeLogin('Signups not allowed for otp')).toMatch(/por convite/)
   })
 
   it('excesso de tentativas é outro problema, e outra frase', () => {

@@ -46,6 +46,7 @@ export function ContaSync({
 }) {
   const r = supabaseConfigurado() ? remotoSupabase() : null
   const [email, setEmail] = useState('')
+  const [convite, setConvite] = useState('')
   const [codigo, setCodigo] = useState('')
   const [etapa, setEtapa] = useState<'email' | 'codigo' | 'logado'>('email')
   const [quem, setQuem] = useState<string | null>(null)
@@ -176,17 +177,23 @@ export function ContaSync({
       {etapa === 'email' && !conferindo && (
         <>
         <span style={{ fontSize: 11.5, color: C.textMut, lineHeight: 1.6 }}>
-          <strong style={{ color: C.textSec }}>Conta nova é por convite.</strong> O e-mail precisa estar liberado no
-          banco (a lista fica no seu projeto Supabase, em <code>contas_liberadas</code>). Quem já tem conta entra
-          normalmente; um e-mail de fora recebe uma recusa, não uma conta.
+          <strong style={{ color: C.textSec }}>Conta nova é por convite.</strong> Se você já tem conta, é só o e-mail —
+          deixe o código em branco. Se é a primeira vez neste app, digite o código que recebeu de quem administra.
         </span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" style={inp} />
+          <input
+            value={convite}
+            onChange={(e) => setConvite(e.target.value)}
+            placeholder="código de convite (só na primeira vez)"
+            aria-label="código de convite"
+            style={{ ...inp, minWidth: 240 }}
+          />
           <button
             style={btnPrim}
             disabled={ocupado || !email.includes('@')}
             onClick={() => rodar(async () => {
-              await r.enviarCodigo(email.trim())
+              await r.enviarCodigo(email.trim(), convite)
               setEtapa('codigo')
               setMsg('Enviado. Abra o e-mail e clique no link — você volta para cá já conectado.')
             })}

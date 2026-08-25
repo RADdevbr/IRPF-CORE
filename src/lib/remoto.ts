@@ -90,8 +90,8 @@ export function linhaDoWrap(w: Wrap, userId: string): LinhaWrap & { user_id: str
  */
 export function mensagemDeLogin(bruta: string): string {
   const m = bruta.toLowerCase()
-  if (/não liberada|nao liberada|database error saving new user|signups? not allowed|signup is disabled/.test(m)) {
-    return 'Este app não cria contas novas: o e-mail precisa estar liberado no banco. Se a conta é sua e já existe, confira se digitou o mesmo e-mail — quem já tem conta continua entrando normalmente.'
+  if (/convite|não liberada|nao liberada|database error saving new user|signups? not allowed|signup is disabled/.test(m)) {
+    return 'Conta nova neste app é por convite. Peça um código a quem administra e digite no campo "código de convite" — se o seu código já foi usado ou venceu, peça outro. Se a conta é sua e já existe, confira se digitou o mesmo e-mail: quem já tem conta entra sem código.'
   }
   if (/rate limit|too many requests/.test(m)) {
     return 'Muitas tentativas seguidas. Espere um minuto e peça o link de novo.'
@@ -119,10 +119,14 @@ export function remotoSupabase(): Remoto {
       return () => data.subscription.unsubscribe()
     },
 
-    async enviarCodigo(email) {
+    async enviarCodigo(email, convite) {
       const { error } = await cli().auth.signInWithOtp({
         email,
         options: {
+          // Vira raw_user_meta_data na criação do usuário, que é onde o gatilho
+          // do banco lê o convite. Conta que já existe ignora isto: quem já
+          // entrou não precisa de convite de novo.
+          data: convite?.trim() ? { convite: convite.trim().toUpperCase() } : undefined,
           // Continua true: quem decide se a conta pode nascer é o banco (ver
           // supabase/schema.sql — lista de contas liberadas). Barrar aqui seria
           // teatro, porque a chave anon está no bundle e dá para chamar o
