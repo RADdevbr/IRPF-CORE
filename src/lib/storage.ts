@@ -10,6 +10,7 @@ import type { Historico, Overrides, Aportes, Vinculos } from './historico'
 import type { Entradas } from './consistencia'
 import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bolsa'
 import type { PapelNaCarteira } from './b3posicao'
+import type { Origem } from './origem'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -71,6 +72,12 @@ export interface PersistedState {
   b3?: Record<string, 'base' | 'isento' | 'ignorar' | 'indefinido'>
   /** O mesmo, para a carteira: que movimentação é compra, venda ou evento. */
   b3Carteira?: Record<string, PapelNaCarteira>
+  /**
+   * De onde veio cada número, pela mesma chave dos `vals`. Ausente = não
+   * registrado (estado salvo antes deste campo existir), que é diferente de
+   * digitado.
+   */
+  origem?: Record<string, Origem>
   /**
    * Renda variável: as operações do ano e as duas leituras da lei que ainda
    * estão em aberto. Guarda a ENTRADA da apuração, nunca o resultado — o ganho
