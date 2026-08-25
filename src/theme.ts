@@ -8,7 +8,10 @@ export const C = {
   borderStrong: '#4a4a4a',
   text: '#f0f0f0',
   textSec: '#aaa',
-  textMut: '#666',
+  // #666 dava 3,0:1 contra o fundo — abaixo do mínimo legível para texto
+  // pequeno, que é justamente onde esta cor é usada (legendas, notas de
+  // rodapé, explicação de campo). #949494 passa de 4,5:1 nos três fundos.
+  textMut: '#949494',
   orange: '#e8834a',
   orangeLight: '#f0a070',
   orangeDim: '#3a2010',
