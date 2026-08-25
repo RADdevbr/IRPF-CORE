@@ -110,11 +110,15 @@ describe('parseDec — leitura posicional', () => {
     expect(lanc?.alvo).toBe('divBR')
   })
 
-  it('Registro 84 outras linhas (LCI/LCA etc.) → ignorar (fora da base)', () => {
+  it('Registro 84 outras linhas (LCI/LCA etc.) → isentos, fora da base mas dentro do bolso', () => {
     const r = parseDec('IRPF 2026\r\n' + reg84('12', 'LCI BANCO X', 500000) + '\r\n')
     const lanc = r.lancamentos.find((l) => l.tipo === '84')
     expect(lanc?.valor).toBeCloseTo(5000, 2)
-    expect(lanc?.alvo).toBe('') // isento → não entra na base
+    // `isentos` não é campo do cálculo do IRPFM (nenhum FIELD o lê), então não
+    // entra na base — mas é renda recebida, e a análise de consistência precisa
+    // dela para não cobrar do patrimônio um dinheiro que a declaração informa
+    expect(lanc?.alvo).toBe('isentos')
+    expect(lanc?.rotulo).toBe('Isento (cód. 12)')
   })
 
   it('NÃO lê Registro 24 compacto sem nome (evita valores absurdos)', () => {

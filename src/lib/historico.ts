@@ -33,8 +33,25 @@ export interface Diagnostico {
   anoDetectado: boolean
 }
 
+/**
+ * Versão do leitor que produziu a declaração guardada.
+ *
+ * O .DEC é lido uma vez e o resultado fica no cofre; quando o leitor aprende a
+ * extrair um campo novo, o histórico já gravado continua sem ele — e a tela
+ * mostra vazio sem dizer por quê. Aconteceu com os pagamentos efetuados e de
+ * novo com os rendimentos isentos. Com o carimbo, a tela sabe pedir a
+ * reimportação dos anos que ficaram para trás.
+ *
+ * 1 (ou ausente) — antes dos pagamentos (Registro 26)
+ * 2 — pagamentos efetuados
+ * 3 — rendimentos isentos e não tributáveis somados como renda
+ */
+export const LEITURA_ATUAL = 3
+
 export interface Declaracao {
   diagnostico: Diagnostico
+  /** Ver LEITURA_ATUAL. Ausente = leitura anterior aos pagamentos. */
+  versaoLeitura?: number
   exercicio: number // ano da DECLARAÇÃO (2026 = ano-base 2025)
   anoBase: number
   arquivo: string
@@ -261,6 +278,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     })
 
   return {
+    versaoLeitura: LEITURA_ATUAL,
     pagamentos: dec.pagamentos ?? [],
     diagnostico: {
       registros: dec.registros.map((r) => ({ tipo: r.tipo, count: r.count })),
@@ -362,6 +380,9 @@ export function normalizaHistorico(h: Historico | undefined | null): Historico {
       // pagamentos" de "importada antes de o app saber ler pagamentos" — só
       // assim a tela pode pedir a reimportação em vez de mostrar um vazio mudo
       pagamentos: Array.isArray(d.pagamentos) ? d.pagamentos : undefined,
+      // sem carimbo é leitura antiga: quem não tem pagamentos gravados veio da
+      // versão 1, quem tem veio da 2
+      versaoLeitura: typeof d.versaoLeitura === 'number' ? d.versaoLeitura : Array.isArray(d.pagamentos) ? 2 : 1,
       diagnostico: d.diagnostico ?? { ...DIAGNOSTICO_VAZIO, posicoes: posicoes.length },
     }
   }

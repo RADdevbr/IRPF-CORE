@@ -201,7 +201,48 @@ describe('leitura dos anos juntos', () => {
     const r = analisarConsistencia(h)
     expect(r.descontinuidades).toHaveLength(1)
     expect(r.descontinuidades[0]).toMatchObject({ de: 2023, para: 2024, diferenca: 400_000 })
-    expect(r.faltando.join(' ')).toMatch(/anos que faltam/)
+    // anos consecutivos: não falta declaração, faltou explicar o degrau
+    expect(r.faltando.join(' ')).toMatch(/degrau entre um ano e o outro/)
+    expect(r.anosQueFaltam).toEqual([])
+  })
+
+  it('salto de anos: a evolução é do período inteiro, e a leitura desce para "atenção"', () => {
+    // 2020 e 2023 importados, 2021 e 2022 não: a evolução ali é de três anos e
+    // a renda é a de um. Acusar "inconsistência relevante" nisso é alarme falso
+    const h = historico(
+      { exercicio: '2021', rendas: [lanc('salario', 200_000)], bens: [pos('CDB', 500_000)] },
+      { exercicio: '2024', rendas: [lanc('salario', 200_000)], bens: [pos('CDB', 2_000_000, 1_800_000)] },
+    )
+    const r = analisarConsistencia(h)
+    const salto = r.anos.find((a) => a.anoBase === 2023)!
+    expect(salto.anosCobertos).toBe(3)
+    expect(salto.periodoIncompleto).toBe(true)
+    expect(salto.descoberto).toBeGreaterThan(PISO_RELEVANCIA)
+    expect(salto.classificacao).toBe('atenção')
+    expect(r.anosQueFaltam).toEqual([2021, 2022])
+    expect(r.faltando[0]).toMatch(/declaração de 2021, 2022/)
+  })
+
+  it('com ano faltando no meio, dois descobertos não viram "anos seguidos"', () => {
+    const h = historico(
+      { exercicio: '2022', rendas: [], bens: [pos('CDB', 100_000)] },
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 900_000, 800_000)] },
+      { exercicio: '2026', rendas: [], bens: [pos('CDB', 2_000_000, 1_900_000)] },
+    )
+    const r = analisarConsistencia(h)
+    expect(r.anos.filter((a) => a.descoberto > 0).length).toBeGreaterThan(1)
+    expect(r.sequenciaRecorrente).toBe(false)
+  })
+
+  it('anos seguidos não são período incompleto', () => {
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2025', rendas: [], bens: [pos('CDB', 1_100_000, 1_000_000)] },
+    )
+    const r = analisarConsistencia(h)
+    expect(r.anos.every((a) => a.anosCobertos === 1)).toBe(true)
+    expect(r.anos.every((a) => !a.periodoIncompleto)).toBe(true)
+    expect(r.anosQueFaltam).toEqual([])
   })
 
   it('anos não consecutivos não viram descontinuidade — falta ano, não bate mesmo', () => {
@@ -454,22 +495,52 @@ describe('pagamentos que o próprio arquivo declara', () => {
     expect(faltando).toMatch(/mercado, moradia e viagem/)
   })
 
-  it('histórico gravado antes desta versão não quebra — só vem sem pagamentos', () => {
+  it('histórico gravado por uma versão anterior se declara desatualizado', () => {
     const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB', 100)] })
     delete (h['2024'] as { pagamentos?: unknown }).pagamentos
+    delete (h['2024'] as { versaoLeitura?: unknown }).versaoLeitura
     const a = analisarConsistencia(h).anos[0]
     expect(a.pagamentosDeclarados).toBe(0)
     expect(a.pagamentos).toEqual([])
-    // e o ano se declara desatualizado, senão a tela mostra um vazio mudo
-    // e o usuário procura pelos pagamentos que nunca foram lidos
-    expect(a.importadoSemPagamentos).toBe(true)
+    // sem isto a tela mostra um vazio mudo e a pessoa procura por um número
+    // que nunca foi lido — pagamentos antes, rendimentos isentos agora
+    expect(a.leituraAntiga).toBe(true)
     expect(analisarConsistencia(h).faltando.join(' ')).toMatch(/reimportar/)
+  })
+
+  it('rendimento isento é fonte: LCI, poupança e incentivadas pagam patrimônio', () => {
+    // evolução de 200k com 120k de renda tributável: sozinha, a conta acusaria
+    // 80k sem cobertura. A ficha de isentos do próprio arquivo explica o resto.
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      {
+        exercicio: '2025',
+        rendas: [lanc('salario', 120_000), lanc('isentos', 80_000)],
+        bens: [pos('CDB', 1_200_000, 1_000_000)],
+      },
+    )
+    const a = analisarConsistencia(h).anos.find((x) => x.anoBase === 2024)!
+    expect(a.rendimentosTributaveis).toBe(120_000)
+    expect(a.rendimentosIsentos).toBe(80_000)
+    expect(a.rendimentos).toBe(200_000)
+    expect(a.descoberto).toBe(0)
+    expect(a.classificacao).toBe('compatível')
+  })
+
+  it('sem os isentos, o mesmo ano acusaria diferença que não existe', () => {
+    const h = historico(
+      { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2025', rendas: [lanc('salario', 120_000)], bens: [pos('CDB', 1_200_000, 1_000_000)] },
+    )
+    const a = analisarConsistencia(h).anos.find((x) => x.anoBase === 2024)!
+    expect(a.rendimentosIsentos).toBe(0)
+    expect(a.descoberto).toBe(80_000)
   })
 
   it('declaração relida com o app atual não pede reimportação', () => {
     const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB', 100)] })
     const a = analisarConsistencia(h).anos[0]
-    expect(a.importadoSemPagamentos).toBe(false)
+    expect(a.leituraAntiga).toBe(false)
     expect(analisarConsistencia(h).faltando.join(' ')).not.toMatch(/reimportar/)
   })
 })

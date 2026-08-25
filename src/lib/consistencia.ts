@@ -19,7 +19,7 @@
 //    parece crescimento que a renda não cobre. Por isso dívidas são informadas
 //    à mão, por ano, e o app avisa quando não foram.
 
-import type { Historico } from './historico'
+import { LEITURA_ATUAL, type Historico } from './historico'
 
 /** O que só a pessoa sabe — o arquivo não conta. */
 export interface EntradaAno {
@@ -98,6 +98,10 @@ export interface AnoAnalisado {
   liquidoFinal: number
   evolucao: number
   rendimentos: number
+  /** Parte da renda que a declaração trata como tributável (base ou fonte). */
+  rendimentosTributaveis: number
+  /** Ficha de isentos e não tributáveis — renda recebida que a lei não tributa. */
+  rendimentosIsentos: number
   receitasNaoRecorrentes: number
   fontes: number
   despesas: number
@@ -109,6 +113,17 @@ export interface AnoAnalisado {
   classificacao: Classificacao
   /** Primeiro ano importado não tem com o que comparar. */
   semAnoAnterior: boolean
+  /**
+   * Quantos anos a evolução deste período cobre.
+   *
+   * 1 no caso normal. Mais que isso quando falta declaração no meio: a evolução
+   * é do salto inteiro (2020 → 2023 são três anos), mas a renda é só a do ano
+   * declarado. Todo número da linha continua verdadeiro; o que muda é o que se
+   * pode concluir dele.
+   */
+  anosCobertos: number
+  /** Evolução de vários anos contra a renda de um só — leitura sem valor. */
+  periodoIncompleto: boolean
   /** Não dá para afirmar nada sem custo de vida informado. */
   semDespesas: boolean
   semDividas: boolean
@@ -121,13 +136,13 @@ export interface AnoAnalisado {
   /** Cada linha, para a pessoa reconhecer pelo nome de quem recebeu. */
   pagamentos: { codigo: string; beneficiario: string; valor: number }[]
   /**
-   * Este ano foi importado antes de o app saber ler pagamentos.
+   * Este ano foi lido por uma versão anterior do leitor de .DEC.
    *
-   * Não é o mesmo que "não pagou nada": o arquivo pode ter, e o histórico salvo
-   * simplesmente não guardou. Sem esta distinção a tela ficava muda e a pessoa
-   * ia procurar um bloco que nunca ia aparecer.
+   * Não é o mesmo que "não tem": o arquivo pode trazer pagamentos e rendimentos
+   * isentos, e o histórico salvo simplesmente não guardou. Sem esta distinção a
+   * tela ficava muda e a pessoa ia procurar um número que nunca ia aparecer.
    */
-  importadoSemPagamentos: boolean
+  leituraAntiga: boolean
 }
 
 export interface Consolidado {
@@ -137,6 +152,8 @@ export interface Consolidado {
   totalDescoberto: number
   /** Anos com descoberto, do maior para o menor. */
   prioritarios: AnoAnalisado[]
+  /** Anos que faltam entre os importados — cada salto mede errado. */
+  anosQueFaltam: number[]
   /** Descobertos em anos seguidos — o padrão que muda a leitura. */
   sequenciaRecorrente: boolean
   /** Sobra acumulada dos anos anteriores que poderia cobrir o buraco. */
@@ -187,14 +204,38 @@ const FOLGA = 1
 /** Acima disto a insuficiência deixa de ser ruído, se passar do piso. */
 export const PROPORCAO_RELEVANTE = 0.2
 
-/** Rendas que o .DEC informa. FII entra: é renda recebida, ainda que isenta. */
+/** Renda que entra na base do IRPFM, mais o que é tributado só na fonte. */
+const CHAVES_TRIBUTAVEIS = ['salario', 'divBR', 'divFII', 'exterior', 'aluguel', 'cdb', 'outros']
+
+const soma = (vals: Record<string, number>, chaves: string[]) =>
+  chaves.reduce((s, k) => s + (vals[k] || 0), 0)
+
+/**
+ * Tudo o que a declaração informa como recebido no ano.
+ *
+ * Inclui a ficha de isentos e não tributáveis (`isentos`): LCI/LCA, poupança,
+ * incentivadas, FII, herança, indenização. Não entram na base do IRPFM — mas
+ * entram no bolso, e é com esse dinheiro que patrimônio cresce. Deixá-los de
+ * fora fazia a análise cobrar do patrimônio uma renda que o próprio arquivo
+ * declara: nos arquivos reais são dezenas de milhares por ano, e o "descoberto"
+ * que aparecia era artefato da conta, não fato da vida.
+ */
 function rendimentosDeclarados(vals: Record<string, number>): number {
-  const chaves = ['salario', 'divBR', 'divFII', 'exterior', 'aluguel', 'cdb', 'outros']
-  return chaves.reduce((s, k) => s + (vals[k] || 0), 0)
+  return soma(vals, CHAVES_TRIBUTAVEIS) + (vals.isentos || 0)
 }
 
-function classificar(descoberto: number, fontes: number): Classificacao {
+/**
+ * `periodoIncompleto`: a evolução cobre mais de um ano, mas só há a renda de um.
+ *
+ * Acontece sempre que falta uma declaração no meio — 2020 e 2023 importados,
+ * 2021 e 2022 não. A evolução ali é de TRÊS anos e a renda é de um: a conta
+ * acusa uma diferença enorme que não é da vida da pessoa, é do buraco no
+ * histórico. Nesse caso o teto é "atenção": chamar de inconsistência relevante
+ * o que se sabe estar medido errado é alarme falso.
+ */
+function classificar(descoberto: number, fontes: number, periodoIncompleto = false): Classificacao {
   if (descoberto <= 0) return 'compatível'
+  if (periodoIncompleto) return 'atenção'
   const prop = fontes > 0 ? descoberto / fontes : 1
   if (prop >= PROPORCAO_RELEVANTE && descoberto >= PISO_RELEVANCIA) return 'inconsistência relevante'
   return 'atenção'
@@ -341,6 +382,8 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     const evolucao = liquidoFinal - liquidoInicial
 
     const rendimentos = rendimentosDeclarados(d.vals)
+    const rendimentosTributaveis = soma(d.vals, CHAVES_TRIBUTAVEIS)
+    const rendimentosIsentos = d.vals.isentos || 0
     const receitasNaoRecorrentes = e.receitasNaoRecorrentes ?? 0
     const fontes = rendimentos + receitasNaoRecorrentes
 
@@ -350,6 +393,9 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     const saldo = fontes - necessidade
     const bruto = Math.max(0, -saldo)
     const descoberto = bruto < FOLGA ? 0 : bruto
+
+    const anosCobertos = anterior ? d.anoBase - anterior.anoBase : 1
+    const periodoIncompleto = anosCobertos > 1
 
     anos.push({
       anoBase: d.anoBase,
@@ -361,6 +407,8 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       liquidoFinal,
       evolucao,
       rendimentos,
+      rendimentosTributaveis,
+      rendimentosIsentos,
       receitasNaoRecorrentes,
       fontes,
       despesas,
@@ -368,10 +416,12 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       saldo,
       descoberto,
       proporcao: fontes > 0 ? descoberto / fontes : descoberto > 0 ? 1 : 0,
-      classificacao: classificar(descoberto, fontes),
+      classificacao: classificar(descoberto, fontes, periodoIncompleto),
+      anosCobertos,
+      periodoIncompleto,
       semAnoAnterior: !anterior,
       semDespesas: !(e.despesas && e.despesas > 0),
-      importadoSemPagamentos: d.pagamentos === undefined,
+      leituraAntiga: (d.versaoLeitura ?? 1) < LEITURA_ATUAL,
       pagamentosDeclarados: (d.pagamentos ?? []).reduce((soma, p) => soma + p.valor, 0),
       pagamentos: (d.pagamentos ?? [])
         .filter((p) => p.valor > 0)
@@ -401,8 +451,12 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
   }
 
   const comDescoberto = anos.filter((a) => a.descoberto > 0)
+  // "anos seguidos" tem de ser seguidos de verdade: com 2023 e 2025 importados
+  // e 2024 faltando, chamar os dois de sequência é afirmar um padrão que
+  // ninguém mediu
   let sequenciaRecorrente = false
   for (let i = 1; i < anos.length; i++) {
+    if (anos[i].anoBase - anos[i - 1].anoBase !== 1) continue
     if (anos[i].descoberto > 0 && anos[i - 1].descoberto > 0) sequenciaRecorrente = true
   }
 
@@ -417,10 +471,10 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
 
   const faltando: string[] = []
   const comPagamentos = anos.filter((a) => a.pagamentosDeclarados > 0)
-  const desatualizados = anos.filter((a) => a.importadoSemPagamentos)
+  const desatualizados = anos.filter((a) => a.leituraAntiga)
   if (desatualizados.length > 0) {
     faltando.push(
-      `reimportar o .DEC de ${desatualizados.map((a) => a.anoBase).join(', ')} — esses anos foram lidos antes de o app extrair os pagamentos (plano de saúde, previdência)`,
+      `reimportar o .DEC de ${desatualizados.map((a) => a.anoBase).join(', ')} — esses anos foram lidos por uma versão anterior, que não extraía os pagamentos (plano de saúde, previdência) nem os rendimentos isentos`,
     )
   }
   if (anos.some((a) => a.semDespesas)) {
@@ -435,7 +489,24 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     faltando.push('comprovantes de venda de bens, empréstimos, doações ou heranças no ano com diferença')
     faltando.push('saldo em conta no início do período, se ele bancou parte das compras')
   }
-  if (descontinuidades.length > 0) faltando.push('a declaração dos anos que faltam entre os importados')
+  // Anos que existiram e não foram importados. Vêm dos saltos entre declarações,
+  // não das descontinuidades de saldo: um salto pode ter saldo continuando
+  // certinho e ainda assim medir a evolução de três anos contra a renda de um.
+  const anosQueFaltam: number[] = []
+  for (const a of anos) {
+    if (!a.periodoIncompleto) continue
+    for (let ano = a.anoBase - a.anosCobertos + 1; ano < a.anoBase; ano++) anosQueFaltam.push(ano)
+  }
+  if (anosQueFaltam.length > 0) {
+    faltando.unshift(
+      `a declaração de ${anosQueFaltam.join(', ')} — sem ${anosQueFaltam.length === 1 ? 'ela' : 'elas'} a conta compara a evolução de vários anos com a renda de um só, e a diferença sai inflada`,
+    )
+  }
+  // descontinuidade é entre anos CONSECUTIVOS: não é ano faltando, é bem que
+  // entrou ou saiu sem registro
+  if (descontinuidades.length > 0) {
+    faltando.push('a explicação do degrau entre um ano e o outro — bem que entrou ou saiu sem aparecer nas duas declarações')
+  }
 
   return {
     anos,
@@ -443,6 +514,7 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     totalNecessidade: anos.reduce((s, a) => s + a.necessidade, 0),
     totalDescoberto: anos.reduce((s, a) => s + a.descoberto, 0),
     prioritarios: [...comDescoberto].sort((a, b) => b.descoberto - a.descoberto),
+    anosQueFaltam,
     sequenciaRecorrente,
     folgaAcumuladaCobre,
     descontinuidades,
