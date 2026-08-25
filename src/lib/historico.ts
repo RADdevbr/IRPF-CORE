@@ -452,14 +452,6 @@ export function anosDisponiveis(h: Historico): number[] {
     .sort((a, b) => b - a)
 }
 
-/** Posições dos OUTROS anos — candidatas a vincular com a que está na tela. */
-export function candidatasVinculo(h: Historico, anoBase: number): { anoBase: number; posicoes: PosicaoAno[] }[] {
-  return Object.values(h)
-    .filter((d) => d.anoBase !== anoBase)
-    .sort((a, b) => b.anoBase - a.anoBase)
-    .map((d) => ({ anoBase: d.anoBase, posicoes: [...d.posicoes].sort((a, b) => b.saldoAtual - a.saldoAtual) }))
-}
-
 // ---------------------------------------------------------------- base estocada
 
 /** Saldo de uma mesma posição ao longo dos anos — o casamento entre declarações. */

@@ -15,7 +15,6 @@ import {
   reatribuirAno,
   aplicarOverrides,
   aplicarVinculos,
-  candidatasVinculo,
   posicoesDoAno,
   anosDisponiveis,
   normalizaHistorico,
@@ -396,14 +395,6 @@ describe('vínculo manual entre anos', () => {
   it('sem vínculos, devolve o histórico intocado', () => {
     const h = montar()
     expect(aplicarVinculos(h, {})).toBe(h)
-  })
-
-  it('lista as posições dos outros anos como candidatas', () => {
-    const h = montar()
-    const c = candidatasVinculo(h, 2025)
-    expect(c).toHaveLength(1)
-    expect(c[0].anoBase).toBe(2024)
-    expect(c[0].posicoes[0].descricao).toBe('CDB BCO X')
   })
 
   it('o mapa pode ser pedido para qualquer ano, não só o mais recente', () => {
