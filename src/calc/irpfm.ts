@@ -1,36 +1,21 @@
 // Núcleo de cálculo do IRPFM 2027 (Lei 15.270/2025).
 // Portado fielmente do standalone original e validado por testes (irpfm.test.ts).
 // Parâmetros confirmados contra o texto primário da lei — ver PLAN.md.
+//
+// As tabelas (INSS, IRRF, dependente) e as constantes da lei moram em
+// `params.ts`, com ano e fonte declarados; aqui ficam só as contas. Toda função
+// aceita um conjunto de parâmetros — o padrão é o do ano-base do app.
 
-export interface FaixaINSS {
-  ate: number
-  aliq: number
-}
-export interface FaixaIRRF {
-  ate: number
-  aliq: number
-  ded: number
-}
+import { parametros, type ParametrosAno } from './params'
+export type { FaixaINSS, FaixaIRRF } from './params'
+export { parametros, pendencias, ANO_BASE, PARAMS } from './params'
 
-// Tabela INSS (contribuição patronal do segurado) — faixas mensais.
-export const INSS_FAIXAS: FaixaINSS[] = [
-  { ate: 1621.0, aliq: 0.075 },
-  { ate: 2902.84, aliq: 0.09 },
-  { ate: 4354.27, aliq: 0.12 },
-  { ate: 8475.55, aliq: 0.14 },
-]
+const PADRAO = parametros()
 
-// Tabela progressiva mensal do IRRF (com parcela a deduzir).
-export const IRRF_FAIXAS: FaixaIRRF[] = [
-  { ate: 2428.8, aliq: 0.0, ded: 0 },
-  { ate: 2826.65, aliq: 0.075, ded: 182.16 },
-  { ate: 3751.05, aliq: 0.15, ded: 394.16 },
-  { ate: 4664.68, aliq: 0.225, ded: 675.49 },
-  { ate: Infinity, aliq: 0.275, ded: 908.73 },
-]
-
-// Dedução mensal por dependente.
-export const DEP_MENSAL = 189.59
+// Reexportadas para quem só quer os números do ano-base corrente.
+export const INSS_FAIXAS = PADRAO.inss.faixas
+export const IRRF_FAIXAS = PADRAO.irrf.faixas
+export const DEP_MENSAL = PADRAO.dependente.mensal
 
 export interface Field {
   key: string
@@ -65,10 +50,10 @@ export const CDB_ALIQ = [
 ]
 
 // INSS acumulado por faixas até a base b.
-export function calcINSS(b: number): number {
+export function calcINSS(b: number, par: ParametrosAno = PADRAO): number {
   let t = 0
   let a = 0
-  for (const f of INSS_FAIXAS) {
+  for (const f of par.inss.faixas) {
     if (b <= a) break
     t += (Math.min(f.ate, b) - a) * f.aliq
     a = f.ate
@@ -78,8 +63,8 @@ export function calcINSS(b: number): number {
 }
 
 // IRRF bruto (antes de reduções) e alíquota nominal para a base b.
-export function calcIRRF(b: number): { bruto: number; aliq: number } {
-  for (const f of IRRF_FAIXAS) {
+export function calcIRRF(b: number, par: ParametrosAno = PADRAO): { bruto: number; aliq: number } {
+  for (const f of par.irrf.faixas) {
     if (b <= f.ate) return { bruto: Math.max(0, b * f.aliq - f.ded), aliq: f.aliq }
   }
   return { bruto: 0, aliq: 0 }
@@ -87,22 +72,23 @@ export function calcIRRF(b: number): { bruto: number; aliq: number } {
 
 // Redução do IR mensal — Art. 3º-A da Lei 9.250/1995 (Lei 15.270/2025).
 // até 5.000 → imposto zero; 5.000,01–7.350 → 978,62 − 0,133145 × base.
-export function aplicaReducao(b: number, br: number): number {
-  if (b <= 5000) return 0
-  if (b <= 7350) return Math.max(0, br - Math.max(0, 978.62 - 0.133145 * b))
+export function aplicaReducao(b: number, br: number, par: ParametrosAno = PADRAO): number {
+  const r = par.reducao
+  if (b <= r.isencaoAte) return 0
+  if (b <= r.reducaoAte) return Math.max(0, br - Math.max(0, r.constante - r.coeficiente * b))
   return br
 }
 
 // Tributação exclusiva (13º / adicional de férias): sem a redução do Art. 3º-A.
-export function calcExclusivo(v: number, nd: number): {
+export function calcExclusivo(v: number, nd: number, par: ParametrosAno = PADRAO): {
   ir: number
   base: number
   inss: number
   aliq: number
 } {
-  const i = calcINSS(v)
-  const b = Math.max(0, v - i - DEP_MENSAL * nd)
-  const { bruto, aliq } = calcIRRF(b)
+  const i = calcINSS(v, par)
+  const b = Math.max(0, v - i - par.dependente.mensal * nd)
+  const { bruto, aliq } = calcIRRF(b, par)
   return { ir: Math.max(0, bruto), base: b, inss: i, aliq }
 }
 
@@ -124,7 +110,7 @@ export interface SalarioAnual {
 
 // Decompõe o salário/pró-labore anual em mensal + 13º + 1/3 de férias e
 // devolve o IRRF anual total já com a redução do Art. 3º-A no mensal.
-export function calcSalarioAnual(anual: number, nd: number): SalarioAnual {
+export function calcSalarioAnual(anual: number, nd: number, par: ParametrosAno = PADRAO): SalarioAnual {
   const vz: SalarioAnual = {
     irAnual: 0, inssMensal: 0, baseMensal: 0, aliqNom: 0, irMensal: 0,
     ir13: 0, base13: 0, inss13: 0, aliq13: 0,
@@ -132,12 +118,12 @@ export function calcSalarioAnual(anual: number, nd: number): SalarioAnual {
   }
   if (!anual || anual <= 0) return vz
   const m = anual / (12 + 1 + 1 / 3)
-  const i = calcINSS(m)
-  const b = Math.max(0, m - i - DEP_MENSAL * nd)
-  const { bruto, aliq } = calcIRRF(b)
-  const irM = aplicaReducao(b, bruto)
-  const d13 = calcExclusivo(m, nd)
-  const dF = calcExclusivo(m / 3, nd)
+  const i = calcINSS(m, par)
+  const b = Math.max(0, m - i - par.dependente.mensal * nd)
+  const { bruto, aliq } = calcIRRF(b, par)
+  const irM = aplicaReducao(b, bruto, par)
+  const d13 = calcExclusivo(m, nd, par)
+  const dF = calcExclusivo(m / 3, nd, par)
   return {
     irAnual: irM * 12 + d13.ir + dF.ir,
     inssMensal: i, baseMensal: b, aliqNom: aliq, irMensal: irM,
@@ -159,15 +145,16 @@ export const FOLGA_IMPOSTO = 1
 
 // Alíquota mínima progressiva do IRPFM (Art. 16-A): 0 até 600k, rampa linear
 // até 10% em 1,2M, fixa em 10% acima.
-export function aliqMinima(base: number): number {
-  if (base > 1200000) return 0.1
-  if (base > 600000) return ((base - 600000) / 600000) * 0.1
+export function aliqMinima(base: number, par: ParametrosAno = PADRAO): number {
+  const { baseIsenta, baseAliqCheia, aliqMax } = par.irpfm
+  if (base > baseAliqCheia) return aliqMax
+  if (base > baseIsenta) return ((base - baseIsenta) / (baseAliqCheia - baseIsenta)) * aliqMax
   return 0
 }
 
 // IRPFM bruto (antes de deduções) a partir de uma base já somada.
-export function irpfmBrutoFromBase(base: number): number {
-  return base * aliqMinima(base)
+export function irpfmBrutoFromBase(base: number, par: ParametrosAno = PADRAO): number {
+  return base * aliqMinima(base, par)
 }
 
 export interface CalcParams {
@@ -177,6 +164,8 @@ export interface CalcParams {
   red: boolean
   aliqEmp: number
   limR: number
+  /** Parâmetros fiscais do ano-base; o padrão é o ano corrente do app. */
+  par?: ParametrosAno
 }
 
 export interface CalcResult extends SalarioAnual {
@@ -194,15 +183,15 @@ export interface CalcResult extends SalarioAnual {
 // Alíquota mínima progressiva (Art. 16-A): 0 até 600k, rampa linear até 10%
 // em 1,2M, fixa em 10% acima. FIIs ficam fora da base (isentos).
 export function computeIrpfm(p: CalcParams): CalcResult {
-  const { vals, ndep, cdbA, red, aliqEmp, limR } = p
-  const sc = calcSalarioAnual(vals.salario || 0, ndep)
+  const { vals, ndep, cdbA, red, aliqEmp, limR, par = PADRAO } = p
+  const sc = calcSalarioAnual(vals.salario || 0, ndep, par)
   const salIr = (vals.salario_ir || 0) > 0 ? vals.salario_ir : sc.irAnual
   const cdbAuto = cdbA != null ? (vals.cdb || 0) * cdbA : null
   const cdbIr = cdbAuto != null ? cdbAuto : vals.cdb_ir || 0
 
   const base = FIELDS.filter((f) => f.base).reduce((s, f) => s + (vals[f.key] || 0), 0)
 
-  const aliqMin = aliqMinima(base)
+  const aliqMin = aliqMinima(base, par)
   const bruto = base * aliqMin
 
   const deducoes = FIELDS.filter((f) => f.ir).reduce((s, f) => {
