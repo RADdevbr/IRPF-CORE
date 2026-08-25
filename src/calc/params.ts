@@ -25,6 +25,8 @@ export interface Procedencia {
   confirmado: boolean
   /** O que falta para confirmar, quando não está. */
   nota?: string
+  /** Valores trocados à mão por quem usa — a tela precisa dizer isso. */
+  manual?: boolean
 }
 
 export interface ParametrosAno {
@@ -120,6 +122,62 @@ export function parametros(ano: number = ANO_BASE): ParametrosAno {
   const p = PARAMS[ano]
   if (!p) throw new Error(`Sem parâmetros fiscais cadastrados para ${ano}.`)
   return p
+}
+
+/**
+ * Tabelas trocadas à mão.
+ *
+ * Existe porque INSS e IRRF de 2026 aqui são ESTIMATIVA: quando a portaria sair,
+ * quem usa não deveria depender de um deploy para ter a conta certa. Serve
+ * também para simular uma tabela que ainda está em discussão.
+ */
+export interface OverridesParametros {
+  inss?: FaixaINSS[]
+  irrf?: FaixaIRRF[]
+  dependenteMensal?: number
+}
+
+/**
+ * Aplica as tabelas informadas à mão sobre os parâmetros do ano.
+ *
+ * O grupo trocado vira `manual` e deixa de ser pendência — mas não vira "lei
+ * confirmada": a fonte passa a dizer que o número veio de quem usa, que é a
+ * verdade e é o que a tela e a memória precisam mostrar.
+ */
+export function aplicarOverrides(
+  base: ParametrosAno,
+  ov: OverridesParametros | undefined,
+): ParametrosAno {
+  if (!ov) return base
+  const marca = (fonte: string) => ({ fonte, confirmado: true, manual: true, nota: undefined })
+  return {
+    ...base,
+    inss: ov.inss?.length
+      ? { ...base.inss, faixas: ov.inss, ...marca('Faixas do INSS informadas à mão') }
+      : base.inss,
+    irrf: ov.irrf?.length
+      ? { ...base.irrf, faixas: ov.irrf, ...marca('Tabela do IRRF informada à mão') }
+      : base.irrf,
+    dependente:
+      ov.dependenteMensal !== undefined
+        ? { ...base.dependente, mensal: ov.dependenteMensal, ...marca('Dedução por dependente informada à mão') }
+        : base.dependente,
+  }
+}
+
+/** Grupos que a pessoa trocou à mão, para a tela e a memória declararem. */
+export function manuais(p: ParametrosAno): string[] {
+  return (
+    [
+      ['INSS', p.inss],
+      ['Tabela do IRRF', p.irrf],
+      ['Dedução por dependente', p.dependente],
+      ['Redução do IR mensal', p.reducao],
+      ['IRPFM', p.irpfm],
+    ] as [string, Procedencia][]
+  )
+    .filter(([, g]) => g.manual)
+    .map(([nome]) => nome)
 }
 
 export interface Pendencia {

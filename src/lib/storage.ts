@@ -58,6 +58,7 @@ import type { Entradas } from './consistencia'
 import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bolsa'
 import type { PapelNaCarteira } from './b3posicao'
 import type { Origem } from './origem'
+import type { OverridesParametros } from '../calc/params'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -125,6 +126,12 @@ export interface PersistedState {
    * digitado.
    */
   origem?: Record<string, Origem>
+  /**
+   * Tabelas fiscais trocadas à mão. INSS e IRRF de 2026 são estimativa aqui;
+   * quando a portaria sair, ninguém deveria esperar um deploy para ter a conta
+   * certa.
+   */
+  parametros?: OverridesParametros
   /**
    * Renda variável: as operações do ano e as duas leituras da lei que ainda
    * estão em aberto. Guarda a ENTRADA da apuração, nunca o resultado — o ganho

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PARAMS, ANO_BASE, parametros, pendencias, type ParametrosAno } from './params'
+import { ANO_BASE, PARAMS, aplicarOverrides, manuais, parametros, pendencias, type ParametrosAno } from './params'
 import { aliqMinima, calcINSS, calcIRRF, aplicaReducao, calcSalarioAnual } from './irpfm'
 
 describe('parâmetros por ano', () => {
@@ -83,5 +83,40 @@ describe('o cálculo obedece aos parâmetros recebidos', () => {
     expect(r.inssMensal).toBeCloseTo(inss, 8)
     expect(r.baseMensal).toBeCloseTo(base, 8)
     expect(r.irMensal).toBeCloseTo(base * 0.5, 8)
+  })
+})
+
+describe('tabelas trocadas à mão', () => {
+  it('sem overrides, nada muda', () => {
+    const base = parametros()
+    expect(aplicarOverrides(base, undefined)).toBe(base)
+    expect(aplicarOverrides(base, {})).toEqual(base)
+  })
+
+  it('a faixa informada substitui a estimativa e vira "alterado à mão"', () => {
+    const p = aplicarOverrides(parametros(), { inss: [{ ate: 2000, aliq: 0.08 }] })
+    expect(p.inss.faixas).toEqual([{ ate: 2000, aliq: 0.08 }])
+    expect(p.inss.manual).toBe(true)
+    expect(manuais(p)).toEqual(['INSS'])
+  })
+
+  it('trocar um grupo não mexe nos outros', () => {
+    const base = parametros()
+    const p = aplicarOverrides(base, { dependenteMensal: 250 })
+    expect(p.dependente.mensal).toBe(250)
+    expect(p.irrf).toBe(base.irrf)
+    expect(manuais(p)).toEqual(['Dedução por dependente'])
+  })
+
+  it('grupo trocado sai da lista de pendências — deixou de ser estimativa do app', () => {
+    const antes = pendencias(parametros()).map((x) => x.grupo)
+    expect(antes).toContain('INSS')
+    const depois = pendencias(aplicarOverrides(parametros(), { inss: [{ ate: 1, aliq: 0.1 }] }))
+    expect(depois.map((x) => x.grupo)).not.toContain('INSS')
+  })
+
+  it('lista vazia é ignorada — não apaga a tabela sem querer', () => {
+    const base = parametros()
+    expect(aplicarOverrides(base, { inss: [] }).inss).toBe(base.inss)
   })
 })
