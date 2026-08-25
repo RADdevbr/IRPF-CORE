@@ -43,6 +43,10 @@ export interface PersistedState {
   autoLigar?: boolean
   /** O que só a pessoa sabe, por ano: dívidas, entradas não recorrentes, gastos. */
   consistencia?: Entradas
+  /** Lucros da própria PJ contam como trabalho na origem da renda. */
+  dividendosSaoTrabalho?: boolean
+  /** CDI/Selic/IPCA informados à mão — chave `indice:ano`, valor em fração. */
+  benchmarks?: Record<string, number>
 }
 
 export interface NamedScenario {
