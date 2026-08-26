@@ -12,7 +12,7 @@
 // entre anos consecutivos; para anos com buraco no meio sobram a descrição e o
 // código, que sozinhos não bastam para afirmar, então exigem-se dois sinais.
 
-import type { Historico, PosicaoAno, Vinculos } from './historico'
+import { resolverCadeias, type Historico, type PosicaoAno, type Vinculos } from './historico'
 
 export interface LigacaoAuto {
   /** Id da posição mais antiga (a que passa a apontar para a outra). */
@@ -224,28 +224,18 @@ export function sugerirLigacoes(h: Historico, manuais: Vinculos = {}, vetados: s
 export function vinculosAutomaticos(h: Historico, manuais: Vinculos = {}, vetados: string[] = []): Vinculos {
   const direto: Vinculos = {}
   for (const l of sugerirLigacoes(h, manuais, vetados)) direto[l.de] = l.para
-
-  const destinoFinal = (id: string): string => {
-    const vistos = new Set<string>([id])
-    let atual = id
-    while (direto[atual] && !vistos.has(direto[atual])) {
-      atual = direto[atual]
-      vistos.add(atual)
-    }
-    return atual
-  }
-
-  const mapa: Vinculos = {}
-  for (const de of Object.keys(direto)) {
-    const para = destinoFinal(de)
-    if (para !== de) mapa[de] = para
-  }
-  return mapa
+  return resolverCadeias(direto)
 }
 
-/** Manual manda: o que a pessoa ligou na mão não é sobrescrito. */
+/**
+ * Manual manda: o que a pessoa ligou na mão não é sobrescrito.
+ *
+ * E as cadeias se resolvem depois de juntar, não antes: ligar 2020→2021 e
+ * 2021→2022 em dois cliques é o caminho normal de um bem que mudou de nome
+ * várias vezes, e sem resolver aqui o de 2020 ficava para trás.
+ */
 export function unirVinculos(auto: Vinculos, manuais: Vinculos): Vinculos {
-  return { ...auto, ...manuais }
+  return resolverCadeias({ ...auto, ...manuais })
 }
 
 export interface Candidato {
