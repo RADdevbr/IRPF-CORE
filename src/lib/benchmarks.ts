@@ -4,10 +4,15 @@
 // navegador. Então a tabela é embutida, e tudo aqui é editável: se um número
 // estiver errado ou faltando, a pessoa corrige e o app usa o dela.
 //
-// Os anos até 2024 são o fechamento anual publicado (B3 para o CDI, Banco
-// Central para Selic e IPCA). De 2025 em diante ficam VAZIOS de propósito: um
-// número inventado num gráfico de patrimônio vira decisão errada, e "informe
-// você" é melhor do que um palpite com cara de fato.
+// Os anos são o fechamento anual publicado (B3 para o CDI, Banco Central para
+// Selic e IPCA). O que ainda não fechou fica VAZIO de propósito: um número
+// inventado num gráfico de patrimônio vira decisão errada, e "informe você" é
+// melhor do que um palpite com cara de fato.
+//
+// É por isso que 2025 tem Selic e IPCA e NÃO tem CDI: o CDI de 2025 fecha muito
+// perto da Selic, mas "muito perto" não é o número, e chutá-lo aqui seria
+// exatamente o palpite com cara de fato que o resto do arquivo evita. Quem
+// precisar dele digita, e o digitado manda sobre a tabela.
 
 export type Indice = 'cdi' | 'selic' | 'ipca'
 
@@ -40,6 +45,8 @@ export const TABELA: Record<Indice, Record<number, number>> = {
     2022: 0.1239,
     2023: 0.1304,
     2024: 0.1089,
+    // Selic Over acumulada no ano
+    2025: 0.1433,
   },
   ipca: {
     2016: 0.0629,
@@ -51,6 +58,7 @@ export const TABELA: Record<Indice, Record<number, number>> = {
     2022: 0.0579,
     2023: 0.0462,
     2024: 0.0483,
+    2025: 0.0426,
   },
 }
 
