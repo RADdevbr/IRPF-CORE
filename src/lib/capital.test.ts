@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { analiseCapital, retornoPorClasse, retornoReal } from './capital'
 import { composicaoRenda } from './renda'
-import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
+import { taxaDoAno, taxaDoPeriodo, anosSemTaxa, TABELA } from './benchmarks'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
 import type { DecResult, Lancamento, Posicao } from './decParser'
 
@@ -146,31 +146,9 @@ describe('benchmarks', () => {
     expect(taxaDoAno('ipca', 2025, { 'ipca:2025': 0.045 })).toBe(0.045)
   })
 
-  it('com ano faltando na lista, compõe o intervalo inteiro', () => {
-    // 2022 → 2024 são dois anos de rendimento, mesmo que 2023 não esteja na
-    // lista: usar só a taxa de 2024 diria que o CDI rendeu metade do que rendeu
-    const f = fatorAcumulado('cdi', [2022, 2024])
-    expect(f).toHaveLength(2)
-    expect(f[1].fator).toBeCloseTo(1.1304 * 1.1088, 6)
-  })
-
-  it('falta a taxa de um ano do meio: a linha para antes', () => {
-    // 2025 não está na tabela; o salto 2024 → 2026 depende dela
-    expect(fatorAcumulado('cdi', [2024, 2026]).map((x) => x.anoBase)).toEqual([2024])
+  it('aponta os anos do intervalo que a tabela não cobre', () => {
+    // 2025 e 2026 não estão na tabela embutida; a tela pede os dois
     expect(anosSemTaxa('cdi', [2023, 2026])).toEqual([2025, 2026])
-  })
-
-  it('o acumulado começa em 1 e compõe ano a ano', () => {
-    const f = fatorAcumulado('cdi', [2022, 2023, 2024])
-    expect(f.map((x) => x.anoBase)).toEqual([2022, 2023, 2024])
-    expect(f[0].fator).toBe(1)
-    expect(f[1].fator).toBeCloseTo(1.1304, 6)
-    expect(f[2].fator).toBeCloseTo(1.1304 * 1.1088, 6)
-  })
-
-  it('ano sem taxa interrompe a série em vez de fingir 0%', () => {
-    const f = fatorAcumulado('cdi', [2023, 2024, 2025, 2026])
-    expect(f.map((x) => x.anoBase)).toEqual([2023, 2024])
   })
 
   it('período de N anos compara com N anos do índice', () => {

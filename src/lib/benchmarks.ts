@@ -70,8 +70,9 @@ export function taxaDoAno(indice: Indice, ano: number, informados: BenchmarksInf
 /**
  * Anos sem taxa DENTRO do intervalo — inclusive os que não foram importados.
  *
- * O gráfico compõe o intervalo inteiro, então falta o CDI de 2022 mesmo que
- * 2022 não tenha declaração: sem ele a linha para em 2021.
+ * Uma barra que cobre 2020 → 2023 é comparada com três anos de índice, então
+ * falta o CDI de 2022 mesmo que 2022 não tenha declaração: sem ele aquela barra
+ * fica sem referência.
  */
 export function anosSemTaxa(indice: Indice, anos: number[], informados: BenchmarksInformados = {}): number[] {
   if (anos.length === 0) return []
@@ -80,44 +81,6 @@ export function anosSemTaxa(indice: Indice, anos: number[], informados: Benchmar
     if (taxaDoAno(indice, ano, informados) === null) faltando.push(ano)
   }
   return faltando
-}
-
-/**
- * Quanto R$ 1 viraria seguindo o índice, a partir do primeiro ano da lista.
- *
- * Compõe TODOS os anos do intervalo, não só os que a lista traz: com 2020 e
- * 2023 importados, o dinheiro rendeu 2021, 2022 e 2023 — usar só a taxa de 2023
- * faria o CDI parecer três vezes menor do que foi, e a comparação com o
- * patrimônio sairia invertida.
- *
- * Ano sem taxa interrompe a série em vez de fingir 0%: uma linha reta num
- * gráfico é uma afirmação, e "não sei" não é uma delas.
- */
-export function fatorAcumulado(
-  indice: Indice,
-  anos: number[],
-  informados: BenchmarksInformados = {},
-): { anoBase: number; fator: number }[] {
-  const saida: { anoBase: number; fator: number }[] = []
-  let fator = 1
-  for (let i = 0; i < anos.length; i++) {
-    if (i === 0) {
-      saida.push({ anoBase: anos[i], fator })
-      continue
-    }
-    let completo = true
-    for (let ano = anos[i - 1] + 1; ano <= anos[i]; ano++) {
-      const taxa = taxaDoAno(indice, ano, informados)
-      if (taxa === null) {
-        completo = false
-        break
-      }
-      fator *= 1 + taxa
-    }
-    if (!completo) break
-    saida.push({ anoBase: anos[i], fator })
-  }
-  return saida
 }
 
 /**
