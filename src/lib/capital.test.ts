@@ -135,10 +135,12 @@ describe('rendimento do capital', () => {
 })
 
 describe('benchmarks', () => {
-  it('a tabela embutida cobre até 2024 e não inventa 2025', () => {
-    expect(taxaDoAno('cdi', 2024)).toBeCloseTo(0.1088, 6)
-    expect(taxaDoAno('cdi', 2025)).toBe(null)
-    expect(anosSemTaxa('cdi', [2023, 2025])).toEqual([2025])
+  it('a tabela embutida cobre até 2025 e não inventa 2026', () => {
+    expect(taxaDoAno('cdi', 2025)).toBeCloseTo(0.1432, 6)
+    expect(taxaDoAno('selic', 2025)).toBeCloseTo(0.1433, 6)
+    expect(taxaDoAno('ipca', 2025)).toBeCloseTo(0.0426, 6)
+    expect(taxaDoAno('cdi', 2026)).toBe(null)
+    expect(anosSemTaxa('cdi', [2024, 2026])).toEqual([2026])
   })
 
   it('o que a pessoa informa manda sobre a tabela', () => {
@@ -147,8 +149,8 @@ describe('benchmarks', () => {
   })
 
   it('aponta os anos do intervalo que a tabela não cobre', () => {
-    // 2025 e 2026 não estão na tabela embutida; a tela pede os dois
-    expect(anosSemTaxa('cdi', [2023, 2026])).toEqual([2025, 2026])
+    // 2026 e 2027 ainda não fecharam; a tela pede os dois
+    expect(anosSemTaxa('cdi', [2024, 2027])).toEqual([2026, 2027])
   })
 
   it('período de N anos compara com N anos do índice', () => {
@@ -156,8 +158,8 @@ describe('benchmarks', () => {
     const esperado = 1.1239 * 1.1304 * 1.1088 - 1
     expect(taxaDoPeriodo('cdi', 2024, 3)).toBeCloseTo(esperado, 6)
     expect(taxaDoPeriodo('cdi', 2024, 1)).toBeCloseTo(0.1088, 6)
-    // falta 2025 na tabela: sem chute
-    expect(taxaDoPeriodo('cdi', 2025, 1)).toBe(null)
+    // falta 2026 na tabela: sem chute
+    expect(taxaDoPeriodo('cdi', 2026, 1)).toBe(null)
   })
 
   it('CDI e Selic andam juntos — a diferença é decimal, não de rumo', () => {

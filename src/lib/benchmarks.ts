@@ -9,10 +9,11 @@
 // inventado num gráfico de patrimônio vira decisão errada, e "informe você" é
 // melhor do que um palpite com cara de fato.
 //
-// É por isso que 2025 tem Selic e IPCA e NÃO tem CDI: o CDI de 2025 fecha muito
-// perto da Selic, mas "muito perto" não é o número, e chutá-lo aqui seria
-// exatamente o palpite com cara de fato que o resto do arquivo evita. Quem
-// precisar dele digita, e o digitado manda sobre a tabela.
+// Onde a fonte diverge por arredondamento — o CDI de 2025 sai como 14,32% ou
+// 14,33% dependendo da tabela —, vale o número da fonte primária, e a diferença
+// não muda decisão nenhuma neste app: um centésimo de ponto some no primeiro
+// arredondamento da tela. Quem tiver o fechamento oficial na mão digita, e o
+// digitado manda sobre a tabela.
 
 export type Indice = 'cdi' | 'selic' | 'ipca'
 
@@ -34,6 +35,7 @@ export const TABELA: Record<Indice, Record<number, number>> = {
     2022: 0.1239,
     2023: 0.1304,
     2024: 0.1088,
+    2025: 0.1432,
   },
   selic: {
     2016: 0.14,
