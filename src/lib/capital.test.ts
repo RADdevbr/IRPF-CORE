@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { analiseCapital, retornoVsIndices, retornoPorClasse, retornoReal } from './capital'
+import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal } from './capital'
 import { composicaoRenda } from './renda'
 import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
@@ -189,6 +189,52 @@ describe('retorno contra os índices', () => {
     expect(r.retornoMedio).toBeNull()
     expect(r.cdiMedio).toBeNull()
     expect(r.anosNaMedia).toBe(0)
+  })
+})
+
+describe('retorno acumulado', () => {
+  const ponto = (anoBase: number, retorno: number | null, cdi: number | null, ipca: number | null, piso = false) =>
+    ({ anoBase, retorno, cdi, ipca, piso, anosCobertos: 1 })
+
+  it('compõe em vez de somar — 10% e 10% dão 21%', () => {
+    const a = acumularRetorno([ponto(2023, 0.1, 0.1, 0.05), ponto(2024, 0.1, 0.1, 0.05)])
+    expect(a[0].retorno).toBeCloseTo(0.1, 6)
+    expect(a[1].retorno).toBeCloseTo(0.21, 6)
+    expect(a[1].cdi).toBeCloseTo(0.21, 6)
+    expect(a[1].ipca).toBeCloseTo(1.05 * 1.05 - 1, 6)
+  })
+
+  it('um ano ruim no meio derruba tudo o que vem depois', () => {
+    const a = acumularRetorno([ponto(2023, 0.2, 0.1, 0), ponto(2024, -0.3, 0.1, 0), ponto(2025, 0.2, 0.1, 0)])
+    // 1,2 × 0,7 × 1,2 = 1,008 → +0,8% em três anos, contra 33,1% do CDI
+    expect(a[2].retorno).toBeCloseTo(0.008, 6)
+    expect(a[2].cdi).toBeCloseTo(1.1 ** 3 - 1, 6)
+  })
+
+  it('ano sem retorno interrompe a série em vez de fingir 0%', () => {
+    const a = acumularRetorno([ponto(2023, 0.1, 0.1, 0), ponto(2024, null, 0.1, 0), ponto(2025, 0.1, 0.1, 0)])
+    expect(a[0].retorno).toBeCloseTo(0.1, 6)
+    expect(a[1].retorno).toBeNull()
+    expect(a[2].retorno).toBeNull()
+    // o índice não depende do retorno: a linha dele continua
+    expect(a[2].cdi).toBeCloseTo(1.1 ** 3 - 1, 6)
+  })
+
+  it('piso contamina para frente: acumulado de piso é piso', () => {
+    const a = acumularRetorno([ponto(2023, 0.1, 0.1, 0), ponto(2024, 0.1, 0.1, 0, true), ponto(2025, 0.1, 0.1, 0)])
+    expect(a[0].piso).toBe(false)
+    expect(a[1].piso).toBe(true)
+    expect(a[2].piso).toBe(true)
+  })
+
+  it('ponto que cobre vários anos entra inteiro, sem anualizar', () => {
+    // o retorno de 3 anos já É o total do período; o índice ao lado também
+    const a = acumularRetorno([{ anoBase: 2025, retorno: 0.331, cdi: 0.331, ipca: 0, piso: false, anosCobertos: 3 }])
+    expect(a[0].retorno).toBeCloseTo(0.331, 6)
+  })
+
+  it('sem pontos, nada', () => {
+    expect(acumularRetorno([])).toEqual([])
   })
 })
 

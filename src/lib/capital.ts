@@ -195,6 +195,62 @@ export function retornoVsIndices(
   }
 }
 
+export interface PontoAcumuladoRetorno {
+  anoBase: number
+  /** Retorno acumulado desde o primeiro ponto da série. */
+  retorno: number | null
+  cdi: number | null
+  ipca: number | null
+  /** Algum ano até aqui era piso — o acumulado também é piso, não medida. */
+  piso: boolean
+}
+
+/**
+ * Compõe os retornos ano a ano num acumulado do período.
+ *
+ * O anual responde "como foi este ano"; o acumulado responde "e no fim das
+ * contas". As respostas divergem, e é por isso que as duas existem: um ano ruim
+ * no meio pesa igual a um bom na leitura ano a ano, e não pesa igual no
+ * acumulado, onde ele derruba tudo o que vem depois.
+ *
+ * Compor é multiplicar, não somar: 10% seguido de 10% dá 21%, não 20%. E os
+ * pontos que cobrem vários anos já são o total do período deles — o índice ao
+ * lado também —, então entram na multiplicação inteiros, sem anualizar antes.
+ *
+ * Ano sem retorno mensurável INTERROMPE a série em vez de pular por cima: pular
+ * afirmaria que o ano rendeu 0%, que é diferente de não ter como saber. O piso,
+ * ao contrário, contamina para frente e fica marcado — acumulado de piso é piso.
+ */
+export function acumularRetorno(pontos: PontoRetorno[]): PontoAcumuladoRetorno[] {
+  const saida: PontoAcumuladoRetorno[] = []
+  let fr = 1
+  let fc = 1
+  let fi = 1
+  let vivoR = true
+  let vivoC = true
+  let vivoI = true
+  let piso = false
+
+  for (const p of pontos) {
+    if (p.retorno === null) vivoR = false
+    else if (vivoR) fr *= 1 + p.retorno
+    if (p.cdi === null) vivoC = false
+    else if (vivoC) fc *= 1 + p.cdi
+    if (p.ipca === null) vivoI = false
+    else if (vivoI) fi *= 1 + p.ipca
+    if (p.piso) piso = true
+
+    saida.push({
+      anoBase: p.anoBase,
+      retorno: vivoR ? fr - 1 : null,
+      cdi: vivoC ? fc - 1 : null,
+      ipca: vivoI ? fi - 1 : null,
+      piso,
+    })
+  }
+  return saida
+}
+
 // ------------------------------------------------------------ por classe
 
 export interface AnoClasse {
