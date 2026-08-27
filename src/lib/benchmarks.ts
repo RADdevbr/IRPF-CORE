@@ -159,3 +159,28 @@ export function taxaDoPeriodo(
   }
   return fator - 1
 }
+
+/**
+ * O fechamento mais recente que existe para o índice.
+ *
+ * A projeção precisa de UMA taxa por referência, e a mais defensável é a do
+ * último ano fechado: é um número publicado, não uma média que ninguém viu.
+ * O informado entra na disputa — quem digitou o fechamento de um ano que a
+ * tabela ainda não tem quer justamente que ele seja o mais recente.
+ */
+export function ultimoFechamento(
+  indice: Indice,
+  informados: BenchmarksInformados = {},
+): { ano: number; taxa: number } | null {
+  const daTabela = Object.keys(TABELA[indice]).map(Number)
+  const meus = Object.keys(informados)
+    .filter((k) => k.startsWith(`${indice}:`))
+    .map((k) => Number(k.slice(indice.length + 1)))
+    .filter((n) => Number.isFinite(n))
+  const anos = [...new Set([...daTabela, ...meus])].sort((a, b) => b - a)
+  for (const ano of anos) {
+    const taxa = taxaDoAno(indice, ano, informados)
+    if (taxa !== null) return { ano, taxa }
+  }
+  return null
+}
