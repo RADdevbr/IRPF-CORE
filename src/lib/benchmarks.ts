@@ -94,6 +94,51 @@ export function anosSemTaxa(indice: Indice, anos: number[], informados: Benchmar
 }
 
 /**
+ * Quanto R$ 1 viraria seguindo o índice, a partir do primeiro ano da lista.
+ *
+ * Serve para comparar ACUMULADO com ACUMULADO: o fator vira percentual
+ * (`fator − 1`) e fica ao lado do crescimento acumulado do patrimônio, que
+ * também parte de zero. Multiplicar esse fator por um valor em reais e desenhar
+ * a linha por cima do patrimônio é o que NÃO se faz aqui — a linha do índice
+ * nunca recebe aporte e a do patrimônio recebe, então o índice perderia por
+ * construção.
+ *
+ * Compõe TODOS os anos do intervalo, não só os que a lista traz: com 2020 e
+ * 2023 importados, o dinheiro rendeu 2021, 2022 e 2023 — usar só a taxa de 2023
+ * faria o CDI parecer três vezes menor do que foi, e a comparação sairia
+ * invertida.
+ *
+ * Ano sem taxa interrompe a série em vez de fingir 0%: uma linha reta num
+ * gráfico é uma afirmação, e "não sei" não é uma delas.
+ */
+export function fatorAcumulado(
+  indice: Indice,
+  anos: number[],
+  informados: BenchmarksInformados = {},
+): { anoBase: number; fator: number }[] {
+  const saida: { anoBase: number; fator: number }[] = []
+  let fator = 1
+  for (let i = 0; i < anos.length; i++) {
+    if (i === 0) {
+      saida.push({ anoBase: anos[i], fator })
+      continue
+    }
+    let completo = true
+    for (let ano = anos[i - 1] + 1; ano <= anos[i]; ano++) {
+      const taxa = taxaDoAno(indice, ano, informados)
+      if (taxa === null) {
+        completo = false
+        break
+      }
+      fator *= 1 + taxa
+    }
+    if (!completo) break
+    saida.push({ anoBase: anos[i], fator })
+  }
+  return saida
+}
+
+/**
  * Variação acumulada do índice em um período de N anos terminando em `ano`.
  *
  * Existe porque a linha da tabela às vezes mede três anos (falta declaração no
