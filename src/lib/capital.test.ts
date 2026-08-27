@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { analiseCapital, retornoPorClasse, retornoReal } from './capital'
+import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal } from './capital'
 import { composicaoRenda } from './renda'
 import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
@@ -134,30 +134,122 @@ describe('rendimento do capital', () => {
   })
 })
 
+describe('retorno contra os índices', () => {
+  /** 2023 e 2024 com gasto informado; patrimônio 1,0M → 1,3M → 1,6M. */
+  const doisAnos = () =>
+    historico(
+      { exercicio: '2023', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2024', rendas: [lanc('salario', 400_000)], bens: [pos('CDB', 1_300_000, 1_000_000)] },
+      { exercicio: '2025', rendas: [lanc('salario', 400_000)], bens: [pos('CDB', 1_600_000, 1_300_000)] },
+    )
+  const gastos = { 2023: { despesas: 200_000 }, 2024: { despesas: 200_000 } }
+
+  it('põe o índice do MESMO ano ao lado do retorno medido', () => {
+    const r = retornoVsIndices(doisAnos(), gastos)
+    const p2024 = r.pontos.find((x) => x.anoBase === 2024)!
+    expect(p2024.cdi).toBeCloseTo(0.1088, 6)
+    expect(p2024.ipca).toBeCloseTo(0.0483, 6)
+    expect(p2024.retorno).not.toBeNull()
+    expect(p2024.piso).toBe(false)
+  })
+
+  it('CDI e Selic dividem o rótulo quando as duas existem', () => {
+    expect(retornoVsIndices(doisAnos(), gastos).rotuloCdi).toBe('CDI / Selic')
+  })
+
+  it('a média do índice usa os MESMOS anos da média do retorno', () => {
+    // só 2024 tem gasto informado: a média do CDI tem de ser a de 2024 sozinha
+    const r = retornoVsIndices(doisAnos(), { 2024: { despesas: 200_000 } })
+    expect(r.anosNaMedia).toBe(1)
+    expect(r.cdiMedio).toBeCloseTo(0.1088, 6)
+    expect(r.ipcaMedio).toBeCloseTo(0.0483, 6)
+  })
+
+  it('ano sem gasto informado sai marcado como piso e fica fora da média', () => {
+    const r = retornoVsIndices(doisAnos(), { 2024: { despesas: 200_000 } })
+    expect(r.pontos.find((p) => p.anoBase === 2023)!.piso).toBe(true)
+    expect(r.pontos.find((p) => p.anoBase === 2024)!.piso).toBe(false)
+    expect(r.anosNaMedia).toBe(1)
+  })
+
+  it('ponto que cobre vários anos compara com o índice do mesmo período', () => {
+    const comBuraco = historico(
+      { exercicio: '2023', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2026', rendas: [lanc('salario', 400_000)], bens: [pos('CDB', 1_600_000, 1_000_000)] },
+    )
+    const p = retornoVsIndices(comBuraco, { 2025: { despesas: 200_000 } }).pontos.find((x) => x.anoBase === 2025)!
+    expect(p.anosCobertos).toBe(3)
+    // 2023 + 2024 + 2025 compostos, não a taxa de 2025 sozinha
+    expect(p.cdi).toBeCloseTo(1.1304 * 1.1088 * 1.1432 - 1, 6)
+  })
+
+  it('sem histórico não inventa nada', () => {
+    const r = retornoVsIndices({})
+    expect(r.pontos).toEqual([])
+    expect(r.retornoMedio).toBeNull()
+    expect(r.cdiMedio).toBeNull()
+    expect(r.anosNaMedia).toBe(0)
+  })
+})
+
+describe('retorno acumulado', () => {
+  const ponto = (anoBase: number, retorno: number | null, cdi: number | null, ipca: number | null, piso = false) =>
+    ({ anoBase, retorno, cdi, ipca, piso, anosCobertos: 1 })
+
+  it('compõe em vez de somar — 10% e 10% dão 21%', () => {
+    const a = acumularRetorno([ponto(2023, 0.1, 0.1, 0.05), ponto(2024, 0.1, 0.1, 0.05)])
+    expect(a[0].retorno).toBeCloseTo(0.1, 6)
+    expect(a[1].retorno).toBeCloseTo(0.21, 6)
+    expect(a[1].cdi).toBeCloseTo(0.21, 6)
+    expect(a[1].ipca).toBeCloseTo(1.05 * 1.05 - 1, 6)
+  })
+
+  it('um ano ruim no meio derruba tudo o que vem depois', () => {
+    const a = acumularRetorno([ponto(2023, 0.2, 0.1, 0), ponto(2024, -0.3, 0.1, 0), ponto(2025, 0.2, 0.1, 0)])
+    // 1,2 × 0,7 × 1,2 = 1,008 → +0,8% em três anos, contra 33,1% do CDI
+    expect(a[2].retorno).toBeCloseTo(0.008, 6)
+    expect(a[2].cdi).toBeCloseTo(1.1 ** 3 - 1, 6)
+  })
+
+  it('ano sem retorno interrompe a série em vez de fingir 0%', () => {
+    const a = acumularRetorno([ponto(2023, 0.1, 0.1, 0), ponto(2024, null, 0.1, 0), ponto(2025, 0.1, 0.1, 0)])
+    expect(a[0].retorno).toBeCloseTo(0.1, 6)
+    expect(a[1].retorno).toBeNull()
+    expect(a[2].retorno).toBeNull()
+    // o índice não depende do retorno: a linha dele continua
+    expect(a[2].cdi).toBeCloseTo(1.1 ** 3 - 1, 6)
+  })
+
+  it('piso contamina para frente: acumulado de piso é piso', () => {
+    const a = acumularRetorno([ponto(2023, 0.1, 0.1, 0), ponto(2024, 0.1, 0.1, 0, true), ponto(2025, 0.1, 0.1, 0)])
+    expect(a[0].piso).toBe(false)
+    expect(a[1].piso).toBe(true)
+    expect(a[2].piso).toBe(true)
+  })
+
+  it('ponto que cobre vários anos entra inteiro, sem anualizar', () => {
+    // o retorno de 3 anos já É o total do período; o índice ao lado também
+    const a = acumularRetorno([{ anoBase: 2025, retorno: 0.331, cdi: 0.331, ipca: 0, piso: false, anosCobertos: 3 }])
+    expect(a[0].retorno).toBeCloseTo(0.331, 6)
+  })
+
+  it('sem pontos, nada', () => {
+    expect(acumularRetorno([])).toEqual([])
+  })
+})
+
 describe('benchmarks', () => {
-  it('a tabela embutida cobre até 2024 e não inventa 2025', () => {
-    expect(taxaDoAno('cdi', 2024)).toBeCloseTo(0.1088, 6)
-    expect(taxaDoAno('cdi', 2025)).toBe(null)
-    expect(anosSemTaxa('cdi', [2023, 2025])).toEqual([2025])
+  it('a tabela embutida cobre até 2025 e não inventa 2026', () => {
+    expect(taxaDoAno('cdi', 2025)).toBeCloseTo(0.1432, 6)
+    expect(taxaDoAno('selic', 2025)).toBeCloseTo(0.1433, 6)
+    expect(taxaDoAno('ipca', 2025)).toBeCloseTo(0.0426, 6)
+    expect(taxaDoAno('cdi', 2026)).toBe(null)
+    expect(anosSemTaxa('cdi', [2024, 2026])).toEqual([2026])
   })
 
   it('o que a pessoa informa manda sobre a tabela', () => {
     expect(taxaDoAno('cdi', 2024, { 'cdi:2024': 0.11 })).toBe(0.11)
     expect(taxaDoAno('ipca', 2025, { 'ipca:2025': 0.045 })).toBe(0.045)
-  })
-
-  it('com ano faltando na lista, compõe o intervalo inteiro', () => {
-    // 2022 → 2024 são dois anos de rendimento, mesmo que 2023 não esteja na
-    // lista: usar só a taxa de 2024 diria que o CDI rendeu metade do que rendeu
-    const f = fatorAcumulado('cdi', [2022, 2024])
-    expect(f).toHaveLength(2)
-    expect(f[1].fator).toBeCloseTo(1.1304 * 1.1088, 6)
-  })
-
-  it('falta a taxa de um ano do meio: a linha para antes', () => {
-    // 2025 não está na tabela; o salto 2024 → 2026 depende dela
-    expect(fatorAcumulado('cdi', [2024, 2026]).map((x) => x.anoBase)).toEqual([2024])
-    expect(anosSemTaxa('cdi', [2023, 2026])).toEqual([2025, 2026])
   })
 
   it('o acumulado começa em 1 e compõe ano a ano', () => {
@@ -168,9 +260,22 @@ describe('benchmarks', () => {
     expect(f[2].fator).toBeCloseTo(1.1304 * 1.1088, 6)
   })
 
-  it('ano sem taxa interrompe a série em vez de fingir 0%', () => {
-    const f = fatorAcumulado('cdi', [2023, 2024, 2025, 2026])
-    expect(f.map((x) => x.anoBase)).toEqual([2023, 2024])
+  it('com ano faltando na lista, compõe o intervalo inteiro', () => {
+    // 2022 → 2024 são dois anos de rendimento, mesmo que 2023 não esteja na
+    // lista: usar só a taxa de 2024 diria que o CDI rendeu metade do que rendeu
+    const f = fatorAcumulado('cdi', [2022, 2024])
+    expect(f).toHaveLength(2)
+    expect(f[1].fator).toBeCloseTo(1.1304 * 1.1088, 6)
+  })
+
+  it('ano sem taxa interrompe o acumulado em vez de fingir 0%', () => {
+    const f = fatorAcumulado('cdi', [2024, 2025, 2026, 2027])
+    expect(f.map((x) => x.anoBase)).toEqual([2024, 2025])
+  })
+
+  it('aponta os anos do intervalo que a tabela não cobre', () => {
+    // 2026 e 2027 ainda não fecharam; a tela pede os dois
+    expect(anosSemTaxa('cdi', [2024, 2027])).toEqual([2026, 2027])
   })
 
   it('período de N anos compara com N anos do índice', () => {
@@ -178,8 +283,8 @@ describe('benchmarks', () => {
     const esperado = 1.1239 * 1.1304 * 1.1088 - 1
     expect(taxaDoPeriodo('cdi', 2024, 3)).toBeCloseTo(esperado, 6)
     expect(taxaDoPeriodo('cdi', 2024, 1)).toBeCloseTo(0.1088, 6)
-    // falta 2025 na tabela: sem chute
-    expect(taxaDoPeriodo('cdi', 2025, 1)).toBe(null)
+    // falta 2026 na tabela: sem chute
+    expect(taxaDoPeriodo('cdi', 2026, 1)).toBe(null)
   })
 
   it('CDI e Selic andam juntos — a diferença é decimal, não de rumo', () => {
