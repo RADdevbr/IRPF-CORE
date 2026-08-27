@@ -8,16 +8,72 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { credenciaisSupabase } from './supabaseConfig'
+import { armazenamentoLocal, modoVisita, PREFIXO } from './armazenamento'
 import type { Wrap } from './crypto'
-import type { DocRemoto, Remoto } from './sync'
+import { ConflitoDeVersao, type DocRemoto, type Remoto } from './sync'
+
+/**
+ * Onde a sessão da conta fica guardada.
+ *
+ * O padrão do SDK é `sb-<ref>-auth-token` no `localStorage`, e isso furava as
+ * duas promessas do app de uma vez: o token — que inclui o refresh token, e é a
+ * credencial que baixa o cofre — ficava gravado mesmo em modo visita, e escapava
+ * de «Apagar deste aparelho», que varre só o prefixo `irpfm2027:`. Apagava-se o
+ * cofre e deixava-se a chave que o traz de volta.
+ *
+ * Sob o prefixo do app, e passando por `armazenamentoLocal()`, o token entra nas
+ * duas regras: some em modo visita e é varrido junto com o resto.
+ */
+const CHAVE_AUTH = `${PREFIXO}auth:v1`
+
+/**
+ * Traz para a chave nova a sessão que o SDK gravou na antiga.
+ *
+ * Sem isto, atualizar o app deslogaria quem já estava conectado — e, pior,
+ * deixaria a chave antiga para trás, fora da varredura, que é justamente o
+ * problema que esta mudança existe para resolver.
+ */
+function migrarChaveAntiga(st: ReturnType<typeof armazenamentoLocal>): void {
+  try {
+    const antigas: string[] = []
+    for (let i = 0; i < st.length; i++) {
+      const k = st.key(i)
+      if (k && /^sb-.*-auth-token$/.test(k)) antigas.push(k)
+    }
+    for (const k of antigas) {
+      const v = st.getItem(k)
+      if (v && !st.getItem(CHAVE_AUTH)) st.setItem(CHAVE_AUTH, v)
+      st.removeItem(k)
+    }
+  } catch {
+    /* storage bloqueado — não há o que migrar */
+  }
+}
 
 let cliente: SupabaseClient | null = null
 function cli(): SupabaseClient {
   if (!cliente) {
     const { url, chave } = credenciaisSupabase()
-    cliente = createClient(url, chave)
+    const storage = armazenamentoLocal()
+    migrarChaveAntiga(storage)
+    cliente = createClient(url, chave, {
+      auth: {
+        storage,
+        storageKey: CHAVE_AUTH,
+        // Em modo visita o `storage` já é a memória, então persistir não grava
+        // em disco. Desligar aqui também é a segunda tranca: a sessão morre com
+        // a aba, sem depender de o `storage` certo ter sido escolhido.
+        persistSession: !modoVisita(),
+        autoRefreshToken: true,
+      },
+    })
   }
   return cliente
+}
+
+/** Descarta o cliente para que o próximo escolha o armazenamento de novo. */
+export function esquecerClienteSupabase(): void {
+  cliente = null
 }
 
 /** O mesmo cliente que o resto do app usa — a tela de admin fala pelas mesmas
@@ -166,25 +222,52 @@ export function remotoSupabase(): Remoto {
       return data ? docDaLinha(data as LinhaVault) : null
     },
 
+    /**
+     * Grava CONDICIONADO à versão que estava lá quando lemos.
+     *
+     * O `upsert` que ficava aqui escrevia sem olhar o que havia no servidor: se
+     * outro aparelho gravasse no meio, a segunda escrita apagava a primeira sem
+     * ninguém saber. Agora a corrida perde, e perder vira `ConflitoDeVersao` —
+     * que a orquestração transforma na tela de escolha que já existe.
+     */
     async gravarDoc(doc) {
       const user_id = await idDoUsuario()
-      const { data, error } = await cli()
-        .from('vaults')
-        .upsert(
-          {
-            user_id,
-            doc_id: doc.docId,
-            ciphertext: doc.ciphertext,
-            iv: doc.iv,
-            version: doc.version,
-            vault_id: doc.vaultId ?? null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,doc_id' },
-        )
-        .select('doc_id, ciphertext, iv, version, updated_at, vault_id')
-        .single()
-      if (error) throw new Error(error.message)
+      const esperada = doc.version - 1
+      const campos = {
+        ciphertext: doc.ciphertext,
+        iv: doc.iv,
+        version: doc.version,
+        vault_id: doc.vaultId ?? null,
+        updated_at: new Date().toISOString(),
+      }
+      const colunas = 'doc_id, ciphertext, iv, version, updated_at, vault_id'
+
+      // Primeira subida: a linha não pode existir. Se existir, alguém criou
+      // enquanto líamos — e a chave primária (user_id, doc_id) recusa.
+      const { data, error } =
+        esperada <= 0
+          ? await cli().from('vaults').insert({ user_id, doc_id: doc.docId, ...campos }).select(colunas).maybeSingle()
+          : await cli()
+              .from('vaults')
+              .update(campos)
+              .eq('user_id', user_id)
+              .eq('doc_id', doc.docId)
+              .eq('version', esperada)
+              .select(colunas)
+              .maybeSingle()
+
+      // Os dois jeitos de o servidor dizer «alguém chegou antes»:
+      // 23505 = unicidade — a linha nasceu entre a nossa leitura e este insert.
+      // 40001 = o gatilho `versao_so_avanca`, quando duas escritas passam pela
+      //         condição ao mesmo tempo e o banco desempata. Sem traduzir este
+      //         aqui, a corrida que o gatilho existe para pegar chegaria à tela
+      //         como mensagem crua do Postgres em vez da escolha de versão.
+      if (error) {
+        if (error.code === '23505' || error.code === '40001') throw new ConflitoDeVersao(doc.docId)
+        throw new Error(error.message)
+      }
+      // Zero linhas afetadas: a versão no servidor já não é a que lemos.
+      if (!data) throw new ConflitoDeVersao(doc.docId)
       return docDaLinha(data as LinhaVault)
     },
 

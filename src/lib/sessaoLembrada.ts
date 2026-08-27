@@ -5,34 +5,34 @@
 // baixa nada; quem já entrou, o app assume que quer continuar sincronizando.
 //
 // Não é credencial e não abre nada: é um post-it com o e-mail, ao lado de uma
-// sessão que quem guarda é o próprio SDK.
+// sessão que quem guarda é o próprio SDK. Mesmo assim passa por
+// `armazenamento.ts` como todo o resto — em modo visita, o e-mail da conta é
+// exatamente o tipo de rastro que não deve ficar no computador de outra pessoa.
+
+import { armazenamentoLocal, type Armazenamento } from './armazenamento'
 
 const CHAVE = 'irpfm2027:conta:v1'
 
-export function lembrarConta(email: string, st: Storage | undefined = seguro()): void {
+export function lembrarConta(email: string, st: Armazenamento = armazenamentoLocal()): void {
   try {
-    st?.setItem(CHAVE, email)
+    st.setItem(CHAVE, email)
   } catch {
     /* navegador sem storage: só perde a memória do e-mail */
   }
 }
 
-export function contaLembrada(st: Storage | undefined = seguro()): string | null {
+export function contaLembrada(st: Armazenamento = armazenamentoLocal()): string | null {
   try {
-    return st?.getItem(CHAVE) ?? null
+    return st.getItem(CHAVE)
   } catch {
     return null
   }
 }
 
-export function esquecerConta(st: Storage | undefined = seguro()): void {
+export function esquecerConta(st: Armazenamento = armazenamentoLocal()): void {
   try {
-    st?.removeItem(CHAVE)
+    st.removeItem(CHAVE)
   } catch {
     /* idem */
   }
-}
-
-function seguro(): Storage | undefined {
-  return typeof localStorage === 'undefined' ? undefined : localStorage
 }

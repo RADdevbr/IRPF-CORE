@@ -116,12 +116,27 @@ describe('modo visita', () => {
     saveState({ vals: { cdb: 1 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
     saveScenarios([{ name: 'x', savedAt: 'agora', state: { vals: {}, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 } }])
     expect(chavesGravadas()).toEqual([])
+    expect(localStorage.length).toBe(0)
+  })
+
+  // O modo grava em memória, não no vazio: quem digita precisa ler de volta o
+  // que digitou enquanto a aba está aberta. O que ele promete é que nada disso
+  // sobrevive ao fechar — e é o disco que responde por isso.
+  it('ligado, o que foi digitado continua legível na sessão', () => {
+    setModoVisita(true)
+    saveState({ vals: { cdb: 7 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+    expect(loadState()?.vals.cdb).toBe(7)
+    expect(localStorage.getItem('irpfm2027:state:v1')).toBeNull()
   })
 
   it('não apaga o que já estava gravado — só para de gravar', () => {
     saveState({ vals: { cdb: 1 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
     setModoVisita(true)
     saveState({ vals: { cdb: 2 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+    // o disco continua com o 1: o 2 só existe nesta sessão
+    expect(JSON.parse(localStorage.getItem('irpfm2027:state:v1')!).vals.cdb).toBe(1)
+    // e desligar o modo devolve a leitura ao disco
+    setModoVisita(false)
     expect(loadState()?.vals.cdb).toBe(1)
   })
 })

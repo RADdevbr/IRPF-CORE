@@ -41,6 +41,28 @@ export interface ParametrosAno {
     constante: number
     coeficiente: number
   }
+  /**
+   * Declaração de ajuste anual — o que se deduz e como se apura o imposto
+   * DEVIDO, que é o valor que a Lei 15.270/2025 manda abater do IRPFM.
+   */
+  declaracao: Procedencia & {
+    /** Teto do desconto do modelo simplificado, no ano. */
+    descontoSimplificadoTeto: number
+    /** Fração do rendimento que o desconto simplificado abate, até o teto. */
+    descontoSimplificadoAliq: number
+    /** Teto anual de instrução, por pessoa (contribuinte e cada dependente). */
+    instrucaoPorPessoa: number
+    /** Teto da previdência complementar, como fração do rendimento tributável. */
+    previdenciaPrivadaFracao: number
+  }
+  /**
+   * IR sobre o rendimento de aplicações financeiras de renda fixa.
+   *
+   * `aliquotaUnica: null` = vale a tabela regressiva por prazo, que é a regra em
+   * vigor. Um número aqui substitui a tabela por uma alíquota só — é cenário,
+   * não lei, e a tela precisa dizer isso.
+   */
+  rendaFixa: Procedencia & { aliquotaUnica: number | null }
   /** Art. 16-A (IRPFM anual) e Art. 6º-A (IRRF mensal de dividendos). */
   irpfm: Procedencia & {
     baseIsenta: number
@@ -71,6 +93,46 @@ const REDUCAO_15270: ParametrosAno['reducao'] = {
   fonte: 'Lei nº 15.270/2025, Art. 3º-A da Lei 9.250/1995',
   confirmado: true,
 }
+
+/**
+ * Limites da declaração de ajuste anual.
+ *
+ * Valores parados desde 2015, como a dedução por dependente. Ficam
+ * `confirmado: false` porque a Lei 15.270/2025 mexeu na tabela e na isenção sem
+ * que se possa presumir o que aconteceu com estes — e um teto errado aqui muda
+ * o imposto devido, que agora é dedução do IRPFM.
+ */
+const DECLARACAO: ParametrosAno['declaracao'] = {
+  descontoSimplificadoTeto: 16_754.34,
+  descontoSimplificadoAliq: 0.2,
+  instrucaoPorPessoa: 3_561.50,
+  previdenciaPrivadaFracao: 0.12,
+  fonte: 'Lei nº 9.250/1995, arts. 8º e 10 — valores inalterados desde 2015',
+  confirmado: false,
+  nota: 'Tetos de 2015. Conferir os do ano-base antes de tratar o imposto devido como definitivo — ele é dedução do IRPFM.',
+}
+
+/**
+ * Renda fixa: a tabela regressiva continua sendo a regra.
+ *
+ * O app já chegou a trazer 17,5% fixo para aportes de 2026, atribuídos à "reforma
+ * da Lei 15.270/2025". A atribuição não se sustenta: a Lei 15.270/2025 trata de
+ * IRPF, dividendos e imposto mínimo, e não toca na tributação de aplicações
+ * financeiras. A alíquota única estava na MP 1.303/2025, que perdeu a eficácia
+ * sem ser convertida em lei.
+ *
+ * Ficou como CENÁRIO, desligado, em vez de sumir: se a regra voltar por norma
+ * nova, quem usa liga o interruptor em vez de esperar um deploy — que é o mesmo
+ * arranjo já usado para as tabelas de INSS e IRRF.
+ */
+const RENDA_FIXA_REGRESSIVA: ParametrosAno['rendaFixa'] = {
+  aliquotaUnica: null,
+  fonte: 'Tabela regressiva por prazo — Lei 11.033/2004, art. 1º',
+  confirmado: true,
+}
+
+/** A alíquota única que a MP 1.303/2025 propôs, para quem quiser simular. */
+export const ALIQUOTA_UNICA_PROPOSTA = 0.175
 
 const DEPENDENTE: ParametrosAno['dependente'] = {
   mensal: 189.59,
@@ -111,6 +173,8 @@ export const PARAMS: Record<number, ParametrosAno> = {
     },
     dependente: DEPENDENTE,
     reducao: REDUCAO_15270,
+    declaracao: DECLARACAO,
+    rendaFixa: RENDA_FIXA_REGRESSIVA,
     irpfm: LEI_15270,
   },
 }
@@ -135,6 +199,11 @@ export interface OverridesParametros {
   inss?: FaixaINSS[]
   irrf?: FaixaIRRF[]
   dependenteMensal?: number
+  /**
+   * Alíquota única da renda fixa, para simular uma regra que não está em vigor.
+   * `null`/ausente = tabela regressiva.
+   */
+  rendaFixaAliquotaUnica?: number | null
 }
 
 /**
@@ -162,6 +231,19 @@ export function aplicarOverrides(
       ov.dependenteMensal !== undefined
         ? { ...base.dependente, mensal: ov.dependenteMensal, ...marca('Dedução por dependente informada à mão') }
         : base.dependente,
+    // A alíquota única é simulação de regra que não existe: fica `manual` e a
+    // nota diz o que ela é, para não passar por lei nem por padrão do app.
+    rendaFixa:
+      ov.rendaFixaAliquotaUnica != null
+        ? {
+            ...base.rendaFixa,
+            aliquotaUnica: ov.rendaFixaAliquotaUnica,
+            fonte: 'Alíquota única da renda fixa — cenário informado à mão, sem norma em vigor',
+            confirmado: false,
+            manual: true,
+            nota: 'A regra em vigor é a tabela regressiva por prazo. Este número é simulação.',
+          }
+        : base.rendaFixa,
   }
 }
 
@@ -173,6 +255,8 @@ export function manuais(p: ParametrosAno): string[] {
       ['Tabela do IRRF', p.irrf],
       ['Dedução por dependente', p.dependente],
       ['Redução do IR mensal', p.reducao],
+      ['Limites da declaração', p.declaracao],
+      ['IR da renda fixa', p.rendaFixa],
       ['IRPFM', p.irpfm],
     ] as [string, Procedencia][]
   )
@@ -196,6 +280,8 @@ export function pendencias(p: ParametrosAno = parametros()): Pendencia[] {
     ['Tabela do IRRF', p.irrf],
     ['Dedução por dependente', p.dependente],
     ['Redução do IR mensal', p.reducao],
+    ['Limites da declaração', p.declaracao],
+    ['IR da renda fixa', p.rendaFixa],
     ['IRPFM', p.irpfm],
   ]
   return grupos

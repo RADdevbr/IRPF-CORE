@@ -23,6 +23,7 @@ import {
 } from './crypto'
 import type { PersistedState } from './storage'
 import type { EstadoSync } from './sync'
+import { armazenamentoLocal, armazenamentoSessao } from './armazenamento'
 
 const VAULT_KEY = 'irpfm2027:vault:v1'
 const LEGADO_KEY = 'irpfm2027:state:v1'
@@ -36,29 +37,22 @@ const SYNC_KEY = 'irpfm2027:sync:v1'
 /** Só o que usamos de Storage — permite injetar um falso nos testes. */
 export type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
-function store(st?: Store): Store | null {
-  if (st) return st
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage
-  } catch {
-    return null // Storage bloqueado (janela anônima com restrição, iframe)
-  }
+// O `null` sumiu daqui: quem decide onde gravar — disco, memória do modo visita
+// ou memória por o navegador ter bloqueado o storage — é `armazenamento.ts`.
+// Antes, `gravarCofre` escrevia direto no localStorage sem olhar o modo visita,
+// e o autosave cifrado rodava a cada 400 ms.
+function store(st?: Store): Store {
+  return st ?? armazenamentoLocal()
 }
 
-function sessao(ss?: Store): Store | null {
-  if (ss) return ss
-  try {
-    return typeof sessionStorage === 'undefined' ? null : sessionStorage
-  } catch {
-    return null
-  }
+function sessao(ss?: Store): Store {
+  return ss ?? armazenamentoSessao()
 }
 
 // ---------------------------------------------------------------- leitura/escrita
 
 export function lerCofre(st?: Store): CofreCompleto | null {
   const s = store(st)
-  if (!s) return null
   try {
     const raw = s.getItem(VAULT_KEY)
     if (!raw) return null
@@ -86,9 +80,7 @@ export function existeCofre(st?: Store): boolean {
 }
 
 export function gravarCofre(cofre: CofreCompleto, st?: Store): void {
-  const s = store(st)
-  if (!s) throw new Error('Este navegador bloqueou o armazenamento local.')
-  s.setItem(VAULT_KEY, JSON.stringify(cofre))
+  store(st).setItem(VAULT_KEY, JSON.stringify(cofre))
 }
 
 /** Métodos de desbloqueio cadastrados, para a tela de gerenciamento. */
@@ -101,7 +93,6 @@ export function metodos(st?: Store): Wrap[] {
 /** O estado que o app guardava em claro antes do cofre — base da migração. */
 export function estadoLegado(st?: Store): PersistedState | null {
   const s = store(st)
-  if (!s) return null
   try {
     const raw = s.getItem(LEGADO_KEY)
     return raw ? (JSON.parse(raw) as PersistedState) : null
@@ -112,7 +103,7 @@ export function estadoLegado(st?: Store): PersistedState | null {
 
 /** Só depois de o cofre estar gravado: nada é apagado antes de existir substituto. */
 export function apagarEstadoLegado(st?: Store): void {
-  store(st)?.removeItem(LEGADO_KEY)
+  store(st).removeItem(LEGADO_KEY)
 }
 
 // ---------------------------------------------------------------- ciclo do cofre
@@ -194,7 +185,7 @@ export function removerMetodoLocal(wrapId: string, st?: Store): CofreCompleto {
 
 /** "Esquecer neste dispositivo": apaga o cofre local. Exige confirmação na UI. */
 export function apagarCofre(st?: Store, ss?: Store): void {
-  store(st)?.removeItem(VAULT_KEY)
+  store(st).removeItem(VAULT_KEY)
   esquecerDek(ss)
 }
 
@@ -202,7 +193,7 @@ export function apagarCofre(st?: Store, ss?: Store): void {
 
 export function lembrarDek(dek: Uint8Array, ss?: Store): void {
   try {
-    sessao(ss)?.setItem(SESSAO_KEY, paraB64(dek))
+    sessao(ss).setItem(SESSAO_KEY, paraB64(dek))
   } catch {
     /* sem sessionStorage — segue só em memória */
   }
@@ -210,7 +201,7 @@ export function lembrarDek(dek: Uint8Array, ss?: Store): void {
 
 export function dekLembrada(ss?: Store): Uint8Array | null {
   try {
-    const raw = sessao(ss)?.getItem(SESSAO_KEY)
+    const raw = sessao(ss).getItem(SESSAO_KEY)
     return raw ? deB64(raw) : null
   } catch {
     return null
@@ -219,7 +210,7 @@ export function dekLembrada(ss?: Store): Uint8Array | null {
 
 export function esquecerDek(ss?: Store): void {
   try {
-    sessao(ss)?.removeItem(SESSAO_KEY)
+    sessao(ss).removeItem(SESSAO_KEY)
   } catch {
     /* ignora */
   }
@@ -235,13 +226,12 @@ export type SuportePrf = 'ok' | 'nao' | 'desconhecido'
 
 export function lembrarSuportePrf(v: SuportePrf, st?: Store): void {
   const s = store(st)
-  if (!s) return
   if (v === 'desconhecido') s.removeItem(PRF_KEY)
   else s.setItem(PRF_KEY, v)
 }
 
 export function suportePrfLembrado(st?: Store): SuportePrf {
-  const v = store(st)?.getItem(PRF_KEY)
+  const v = store(st).getItem(PRF_KEY)
   return v === 'ok' || v === 'nao' ? v : 'desconhecido'
 }
 
@@ -252,7 +242,7 @@ const SYNC_ZERO: EstadoSync = { baseVersion: null, sujo: false }
 
 export function lerEstadoSync(st?: Store): EstadoSync {
   try {
-    const raw = store(st)?.getItem(SYNC_KEY)
+    const raw = store(st).getItem(SYNC_KEY)
     if (!raw) return SYNC_ZERO
     const e = JSON.parse(raw) as EstadoSync
     return typeof e?.sujo === 'boolean' ? e : SYNC_ZERO
@@ -263,7 +253,7 @@ export function lerEstadoSync(st?: Store): EstadoSync {
 
 export function gravarEstadoSync(e: EstadoSync, st?: Store): void {
   try {
-    store(st)?.setItem(SYNC_KEY, JSON.stringify(e))
+    store(st).setItem(SYNC_KEY, JSON.stringify(e))
   } catch {
     /* ignora */
   }

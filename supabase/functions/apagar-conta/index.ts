@@ -22,18 +22,49 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+/**
+ * De onde esta função aceita ser chamada.
+ *
+ * `ORIGENS` é uma lista separada por vírgula, configurada no ambiente da função:
+ *
+ *   supabase secrets set ORIGENS="https://seu-app.vercel.app,http://localhost:5173"
+ *
+ * Não havia CSRF a explorar aqui — a autorização é por Bearer, não por cookie,
+ * e o navegador não anexa credencial sozinho. Mas `*` não descreve a intenção:
+ * esta função só existe para a tela de administração deste app, e a lista diz
+ * isso. Sem `ORIGENS` configurada, mantém-se `*` para não quebrar quem já a tem
+ * implantada — o app avisa na tela de admin.
+ */
+const ORIGENS = (Deno.env.get('ORIGENS') ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
+function corsPara(req: Request): Record<string, string> {
+  const origem = req.headers.get('Origin') ?? ''
+  const permitida = ORIGENS.length === 0 ? '*' : ORIGENS.includes(origem) ? origem : ''
+  return {
+    // Origem fora da lista não recebe o cabeçalho: o navegador bloqueia a
+    // resposta, que é o comportamento correto — e a função nem chega a agir.
+    ...(permitida ? { 'Access-Control-Allow-Origin': permitida } : {}),
+    // A resposta varia com a origem: sem isto, um cache intermediário poderia
+    // servir a permissão de um site para outro.
+    Vary: 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  }
 }
 
-const json = (corpo: unknown, status = 200) =>
-  new Response(JSON.stringify(corpo), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
-
 Deno.serve(async (req: Request) => {
+  const cors = corsPara(req)
+  const json = (corpo: unknown, status = 200) =>
+    new Response(JSON.stringify(corpo), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
+
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ erro: 'método não suportado' }, 405)
+  if (ORIGENS.length > 0 && !cors['Access-Control-Allow-Origin']) {
+    return json({ erro: 'origem não autorizada' }, 403)
+  }
 
   const url = Deno.env.get('SUPABASE_URL')!
   const anon = Deno.env.get('SUPABASE_ANON_KEY')!

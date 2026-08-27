@@ -47,6 +47,15 @@ const OUTRO: ParametrosAno = {
   irrf: { faixas: [{ ate: Infinity, aliq: 0.5, ded: 0 }], fonte: 'teste', confirmado: true },
   dependente: { mensal: 100, fonte: 'teste', confirmado: true },
   reducao: { isencaoAte: 0, reducaoAte: 0, constante: 0, coeficiente: 0, fonte: 'teste', confirmado: true },
+  declaracao: {
+    descontoSimplificadoTeto: 1000,
+    descontoSimplificadoAliq: 0.2,
+    instrucaoPorPessoa: 500,
+    previdenciaPrivadaFracao: 0.12,
+    fonte: 'teste',
+    confirmado: true,
+  },
+  rendaFixa: { aliquotaUnica: null, fonte: 'teste', confirmado: true },
   irpfm: {
     baseIsenta: 100_000,
     baseAliqCheia: 200_000,
