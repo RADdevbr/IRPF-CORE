@@ -36,6 +36,28 @@ create table if not exists public.vault_wraps (
 -- Para quem rodou a versão anterior deste schema, antes de o sync existir:
 alter table public.vaults add column if not exists vault_id text;
 
+-- A versão só anda para a frente.
+--
+-- O controle de conflito de verdade é no cliente, que grava condicionado à
+-- versão que leu (ver `remoto.ts`). Este gatilho é a segunda tranca: um cliente
+-- antigo, um script, ou um bug futuro não conseguem rebobinar o cofre de
+-- alguém. Recusar é melhor que aceitar em silêncio — quem perde a corrida vê a
+-- tela de conflito e escolhe.
+create or replace function public.versao_so_avanca() returns trigger
+language plpgsql as $$
+begin
+  if new.version <= old.version then
+    raise exception 'versão % não avança sobre a % já gravada', new.version, old.version
+      using errcode = '40001';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tg_versao_so_avanca on public.vaults;
+create trigger tg_versao_so_avanca before update on public.vaults
+  for each row execute function public.versao_so_avanca();
+
 alter table public.vaults      enable row level security;
 alter table public.vault_wraps enable row level security;
 

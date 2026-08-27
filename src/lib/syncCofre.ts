@@ -8,6 +8,7 @@ import {
   deDoc,
   paraDoc,
   unirWraps,
+  ConflitoDeVersao,
   DOC_ESTADO,
   type Decisao,
   type EstadoSync,
@@ -73,7 +74,24 @@ export async function sincronizar(
       const version = (doc?.version ?? 0) + 1
       const unido: CofreCompleto = { ...cofreLocal, wraps }
       await r.gravarWraps(wraps)
-      const gravado = await r.gravarDoc(paraDoc(unido, docId, version))
+      let gravado
+      try {
+        gravado = await r.gravarDoc(paraDoc(unido, docId, version))
+      } catch (e) {
+        // Outro aparelho gravou entre a leitura e a escrita. Não é erro de rede
+        // nem falha do app: é a mesma pergunta do conflito, e vai para a mesma
+        // tela — decidir por conta própria aqui é como se perdia dado antes.
+        if (e instanceof ConflitoDeVersao) {
+          return {
+            acao: 'conflito',
+            estado,
+            remoto: (await r.lerDoc(docId)) ?? undefined,
+            mensagem:
+              'Outro aparelho gravou este cofre enquanto você editava aqui. Escolha qual versão vale.',
+          }
+        }
+        throw e
+      }
       return {
         acao: 'enviar',
         estado: { baseVersion: gravado.version, sujo: false },

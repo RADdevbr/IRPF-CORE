@@ -13,6 +13,41 @@
 const SALT_PRF = new TextEncoder().encode('irpfm-vault-v1')
 const RP_NOME = 'Calculadora IRPFM 2027'
 
+/**
+ * O domínio a que a passkey fica presa.
+ *
+ * Sem `rp.id`, o navegador usa o host efetivo — e na Vercel cada preview tem o
+ * seu. Uma passkey cadastrada em `…-git-branch.vercel.app` não abre em produção,
+ * e vice-versa; pior, o cofre sincronizado passa a oferecer, como botão
+ * principal, um método condenado a falhar naquele domínio. O código já sabe
+ * dizer "esta passkey é de outro APARELHO" (`dispositivo.ts`); faltava o caso
+ * "de outro DOMÍNIO", que não tem como ser detectado depois.
+ *
+ * `VITE_RP_ID` fixa o domínio de produção. Sem ela, mantém-se o comportamento
+ * anterior (host efetivo), que é o certo para quem roda em localhost ou abre o
+ * arquivo direto.
+ */
+const RP_ID = (import.meta.env.VITE_RP_ID as string | undefined)?.trim() || undefined
+
+/**
+ * O domínio atual serve para a passkey que este app cadastraria?
+ *
+ * `rp.id` precisa ser o host ou um sufixo registrável dele — em qualquer outro
+ * lugar o navegador recusa. Em vez de deixar o erro aparecer como "cancelado", a
+ * tela pode dizer que ali a passkey é descartável.
+ */
+export function dominioDaPasskey(host = typeof location === 'undefined' ? '' : location.hostname): {
+  rpId?: string
+  descartavel: boolean
+} {
+  if (!RP_ID) return { rpId: undefined, descartavel: false }
+  const vale = host === RP_ID || host.endsWith(`.${RP_ID}`)
+  // Fora do domínio fixado (um preview, por exemplo), não force o rp.id: o
+  // navegador recusaria. A passkey nasce presa àquele host e some com ele — e é
+  // por isso que a tela avisa.
+  return vale ? { rpId: RP_ID, descartavel: false } : { rpId: undefined, descartavel: true }
+}
+
 export interface CredencialCriada {
   credentialId: string // base64url
   prfDisponivel: boolean
@@ -58,7 +93,7 @@ async function registrar(usuario: { id: Uint8Array; nome: string }): Promise<{ c
   const cred = (await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: RP_NOME },
+      rp: { name: RP_NOME, ...(dominioDaPasskey().rpId ? { id: dominioDaPasskey().rpId } : {}) },
       user: { id: usuario.id as BufferSource, name: usuario.nome, displayName: usuario.nome },
       pubKeyCredParams: [
         { type: 'public-key', alg: -7 }, // ES256
@@ -105,6 +140,7 @@ export async function segredoDaPasskey(
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
+      ...(dominioDaPasskey().rpId ? { rpId: dominioDaPasskey().rpId } : {}),
       allowCredentials: ids.length
         ? ids.map((id) => ({ type: 'public-key' as const, id: deB64Url(id) as BufferSource }))
         : undefined,

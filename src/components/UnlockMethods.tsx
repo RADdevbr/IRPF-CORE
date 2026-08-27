@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { C } from '../theme'
 import { metodos, adicionarMetodoLocal, removerMetodoLocal, motivoParaNaoRemover, apagarCofre } from '../lib/vault'
-import type { Wrap } from '../lib/crypto'
+import { protecaoFraca, type Wrap } from '../lib/crypto'
 import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
 import { rotuloDispositivo } from '../lib/dispositivo'
 
@@ -105,6 +105,15 @@ export function UnlockMethods({ dek, onFechar }: { dek: Uint8Array; onFechar: ()
             <span style={{ fontSize: 13 }}>
               {w.rotulo ?? NOME[w.metodo]}{' '}
               <span style={{ color: C.textMut, fontSize: 11.5 }}>· {NOME[w.metodo].toLowerCase()}</span>
+              {/* A queda para PBKDF2 acontece quando o WebAssembly falha. É a
+                  decisão certa — não travar o app —, mas era tomada em silêncio:
+                  o cofre nascia mais fraco e ninguém ficava sabendo. */}
+              {protecaoFraca(w) && (
+                <span style={{ display: 'block', fontSize: 11, color: C.orangeLight, lineHeight: 1.5, marginTop: 2 }}>
+                  Protegida por PBKDF2, não por Argon2id — o WebAssembly falhou neste navegador quando ela foi
+                  criada. Cadastre a senha de novo num navegador que o suporte para fortalecer.
+                </span>
+              )}
             </span>
             <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: C.textMut, fontFamily: 'monospace' }}>

@@ -4,7 +4,7 @@ import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrad
 import { apagarTudoDesteAparelho } from '../lib/storage'
 import { PasskeyDoctor } from './PasskeyDoctor'
 import { gerarCodigoRecuperacao, type Wrap } from '../lib/crypto'
-import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
+import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey, dominioDaPasskey } from '../lib/passkey'
 import { rotuloDispositivo, deOutroAparelho } from '../lib/dispositivo'
 import type { PersistedState } from '../lib/storage'
 
@@ -258,6 +258,15 @@ export function VaultGate({
               ? 'Destravar com a passkey deste aparelho'
               : `Destravar com ${wrapPasskey.rotulo ?? 'passkey'}`}
           </button>
+        )}
+        {/* Preview da Vercel: a passkey nasceria presa àquele host e sumiria com
+            ele. Dizer isso antes vale mais que deixar o navegador recusar
+            depois — o erro sai como "cancelado", que não explica nada. */}
+        {dominioDaPasskey().descartavel && suportaPasskey() && (
+          <div style={{ background: C.bg2, border: `0.5px solid ${C.orangeBorder}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.orangeLight, lineHeight: 1.55 }}>
+            Este endereço não é o domínio oficial do app. Passkey cadastrada aqui vale só aqui e some quando este
+            preview sair do ar — use senha ou chave de recuperação.
+          </div>
         )}
         {wrapPasskey && passkeyDeOutro && (
           <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.textSec, lineHeight: 1.55 }}>
