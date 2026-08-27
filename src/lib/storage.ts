@@ -59,6 +59,8 @@ import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bo
 import type { PapelNaCarteira } from './b3posicao'
 import type { Origem } from './origem'
 import type { OverridesParametros } from '../calc/params'
+import type { DeducoesLegais } from '../calc/declaracao'
+import type { CategoriaDeducao } from './deducoes'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -126,6 +128,20 @@ export interface PersistedState {
    * digitado.
    */
   origem?: Record<string, Origem>
+  /**
+   * Deduções legais da declaração de ajuste anual, no ano.
+   *
+   * Não entram na base do IRPFM — entram no imposto DEVIDO, que é o que a Lei
+   * 15.270/2025 manda abater. Ausente = nada informado, e aí o único abatimento
+   * é a previdência oficial, que o app deriva do próprio pró-labore.
+   */
+  deducoes?: Partial<DeducoesLegais>
+  /**
+   * Em que linha da declaração entra cada beneficiário do Registro 26,
+   * respondido uma vez. Mesmo arranjo do `b3`: o texto vem de fora, a resposta
+   * fica guardada, e no ano seguinte só o que é novo pergunta de novo.
+   */
+  deducoesCategoria?: Record<string, CategoriaDeducao>
   /**
    * Tabelas fiscais trocadas à mão. INSS e IRRF de 2026 são estimativa aqui;
    * quando a portaria sair, ninguém deveria esperar um deploy para ter a conta
