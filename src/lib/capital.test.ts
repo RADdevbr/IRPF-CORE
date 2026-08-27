@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { analiseCapital, retornoPorClasse, retornoReal } from './capital'
+import { analiseCapital, retornoVsIndices, retornoPorClasse, retornoReal } from './capital'
 import { composicaoRenda } from './renda'
 import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
@@ -131,6 +131,64 @@ describe('rendimento do capital', () => {
     const r = analiseCapital({})
     expect(r.anos).toEqual([])
     expect(r.retornoMedio).toBe(null)
+  })
+})
+
+describe('retorno contra os índices', () => {
+  /** 2023 e 2024 com gasto informado; patrimônio 1,0M → 1,3M → 1,6M. */
+  const doisAnos = () =>
+    historico(
+      { exercicio: '2023', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2024', rendas: [lanc('salario', 400_000)], bens: [pos('CDB', 1_300_000, 1_000_000)] },
+      { exercicio: '2025', rendas: [lanc('salario', 400_000)], bens: [pos('CDB', 1_600_000, 1_300_000)] },
+    )
+  const gastos = { 2023: { despesas: 200_000 }, 2024: { despesas: 200_000 } }
+
+  it('põe o índice do MESMO ano ao lado do retorno medido', () => {
+    const r = retornoVsIndices(doisAnos(), gastos)
+    const p2024 = r.pontos.find((x) => x.anoBase === 2024)!
+    expect(p2024.cdi).toBeCloseTo(0.1088, 6)
+    expect(p2024.ipca).toBeCloseTo(0.0483, 6)
+    expect(p2024.retorno).not.toBeNull()
+    expect(p2024.piso).toBe(false)
+  })
+
+  it('CDI e Selic dividem o rótulo quando as duas existem', () => {
+    expect(retornoVsIndices(doisAnos(), gastos).rotuloCdi).toBe('CDI / Selic')
+  })
+
+  it('a média do índice usa os MESMOS anos da média do retorno', () => {
+    // só 2024 tem gasto informado: a média do CDI tem de ser a de 2024 sozinha
+    const r = retornoVsIndices(doisAnos(), { 2024: { despesas: 200_000 } })
+    expect(r.anosNaMedia).toBe(1)
+    expect(r.cdiMedio).toBeCloseTo(0.1088, 6)
+    expect(r.ipcaMedio).toBeCloseTo(0.0483, 6)
+  })
+
+  it('ano sem gasto informado sai marcado como piso e fica fora da média', () => {
+    const r = retornoVsIndices(doisAnos(), { 2024: { despesas: 200_000 } })
+    expect(r.pontos.find((p) => p.anoBase === 2023)!.piso).toBe(true)
+    expect(r.pontos.find((p) => p.anoBase === 2024)!.piso).toBe(false)
+    expect(r.anosNaMedia).toBe(1)
+  })
+
+  it('ponto que cobre vários anos compara com o índice do mesmo período', () => {
+    const comBuraco = historico(
+      { exercicio: '2023', rendas: [], bens: [pos('CDB', 1_000_000)] },
+      { exercicio: '2026', rendas: [lanc('salario', 400_000)], bens: [pos('CDB', 1_600_000, 1_000_000)] },
+    )
+    const p = retornoVsIndices(comBuraco, { 2025: { despesas: 200_000 } }).pontos.find((x) => x.anoBase === 2025)!
+    expect(p.anosCobertos).toBe(3)
+    // 2023 + 2024 + 2025 compostos, não a taxa de 2025 sozinha
+    expect(p.cdi).toBeCloseTo(1.1304 * 1.1088 * 1.1432 - 1, 6)
+  })
+
+  it('sem histórico não inventa nada', () => {
+    const r = retornoVsIndices({})
+    expect(r.pontos).toEqual([])
+    expect(r.retornoMedio).toBeNull()
+    expect(r.cdiMedio).toBeNull()
+    expect(r.anosNaMedia).toBe(0)
   })
 })
 
