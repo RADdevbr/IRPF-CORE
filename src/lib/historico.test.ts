@@ -25,8 +25,11 @@ import {
   rotuloCodigo,
   chaveCodigo,
   idsPorCodigo,
+  COMO_VALORA,
+  segueMercado,
+  pgblAportado,
 } from './historico'
-import type { DecResult, Lancamento, Posicao } from './decParser'
+import type { DecResult, Lancamento, Pagamento, Posicao } from './decParser'
 
 const lanc = (alvo: string, valor: number): Lancamento => ({
   linha: 1,
@@ -51,15 +54,31 @@ const pos = (descricao: string, saldoAtual: number, saldoAnterior = 0, codigo = 
   tipoCarteira: 'cdb',
 })
 
-const dec = (ano: string | null, lancamentos: Lancamento[], posicoes: Posicao[], ndep = 0): DecResult => ({
+const dec = (
+  ano: string | null,
+  lancamentos: Lancamento[],
+  posicoes: Posicao[],
+  ndep = 0,
+  pagamentos: Pagamento[] = [],
+): DecResult => ({
   ano,
   registros: [],
   lancamentos,
   posicoes,
-  pagamentos: [],
+  pagamentos,
   ndep,
   linhas: [],
   totalLinhas: 0,
+})
+
+const pagou = (beneficiario: string, valor: number, naoDedutivel = 0): Pagamento => ({
+  linha: 1,
+  codigo: '36',
+  beneficiario,
+  documento: '',
+  valor,
+  naoDedutivel,
+  bruta: '',
 })
 
 describe('classificação do patrimônio', () => {
@@ -467,5 +486,140 @@ describe('código × grupo (o layout do Registro 27 mudou em 2019)', () => {
     // sem código não há grupo: senão todo bem sem código viraria "o mesmo bem"
     expect(idsPorCodigo(h, '·')).toEqual([])
     expect(idsPorCodigo(h, '  ·  ')).toEqual([])
+  })
+})
+
+// PAT-01 — o painel somava custo de aquisição com saldo de mercado como se
+// fossem a mesma grandeza. A declaração pede coisas diferentes por classe, e é
+// isso que esta tabela guarda.
+describe('PAT-01 — o que o valor declarado significa', () => {
+  it('renda fixa e fundos vêm pelo saldo, que já inclui o rendimento', () => {
+    for (const c of ['cdb', 'tesouro', 'fundo', 'debentureComum', 'lci', 'cri', 'debentureInc', 'poupanca', 'contaCorrente'] as const) {
+      expect(COMO_VALORA[c]).toBe('mercado')
+    }
+  })
+
+  it('VGBL vem pelo saldo: a declaração traz 31/12 anterior e atual, sem os aportes', () => {
+    expect(COMO_VALORA.previdencia).toBe('mercado')
+    expect(segueMercado('previdencia')).toBe(true)
+  })
+
+  it('ação, FII, quota, imóvel e veículo vêm pelo custo de aquisição', () => {
+    // Para ações é preço médio × quantidade em 31/12: move com compra e venda,
+    // nunca com valorização — essa só aparece na venda.
+    for (const c of ['acoes', 'fii', 'participacao', 'imovel', 'veiculo'] as const) {
+      expect(COMO_VALORA[c]).toBe('custo')
+      expect(segueMercado(c)).toBe(false)
+    }
+  })
+
+  it('onde não dá para saber, não afirma — como o REGIME já fazia', () => {
+    expect(COMO_VALORA.exterior).toBe('incerto')
+    expect(COMO_VALORA.desconhecido).toBe('incerto')
+  })
+
+  it('toda classe tem uma resposta: nenhuma cai no vazio', () => {
+    for (const c of Object.keys(REGIME) as (keyof typeof REGIME)[]) {
+      expect(COMO_VALORA[c]).toBeDefined()
+    }
+  })
+})
+
+describe('PAT-01/PAT-02 — a série separa custo de mercado e conhece dívidas', () => {
+  const montar = (): Historico => {
+    let h: Historico = {}
+    h = upsertDeclaracao(
+      h,
+      montarDeclaracao(
+        dec('2026', [lanc('cdb', 100_000)], [pos('CDB BANCO X', 600_000), pos('ACOES PETR4', 300_000), pos('APARTAMENTO', 100_000)]),
+        'a.DEC',
+        'agora',
+      )!,
+    )
+    return h
+  }
+
+  it('separa o que acompanha o mercado do que está parado no custo', () => {
+    const [p] = seriePatrimonio(montar())
+    expect(p.total).toBe(1_000_000)
+    expect(p.aMercado).toBe(600_000) // CDB
+    expect(p.aoCusto).toBe(400_000) // ações + imóvel
+    expect(p.incerto).toBe(0)
+    // e as três partes fecham o bruto
+    expect(p.aMercado + p.aoCusto + p.incerto).toBe(p.total)
+  })
+
+  it('sem dívida informada, líquido é o bruto — e o campo diz que ninguém informou', () => {
+    const [p] = seriePatrimonio(montar())
+    expect(p.dividas).toBeNull() // ausente ≠ zero
+    expect(p.liquido).toBe(p.total)
+  })
+
+  it('com dívida informada, o líquido desconta', () => {
+    const [p] = seriePatrimonio(montar(), { 2025: 250_000 })
+    expect(p.dividas).toBe(250_000)
+    expect(p.liquido).toBe(750_000)
+    expect(p.total).toBe(1_000_000) // o bruto continua disponível
+  })
+
+  it('dívida de outro ano não vaza para este', () => {
+    const [p] = seriePatrimonio(montar(), { 2099: 999_999 })
+    expect(p.dividas).toBeNull()
+    expect(p.liquido).toBe(p.total)
+  })
+})
+
+// O ponto cego que o PAT-01 revelou: PGBL não está em «Bens e Direitos». Ele foi
+// deduzido, então mora em «Pagamentos Efetuados» — e some do painel de
+// patrimônio, justamente sendo o ativo mais caro de resgatar.
+describe('PGBL — o patrimônio que a declaração esconde', () => {
+  const comPgbl = (): Historico => {
+    let h: Historico = {}
+    for (const [ano, valor] of [['2024', 30_000], ['2025', 40_000], ['2026', 50_000]] as [string, number][]) {
+      h = upsertDeclaracao(
+        h,
+        montarDeclaracao(
+          dec(ano, [], [pos('CDB BANCO X', 100_000)], 0, [pagou('BRASILPREV SEGUROS', valor)]),
+          `${ano}.DEC`,
+          'agora',
+        )!,
+      )
+    }
+    return h
+  }
+
+  it('reconstrói o aportado ano a ano e acumulado, em ordem', () => {
+    const s = pgblAportado(comPgbl())
+    expect(s.map((p) => p.anoBase)).toEqual([2023, 2024, 2025])
+    expect(s.map((p) => p.noAno)).toEqual([30_000, 40_000, 50_000])
+    expect(s.map((p) => p.acumulado)).toEqual([30_000, 70_000, 120_000])
+  })
+
+  it('não confunde plano de saúde com previdência', () => {
+    let h: Historico = {}
+    h = upsertDeclaracao(
+      h,
+      montarDeclaracao(
+        dec('2026', [], [], 0, [pagou('UNIMED PLANO DE SAUDE', 20_000), pagou('ICATU PREVIDENCIA', 15_000)]),
+        'x.DEC',
+        'agora',
+      )!,
+    )
+    expect(pgblAportado(h)[0].noAno).toBe(15_000)
+  })
+
+  it('desconta a parcela não dedutível que o próprio arquivo informa', () => {
+    let h: Historico = {}
+    h = upsertDeclaracao(
+      h,
+      montarDeclaracao(dec('2026', [], [], 0, [pagou('BRASILPREV', 30_000, 5_000)]), 'x.DEC', 'agora')!,
+    )
+    expect(pgblAportado(h)[0].noAno).toBe(25_000)
+  })
+
+  it('ano sem pagamentos lidos não inventa aporte', () => {
+    let h: Historico = {}
+    h = upsertDeclaracao(h, montarDeclaracao(dec('2026', [], [pos('CDB', 100_000)]), 'x.DEC', 'agora')!)
+    expect(pgblAportado(h)[0].noAno).toBe(0)
   })
 })

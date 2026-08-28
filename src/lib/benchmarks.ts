@@ -139,6 +139,36 @@ export function fatorAcumulado(
 }
 
 /**
+ * Quanto multiplicar o valor de cada ano para lê-lo em reais do ano-referência.
+ *
+ * O painel inteiro era nominal (achado PAT-04): entre 2020 e 2025 o IPCA
+ * acumulado passa de 30%, então um patrimônio que «cresceu 35%» ficou
+ * praticamente parado em poder de compra — e a tela dizia que cresceu.
+ *
+ * `null` onde falta taxa no caminho, pela mesma regra do resto do módulo: sem o
+ * IPCA de um ano do meio não dá para deflacionar, e inventar 0% mentiria menos
+ * alto mas mentiria. O ano-referência tem deflator 1 por definição.
+ */
+export function deflatorPara(
+  anoRef: number,
+  anos: number[],
+  informados: BenchmarksInformados = {},
+): { anoBase: number; deflator: number | null }[] {
+  return anos.map((anoBase) => {
+    if (anoBase === anoRef) return { anoBase, deflator: 1 }
+    // só faz sentido trazer o passado para o presente
+    if (anoBase > anoRef) return { anoBase, deflator: null }
+    let fator = 1
+    for (let ano = anoBase + 1; ano <= anoRef; ano++) {
+      const taxa = taxaDoAno('ipca', ano, informados)
+      if (taxa === null) return { anoBase, deflator: null }
+      fator *= 1 + taxa
+    }
+    return { anoBase, deflator: fator }
+  })
+}
+
+/**
  * Variação acumulada do índice em um período de N anos terminando em `ano`.
  *
  * Existe porque a linha da tabela às vezes mede três anos (falta declaração no

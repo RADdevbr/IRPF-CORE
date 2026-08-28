@@ -21,7 +21,7 @@
 import { analisarConsistencia, type Entradas } from './consistencia'
 import { taxaDoPeriodo, ultimoFechamento, NOME_INDICE, type BenchmarksInformados } from './benchmarks'
 import { composicaoRenda } from './renda'
-import { chaveAporte, NOME_CLASSE, type Aportes, type ClassePatrimonio, type Historico } from './historico'
+import { chaveAporte, NOME_CLASSE, COMO_VALORA, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from './historico'
 
 export interface AnoCapital {
   anoBase: number
@@ -273,8 +273,17 @@ export interface AnoClasse {
 export interface ClasseRetorno {
   classe: ClassePatrimonio
   nome: string
+  /** Como o valor declarado é formado — ver `COMO_VALORA`. */
+  comoValora: ComoValora
   anos: AnoClasse[]
-  /** Média simples dos anos com base — sem os anos que não deram para medir. */
+  /**
+   * Média simples dos anos com base — sem os anos que não deram para medir.
+   *
+   * `null` também quando a classe não é declarada a mercado: ali `final −
+   * inicial` mede compra e venda, não valorização, e devolver esse número como
+   * «retorno» é o erro que o PAT-01 corrige. Quem consome não pode cair nele
+   * por descuido, então some daqui em vez de sair com aviso ao lado.
+   */
   retornoMedio: number | null
   saldoFinal: number
   algumParcial: boolean
@@ -352,12 +361,17 @@ export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRet
   return [...porClasse.entries()]
     .map(([classe, anos]) => {
       const medidos = anos.filter((a) => a.retorno !== null)
+      const comoValora = COMO_VALORA[classe]
+      const mensuravel = comoValora === 'mercado'
       return {
         classe,
         nome: NOME_CLASSE[classe],
+        comoValora,
         anos,
         retornoMedio:
-          medidos.length > 0 ? medidos.reduce((s, a) => s + (a.retorno as number), 0) / medidos.length : null,
+          mensuravel && medidos.length > 0
+            ? medidos.reduce((s, a) => s + (a.retorno as number), 0) / medidos.length
+            : null,
         saldoFinal: anos[anos.length - 1]?.final ?? 0,
         algumParcial: anos.some((a) => a.parcial),
       }
