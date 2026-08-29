@@ -558,11 +558,38 @@ export function aplicarOverrides(h: Historico, ov: Overrides): Historico {
  */
 export type Vinculos = Record<string, string>
 
+/**
+ * Colapsa cadeias: A→B e B→C viram A→C e B→C.
+ *
+ * `aplicarVinculos` reescreve o id de cada posição UMA vez, então uma cadeia
+ * não resolvida parte a série no meio — o bem de 2020 ia parar num id que não
+ * é de posição nenhuma, e sumia da série. É o que acontecia quando a pessoa
+ * ligava um bem que tem quatro variações de nome: cada ligação cobria um salto,
+ * e o histórico continuava partido.
+ *
+ * Ciclo (A→B e B→A, que só nasce de ligação manual contraditória) para no
+ * primeiro id repetido: cadeia curta é melhor que laço infinito.
+ */
+export function resolverCadeias(v: Vinculos): Vinculos {
+  const saida: Vinculos = {}
+  for (const de of Object.keys(v)) {
+    const vistos = new Set<string>([de])
+    let atual = v[de]
+    while (v[atual] && !vistos.has(atual)) {
+      vistos.add(atual)
+      atual = v[atual]
+    }
+    if (atual !== de) saida[de] = atual
+  }
+  return saida
+}
+
 export function aplicarVinculos(h: Historico, v: Vinculos): Historico {
   if (Object.keys(v).length === 0) return h
+  const mapa = resolverCadeias(v)
   const saida: Historico = {}
   for (const [ano, d] of Object.entries(h)) {
-    saida[ano] = { ...d, posicoes: d.posicoes.map((p) => (v[p.id] ? { ...p, id: v[p.id] } : p)) }
+    saida[ano] = { ...d, posicoes: d.posicoes.map((p) => (mapa[p.id] ? { ...p, id: mapa[p.id] } : p)) }
   }
   return saida
 }
