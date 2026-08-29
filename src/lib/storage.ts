@@ -92,6 +92,18 @@ export interface PersistedState {
   /** O mesmo, para a carteira: que movimentação é compra, venda ou evento. */
   b3Carteira?: Record<string, PapelNaCarteira>
   /**
+   * Quem é o PAGADOR de cada produto da B3, quando a pessoa discorda do palpite.
+   *
+   * O padrão agrupa pela raiz do ticker — PETR3 e PETR4 são a mesma companhia, e
+   * o gatilho do Art. 6º-A conta o total pago pela mesma pessoa jurídica. Mas o
+   * ticker não prova CNPJ, e nada garante que duas empresas não compartilhem a
+   * raiz: por isso é sugestão, e a resposta de quem discorda fica guardada.
+   *
+   * Chave: o produto como vem no extrato. Valor: o nome do pagador. Produto
+   * apontando para si mesmo = «não agrupe este».
+   */
+  b3Emissor?: Record<string, string>
+  /**
    * De onde veio cada número, pela mesma chave dos `vals`. Ausente = não
    * registrado (estado salvo antes deste campo existir), que é diferente de
    * digitado.
