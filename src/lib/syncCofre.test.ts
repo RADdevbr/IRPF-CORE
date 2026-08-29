@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { sincronizar, resolverComLocal, resolverComRemoto } from './syncCofre'
-import type { DocRemoto, Remoto, EstadoSync } from './sync'
+import { ConflitoDeVersao, type DocRemoto, type Remoto, type EstadoSync } from './sync'
 import type { CofreCompleto, Wrap } from './crypto'
 
 // Servidor falso, em memória: deixa exercitar o fluxo inteiro — inclusive os
@@ -14,7 +14,12 @@ function servidorFalso(inicial?: { doc?: DocRemoto; wraps?: Wrap[] }) {
     conferirCodigo: async () => {},
     sair: async () => {},
     lerDoc: async () => doc,
+    // Como o servidor de verdade: a escrita só passa se a versão que estava lá
+    // ainda for a que o cliente leu.
     gravarDoc: async (d) => {
+      const esperada = d.version - 1
+      const atual = doc?.version ?? 0
+      if (atual !== esperada) throw new ConflitoDeVersao(d.docId)
       doc = { ...d, atualizadoEm: '2026-08-23T21:00:00.000Z' }
       return doc
     },
@@ -157,5 +162,50 @@ describe('cofres criados separadamente', () => {
     // quem lê isto é alguém no aparelho novo esperando os dados do outro
     expect(res.mensagem).toMatch(/aparelho onde estão os dados/)
     expect(res.mensagem).toMatch(/Sincronizar agora/)
+  })
+})
+
+
+describe('corrida entre dois aparelhos', () => {
+  // O caso que o `upsert` sem condição perdia em silêncio: dois aparelhos leem
+  // a versão 1, os dois gravam a 2, e o segundo apagava o primeiro.
+  it('quem chega depois vira conflito em vez de sobrescrever', async () => {
+    const doc: DocRemoto = {
+      docId: 'state',
+      ciphertext: 'do-servidor',
+      iv: 'iv',
+      version: 1,
+      atualizadoEm: '2026-08-23T20:00:00.000Z',
+      vaultId: 'v1',
+    }
+    const { r, estado } = servidorFalso({ doc })
+    const local = cofre('v1', [wrap('senha'), wrap('recuperacao')], 'do-aparelho-B')
+
+    // o aparelho A grava primeiro, direto no servidor falso
+    await r.gravarDoc({ docId: 'state', ciphertext: 'do-aparelho-A', iv: 'iv', version: 2, vaultId: 'v1' })
+
+    // o aparelho B ainda pensa que a base é a 1 e tenta enviar a 2
+    const res = await sincronizar(r, local, { baseVersion: 1, sujo: true })
+
+    expect(res.acao).toBe('conflito')
+    expect(res.mensagem).toContain('outro aparelho')
+    // e o que o A gravou continua lá, inteiro
+    expect(estado().doc?.ciphertext).toBe('do-aparelho-A')
+  })
+
+  it('sem corrida, o envio passa e a base avança', async () => {
+    const doc: DocRemoto = {
+      docId: 'state',
+      ciphertext: 'antigo',
+      iv: 'iv',
+      version: 1,
+      atualizadoEm: '2026-08-23T20:00:00.000Z',
+      vaultId: 'v1',
+    }
+    const { r, estado } = servidorFalso({ doc })
+    const res = await sincronizar(r, cofre('v1', [wrap('senha'), wrap('recuperacao')], 'novo'), { baseVersion: 1, sujo: true })
+    expect(res.acao).toBe('enviar')
+    expect(res.estado.baseVersion).toBe(2)
+    expect(estado().doc?.ciphertext).toBe('novo')
   })
 })

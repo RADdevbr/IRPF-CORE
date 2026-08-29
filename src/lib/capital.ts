@@ -19,8 +19,9 @@
 // gasto daquele ano foi informado.
 
 import { analisarConsistencia, type Entradas } from './consistencia'
+import { taxaDoPeriodo, ultimoFechamento, NOME_INDICE, type BenchmarksInformados } from './benchmarks'
 import { composicaoRenda } from './renda'
-import { chaveAporte, NOME_CLASSE, type Aportes, type ClassePatrimonio, type Historico } from './historico'
+import { chaveAporte, NOME_CLASSE, COMO_VALORA, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from './historico'
 
 export interface AnoCapital {
   anoBase: number
@@ -106,6 +107,150 @@ export function analiseCapital(
   }
 }
 
+// ------------------------------------------------- retorno contra os índices
+
+export interface PontoRetorno {
+  anoBase: number
+  /** Retorno medido do capital no ano. null quando não dá para medir. */
+  retorno: number | null
+  /** Gasto do ano não informado: o retorno é PISO, não medida. */
+  piso: boolean
+  /** Quantos anos o ponto cobre. >1 quando falta declaração no meio. */
+  anosCobertos: number
+  /** CDI (ou Selic, se só ela existir) no MESMO período do ponto. */
+  cdi: number | null
+  ipca: number | null
+}
+
+export interface RetornoVsIndices {
+  pontos: PontoRetorno[]
+  /** Média dos anos que sustentam afirmação — a mesma regra do retornoMedio. */
+  retornoMedio: number | null
+  /** Média dos índices NOS MESMOS anos, para comparar maçã com maçã. */
+  cdiMedio: number | null
+  ipcaMedio: number | null
+  /** 'CDI / Selic' quando as duas existem; só uma delas quando falta a outra. */
+  rotuloCdi: string
+  /** Quantos anos entraram nas médias. */
+  anosNaMedia: number
+}
+
+/**
+ * O retorno que o capital deu, ano a ano, ao lado do que os índices deram.
+ *
+ * É a comparação que faz sentido com um índice, e a que o painel não fazia: CDI
+ * é TAXA DE RETORNO, então o par dele é o retorno da carteira — não a trajetória
+ * do patrimônio, que inclui tudo o que a pessoa aportou e por isso ganha do
+ * índice por construção.
+ *
+ * O retorno aqui é medido, não projetado: sai de `analiseCapital`, que desconta
+ * o que foi poupado do crescimento do patrimônio. E o índice de cada ponto cobre
+ * o mesmo período dele — ponto que mede três anos (falta declaração no meio)
+ * compara com três anos de índice compostos.
+ *
+ * As médias usam só os anos que sustentam afirmação — com gasto informado e sem
+ * buraco —, e o índice entra na média pelos MESMOS anos. Comparar a média de
+ * cinco anos de retorno com a média de sete de CDI seria comparar períodos
+ * diferentes e chamar de comparação.
+ */
+export function retornoVsIndices(
+  h: Historico,
+  entradas: Entradas = {},
+  benchmarks: BenchmarksInformados = {},
+  opts: { dividendosSaoTrabalho?: boolean } = {},
+): RetornoVsIndices {
+  const analise = analiseCapital(h, entradas, opts)
+  const temCdi = ultimoFechamento('cdi', benchmarks) !== null
+  const temSelic = ultimoFechamento('selic', benchmarks) !== null
+  const indiceCdi = temCdi ? 'cdi' : 'selic'
+  const rotuloCdi =
+    temCdi && temSelic ? `${NOME_INDICE.cdi} / ${NOME_INDICE.selic}` : NOME_INDICE[temCdi ? 'cdi' : 'selic']
+
+  const pontos: PontoRetorno[] = analise.anos.map((a) => ({
+    anoBase: a.anoBase,
+    retorno: a.retorno,
+    piso: a.semGasto,
+    anosCobertos: a.anosCobertos,
+    cdi: taxaDoPeriodo(indiceCdi, a.anoBase, a.anosCobertos, benchmarks),
+    ipca: taxaDoPeriodo('ipca', a.anoBase, a.anosCobertos, benchmarks),
+  }))
+
+  // os mesmos anos que o retornoMedio aceita, e nenhum outro
+  const confiaveis = analise.anos
+    .map((a, i) => ({ a, p: pontos[i] }))
+    .filter(({ a }) => !a.semGasto && a.anosCobertos === 1 && a.retorno !== null)
+
+  const media = (vals: (number | null)[]) => {
+    const bons = vals.filter((v): v is number => v !== null)
+    return bons.length > 0 ? bons.reduce((s, v) => s + v, 0) / bons.length : null
+  }
+
+  return {
+    pontos,
+    retornoMedio: analise.retornoMedio,
+    cdiMedio: media(confiaveis.map(({ p }) => p.cdi)),
+    ipcaMedio: media(confiaveis.map(({ p }) => p.ipca)),
+    rotuloCdi,
+    anosNaMedia: confiaveis.length,
+  }
+}
+
+export interface PontoAcumuladoRetorno {
+  anoBase: number
+  /** Retorno acumulado desde o primeiro ponto da série. */
+  retorno: number | null
+  cdi: number | null
+  ipca: number | null
+  /** Algum ano até aqui era piso — o acumulado também é piso, não medida. */
+  piso: boolean
+}
+
+/**
+ * Compõe os retornos ano a ano num acumulado do período.
+ *
+ * O anual responde "como foi este ano"; o acumulado responde "e no fim das
+ * contas". As respostas divergem, e é por isso que as duas existem: um ano ruim
+ * no meio pesa igual a um bom na leitura ano a ano, e não pesa igual no
+ * acumulado, onde ele derruba tudo o que vem depois.
+ *
+ * Compor é multiplicar, não somar: 10% seguido de 10% dá 21%, não 20%. E os
+ * pontos que cobrem vários anos já são o total do período deles — o índice ao
+ * lado também —, então entram na multiplicação inteiros, sem anualizar antes.
+ *
+ * Ano sem retorno mensurável INTERROMPE a série em vez de pular por cima: pular
+ * afirmaria que o ano rendeu 0%, que é diferente de não ter como saber. O piso,
+ * ao contrário, contamina para frente e fica marcado — acumulado de piso é piso.
+ */
+export function acumularRetorno(pontos: PontoRetorno[]): PontoAcumuladoRetorno[] {
+  const saida: PontoAcumuladoRetorno[] = []
+  let fr = 1
+  let fc = 1
+  let fi = 1
+  let vivoR = true
+  let vivoC = true
+  let vivoI = true
+  let piso = false
+
+  for (const p of pontos) {
+    if (p.retorno === null) vivoR = false
+    else if (vivoR) fr *= 1 + p.retorno
+    if (p.cdi === null) vivoC = false
+    else if (vivoC) fc *= 1 + p.cdi
+    if (p.ipca === null) vivoI = false
+    else if (vivoI) fi *= 1 + p.ipca
+    if (p.piso) piso = true
+
+    saida.push({
+      anoBase: p.anoBase,
+      retorno: vivoR ? fr - 1 : null,
+      cdi: vivoC ? fc - 1 : null,
+      ipca: vivoI ? fi - 1 : null,
+      piso,
+    })
+  }
+  return saida
+}
+
 // ------------------------------------------------------------ por classe
 
 export interface AnoClasse {
@@ -128,8 +273,17 @@ export interface AnoClasse {
 export interface ClasseRetorno {
   classe: ClassePatrimonio
   nome: string
+  /** Como o valor declarado é formado — ver `COMO_VALORA`. */
+  comoValora: ComoValora
   anos: AnoClasse[]
-  /** Média simples dos anos com base — sem os anos que não deram para medir. */
+  /**
+   * Média simples dos anos com base — sem os anos que não deram para medir.
+   *
+   * `null` também quando a classe não é declarada a mercado: ali `final −
+   * inicial` mede compra e venda, não valorização, e devolver esse número como
+   * «retorno» é o erro que o PAT-01 corrige. Quem consome não pode cair nele
+   * por descuido, então some daqui em vez de sair com aviso ao lado.
+   */
   retornoMedio: number | null
   saldoFinal: number
   algumParcial: boolean
@@ -207,12 +361,17 @@ export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRet
   return [...porClasse.entries()]
     .map(([classe, anos]) => {
       const medidos = anos.filter((a) => a.retorno !== null)
+      const comoValora = COMO_VALORA[classe]
+      const mensuravel = comoValora === 'mercado'
       return {
         classe,
         nome: NOME_CLASSE[classe],
+        comoValora,
         anos,
         retornoMedio:
-          medidos.length > 0 ? medidos.reduce((s, a) => s + (a.retorno as number), 0) / medidos.length : null,
+          mensuravel && medidos.length > 0
+            ? medidos.reduce((s, a) => s + (a.retorno as number), 0) / medidos.length
+            : null,
         saldoFinal: anos[anos.length - 1]?.final ?? 0,
         algumParcial: anos.some((a) => a.parcial),
       }

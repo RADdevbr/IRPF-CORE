@@ -1,54 +1,23 @@
 // Persistência local: autosave do estado + cenários nomeados + export/import.
+//
+// Quem decide ONDE gravar é `armazenamento.ts` — inclusive a resposta "em lugar
+// nenhum", que é o modo visita. Aqui não há mais `if (visita) return` espalhado:
+// essa checagem campo a campo era o que deixava o cofre, o sync e o token da
+// conta de fora da promessa.
+
+import {
+  armazenamentoLocal,
+  PREFIXO,
+  modoVisita,
+  setModoVisita,
+  chavesGravadas,
+  apagarTudoDesteAparelho,
+} from './armazenamento'
+
+export { PREFIXO, modoVisita, setModoVisita, chavesGravadas, apagarTudoDesteAparelho }
 
 const STATE_KEY = 'irpfm2027:state:v1'
 const SCEN_KEY = 'irpfm2027:scenarios:v1'
-
-/** Prefixo de tudo que este app grava. Uma família só, para poder varrer. */
-export const PREFIXO = 'irpfm2027:'
-
-/**
- * Modo visita: o app funciona inteiro, mas não grava nada neste computador.
- *
- * Existe porque o computador onde a planilha está pode não ser o seu — o do
- * trabalho, o de alguém — e ali o `localStorage` fica legível para qualquer
- * extensão do navegador e para o próximo que sentar na cadeira.
- *
- * Não é lembrado entre sessões, de propósito: lembrar seria gravar, que é
- * exatamente o que o modo promete não fazer. Entra pela URL (`?visita`) ou pelo
- * botão, e sai fechando a aba.
- */
-let visita = false
-
-export const modoVisita = () => visita
-export const setModoVisita = (v: boolean) => {
-  visita = v
-}
-
-/** Todas as chaves deste app presentes neste navegador. */
-export function chavesGravadas(): string[] {
-  try {
-    return Object.keys(localStorage).filter((k) => k.startsWith(PREFIXO))
-  } catch {
-    return []
-  }
-}
-
-/**
- * Apaga tudo o que o app gravou aqui: estado, cenários, cofre, sessão lembrada
- * e vínculo de dispositivo. Varre pelo prefixo em vez de listar as chaves uma a
- * uma, para que a próxima chave que alguém criar já nasça coberta.
- */
-export function apagarTudoDesteAparelho(): number {
-  const chaves = chavesGravadas()
-  chaves.forEach((k) => {
-    try {
-      localStorage.removeItem(k)
-    } catch {
-      /* ignora */
-    }
-  })
-  return chaves.length
-}
 
 import type { YtdConfig, DivGrid } from '../calc/ytd'
 import type { Carteira } from '../calc/rendafixa'
@@ -59,6 +28,8 @@ import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bo
 import type { PapelNaCarteira } from './b3posicao'
 import type { Origem } from './origem'
 import type { OverridesParametros } from '../calc/params'
+import type { DeducoesLegais } from '../calc/declaracao'
+import type { CategoriaDeducao } from './deducoes'
 
 export type CdbMode = 'anual' | 'ytd' | 'carteira'
 
@@ -126,6 +97,20 @@ export interface PersistedState {
    * digitado.
    */
   origem?: Record<string, Origem>
+  /**
+   * Deduções legais da declaração de ajuste anual, no ano.
+   *
+   * Não entram na base do IRPFM — entram no imposto DEVIDO, que é o que a Lei
+   * 15.270/2025 manda abater. Ausente = nada informado, e aí o único abatimento
+   * é a previdência oficial, que o app deriva do próprio pró-labore.
+   */
+  deducoes?: Partial<DeducoesLegais>
+  /**
+   * Em que linha da declaração entra cada beneficiário do Registro 26,
+   * respondido uma vez. Mesmo arranjo do `b3`: o texto vem de fora, a resposta
+   * fica guardada, e no ano seguinte só o que é novo pergunta de novo.
+   */
+  deducoesCategoria?: Record<string, CategoriaDeducao>
   /**
    * Tabelas fiscais trocadas à mão. INSS e IRRF de 2026 são estimativa aqui;
    * quando a portaria sair, ninguém deveria esperar um deploy para ter a conta
@@ -212,7 +197,7 @@ export function migrarEstado(bruto: unknown): PersistedState {
 
 export function loadState(): PersistedState | null {
   try {
-    const raw = localStorage.getItem(STATE_KEY)
+    const raw = armazenamentoLocal().getItem(STATE_KEY)
     return raw ? migrarEstado(JSON.parse(raw)) : null
   } catch {
     return null
@@ -220,17 +205,16 @@ export function loadState(): PersistedState | null {
 }
 
 export function saveState(state: PersistedState): void {
-  if (visita) return
   try {
-    localStorage.setItem(STATE_KEY, JSON.stringify({ ...state, schemaVersion: SCHEMA_VERSION }))
+    armazenamentoLocal().setItem(STATE_KEY, JSON.stringify({ ...state, schemaVersion: SCHEMA_VERSION }))
   } catch {
-    /* localStorage indisponível — ignora silenciosamente */
+    /* armazenamento indisponível — ignora silenciosamente */
   }
 }
 
 export function loadScenarios(): NamedScenario[] {
   try {
-    const raw = localStorage.getItem(SCEN_KEY)
+    const raw = armazenamentoLocal().getItem(SCEN_KEY)
     const list = raw ? (JSON.parse(raw) as NamedScenario[]) : []
     if (!Array.isArray(list)) return []
     // Um cenário corrompido não pode levar os outros junto.
@@ -247,9 +231,8 @@ export function loadScenarios(): NamedScenario[] {
 }
 
 export function saveScenarios(list: NamedScenario[]): void {
-  if (visita) return
   try {
-    localStorage.setItem(SCEN_KEY, JSON.stringify(list))
+    armazenamentoLocal().setItem(SCEN_KEY, JSON.stringify(list))
   } catch {
     /* ignora */
   }

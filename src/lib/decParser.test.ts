@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDec } from './decParser'
+import { parseDec, censo, censoDe, pareceTexto, leituraDe, LEITURA } from './decParser'
 
 // Constrói uma linha de largura fixa por posição (1-indexado inclusivo).
 function put(base: string[], ini: number, s: string, len: number): void {
@@ -162,5 +162,90 @@ describe('parseDec — leitura posicional', () => {
     const r = parseDec(semIR)
     expect(r.lancamentos.filter((l) => l.rotulo === 'IR retido')).toHaveLength(0)
     expect(r.lancamentos.filter((l) => l.rotulo === 'Rendimento')).toHaveLength(1)
+  })
+})
+
+// A tela responde «o app entendeu o meu arquivo?» comparando o censo de tipos
+// com LEITURA. Se alguém passar a ler um registro novo no laço e esquecer da
+// tabela de rótulos, a tela mente dizendo que o tipo é ignorado — e mente na
+// direção que faz o usuário desconfiar de um número que está certo. Este teste
+// lê o próprio fonte do leitor porque é lá que mora a verdade.
+describe('LEITURA acompanha o que o leitor de fato lê', () => {
+  const fonte = Object.entries(
+    import.meta.glob('./decParser.ts', { query: '?raw', import: 'default', eager: true }),
+  )[0][1] as string
+
+  const tiposDoLaco = () => {
+    const s = new Set<string>()
+    for (const m of fonte.matchAll(/tipo === '(\w{2})'/g)) s.add(m[1])
+    const tabela = fonte.match(/const REGISTROS: Record<string, RegistroSpec> = \{([\s\S]*?)\n\}/)
+    for (const m of (tabela?.[1] ?? '').matchAll(/^ {2}'(\w{2})': \{/gm)) s.add(m[1])
+    return s
+  }
+
+  it('encontra os tipos no fonte — o teste não passa por não achar nada', () => {
+    const t = tiposDoLaco()
+    expect(t.size).toBeGreaterThanOrEqual(8)
+    expect(t.has('27')).toBe(true) // bens, lido no laço
+    expect(t.has('21')).toBe(true) // rendimento PJ, lido pela tabela
+  })
+
+  it('não sobra nem falta rótulo', () => {
+    expect([...tiposDoLaco()].sort()).toEqual(Object.keys(LEITURA).sort())
+  })
+})
+
+describe('censo', () => {
+  const r = [
+    { tipo: '27', count: 135 },
+    { tipo: '16', count: 3 },
+    { tipo: '84', count: 40 },
+  ]
+
+  it('separa o que vira número do que só é contado', () => {
+    expect(censo(r)).toEqual({ tipos: 3, lidos: 2, linhas: 178, linhasLidas: 175 })
+  })
+
+  it('aguenta ano sem censo gravado', () => {
+    expect(censo([])).toEqual({ tipos: 0, lidos: 0, linhas: 0, linhasLidas: 0 })
+  })
+
+  it('leituraDe devolve null para o que o leitor ignora', () => {
+    expect(leituraDe('27')).toBe('bem ou direito')
+    expect(leituraDe('16')).toBeNull()
+    expect(leituraDe('T9')).toBeNull()
+  })
+})
+
+// O .DBK é o backup do programa da Receita e pode ter ficha que o .DEC
+// transmitido não tem. Para responder «o que tem aqui dentro?» sem inventar
+// layout, o censo do arquivo cru só conta prefixos.
+describe('censoDe — olhar um arquivo que o leitor não sabe ler', () => {
+  it('conta prefixos de duas letras, sem tocar em campo nenhum', () => {
+    const texto = ['27 bem um', '27 bem dois', '28 divida', '', '  ', 'T9fim'].join('\n')
+    expect(censoDe(texto)).toEqual([
+      { tipo: '27', count: 2 },
+      { tipo: '28', count: 1 },
+      { tipo: 'T9', count: 1 },
+    ])
+  })
+
+  it('não confunde linha em branco com registro', () => {
+    expect(censoDe('\n\n   \n')).toEqual([])
+  })
+
+  it('empata por tipo, para a lista não dançar entre leituras', () => {
+    expect(censoDe('BB x\nAA y').map((r) => r.tipo)).toEqual(['AA', 'BB'])
+  })
+
+  it('pareceTexto separa arquivo de registro de arquivo binário', () => {
+    expect(pareceTexto('27 bem\n28 divida\n')).toBe(true)
+    expect(pareceTexto('PK\u0003\u0004' + '\u0000\u0001\u0002'.repeat(200))).toBe(false)
+    expect(pareceTexto('')).toBe(false)
+    expect(pareceTexto('   \n  ')).toBe(false)
+  })
+
+  it('tab e quebra de linha não contam como binário', () => {
+    expect(pareceTexto('27\tbem\r\n28\tdivida\r\n')).toBe(true)
   })
 })

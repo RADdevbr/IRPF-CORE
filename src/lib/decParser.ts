@@ -144,6 +144,82 @@ const REGISTROS: Record<string, RegistroSpec> = {
 // Obs.: os dividendos NÃO são lidos do Registro 33 — no arquivo real eles vêm no
 // Registro 84 linha 09 (junto com LCI/LCA etc.). Ler os dois dobraria o valor.
 
+/**
+ * O que o leitor faz com cada tipo de registro.
+ *
+ * Existe porque o censo sozinho não diz nada: um arquivo real tem duas dezenas
+ * de tipos, e despejar «16 19 20 21 22 23 24 26 27 37 40 …» na tela é ruído. A
+ * pergunta que o usuário faz é «o app entendeu o meu arquivo?», e para responder
+ * isso é preciso saber quais desses tipos viram número aqui dentro.
+ *
+ * A fonte da verdade continua sendo o laço de `parseDec` e a tabela `REGISTROS`
+ * acima — esta tabela é só o rótulo legível. Um teste compara as duas listas
+ * para que não seja possível passar a ler um registro e esquecer daqui.
+ */
+export const LEITURA: Record<string, string> = {
+  '21': 'rendimento tributável de PJ',
+  '22': 'rendimento de PF, exterior e carnê-leão',
+  '24': 'rendimento de aplicação financeira',
+  '25': 'dependente',
+  '26': 'pagamento efetuado',
+  '27': 'bem ou direito',
+  '84': 'rendimento isento e dividendo',
+  '88': 'rendimento de tributação definitiva',
+}
+
+/** Rótulo do que o leitor extrai deste tipo, ou `null` se ele só conta a linha. */
+export const leituraDe = (tipo: string): string | null => LEITURA[tipo] ?? null
+
+export interface Censo {
+  /** Quantos tipos distintos o arquivo tem. */
+  tipos: number
+  /** Destes, quantos o leitor transforma em número. */
+  lidos: number
+  linhas: number
+  linhasLidas: number
+}
+
+/** O mínimo que o censo precisa — é o que sobrevive à gravação no cofre. */
+export type ContagemTipo = { tipo: string; count: number }
+
+/**
+ * Censo de um arquivo que o leitor NÃO sabe ler — o `.DBK`, por exemplo, que é
+ * o backup do programa da Receita e não o arquivo de transmissão. Só conta os
+ * prefixos de dois caracteres: nenhuma suposição de layout, nenhum campo
+ * inventado. Serve para responder «o que tem aqui dentro?» antes de escrever
+ * qualquer leitor — que é a pergunta que eu deveria ter feito antes de afirmar
+ * que as dívidas moravam num Registro 28.
+ */
+export function censoDe(texto: string): ContagemTipo[] {
+  const tipos = new Map<string, number>()
+  for (const l of texto.split(/\r\n|\r|\n/)) {
+    if (!l.trim()) continue
+    const t = l.slice(0, 2)
+    tipos.set(t, (tipos.get(t) ?? 0) + 1)
+  }
+  return [...tipos].map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count || a.tipo.localeCompare(b.tipo))
+}
+
+/**
+ * O arquivo é texto por linhas, ou é binário? Sem isto o censo de um arquivo
+ * comprimido vira uma tabela de lixo com cara de resposta. Bytes de controle
+ * (fora de tab/CR/LF) praticamente não aparecem em arquivo de registro; num
+ * binário são comuns.
+ */
+export function pareceTexto(texto: string): boolean {
+  const amostra = texto.slice(0, 8000)
+  if (amostra.trim().length === 0) return false
+  // eslint-disable-next-line no-control-regex
+  const controle = (amostra.match(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g) ?? []).length
+  return controle / amostra.length < 0.02
+}
+
+export function censo(registros: readonly ContagemTipo[]): Censo {
+  const lidos = registros.filter((r) => LEITURA[r.tipo])
+  const somar = (rs: readonly ContagemTipo[]) => rs.reduce((s, r) => s + r.count, 0)
+  return { tipos: registros.length, lidos: lidos.length, linhas: somar(registros), linhasLidas: somar(lidos) }
+}
+
 // Âncora "CNPJ (14 díg.) + nome (texto) + valor (13 díg.)" — o padrão comum aos
 // registros de detalhe (21, 33 e o 24 por fundo). Independe de offset exato.
 const ANCHOR = /(\d{14})([A-Za-zÀ-ÿ][^\d]{0,59}?)\s*(\d{13})/g

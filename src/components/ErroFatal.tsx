@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react'
 import { C } from '../theme'
+import { armazenamentoLocal, modoVisita, PREFIXO } from '../lib/armazenamento'
 
 // Um erro em qualquer canto derrubava a árvore inteira e deixava a tela preta —
 // num app que guarda declaração de imposto, isso parece perda de dados mesmo
@@ -9,12 +10,20 @@ interface Estado {
   erro: Error | null
 }
 
+// Lê pela mesma porta que o resto do app, e não direto do `localStorage`.
+//
+// Em modo visita os dados da sessão estão em memória, e o disco está vazio de
+// propósito: lendo o disco, esta tela entregaria um arquivo VAZIO exatamente a
+// quem mais precisa dele — alguém cujo app acabou de travar com uma declaração
+// dentro. A `sessionStorage` fica de fora de propósito: é onde mora a chave
+// destravada, e ela não pode sair em arquivo aberto.
 function baixarDados() {
   const dump: Record<string, string | null> = {}
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && k.startsWith('irpfm2027:')) dump[k] = localStorage.getItem(k)
+    const st = armazenamentoLocal()
+    for (let i = 0; i < st.length; i++) {
+      const k = st.key(i)
+      if (k && k.startsWith(PREFIXO)) dump[k] = st.getItem(k)
     }
   } catch {
     /* sem acesso ao storage — segue com o que der */
@@ -55,8 +64,9 @@ export class ErroFatal extends Component<{ children: ReactNode }, Estado> {
         <div style={{ maxWidth: 560, margin: '10vh auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <p style={{ fontSize: 19, fontWeight: 600, margin: 0 }}>O app travou ao abrir</p>
           <p style={{ fontSize: 13.5, color: C.textSec, margin: 0, lineHeight: 1.6 }}>
-            Seus dados continuam gravados neste navegador — o que quebrou foi a tela, não o armazenamento. Baixe uma cópia
-            antes de mexer em qualquer coisa; se houver cofre, o arquivo sai cifrado do mesmo jeito que está guardado.
+            {modoVisita()
+              ? 'Você está em modo visita: nada foi gravado neste computador, e fechar a aba leva tudo junto. Baixe a cópia AGORA, antes de recarregar — recarregar perde o que você digitou.'
+              : 'Seus dados continuam gravados neste navegador — o que quebrou foi a tela, não o armazenamento. Baixe uma cópia antes de mexer em qualquer coisa; se houver cofre, o arquivo sai cifrado do mesmo jeito que está guardado.'}
           </p>
           <div style={{ background: C.bg2, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, color: C.red, overflowX: 'auto' }}>
             {erro.message || String(erro)}

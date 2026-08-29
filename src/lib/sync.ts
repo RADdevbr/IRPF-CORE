@@ -56,6 +56,25 @@ export function decidirSync(estado: EstadoSync, remoto: ResumoRemoto | null, vau
   return { acao: 'enviar', motivo: 'servidor-atrasado' }
 }
 
+/**
+ * Outro aparelho gravou entre a nossa leitura e a nossa escrita.
+ *
+ * O schema sempre anunciou `version` como "controle de conflito otimista", mas
+ * quem gravava fazia `upsert` com a versão calculada aqui e sem condição: duas
+ * telas abertas na mesma conta escreviam uma por cima da outra, em silêncio, e
+ * a política deste arquivo — cuidadosa — só protegia contra o conflito que ela
+ * enxergava na hora de decidir.
+ *
+ * Com o erro tipado, a corrida vira o mesmo caminho de conflito que já existe e
+ * já tem tela: a pessoa escolhe qual versão vale.
+ */
+export class ConflitoDeVersao extends Error {
+  constructor(public readonly docId: string) {
+    super('Este cofre foi gravado em outro aparelho enquanto você editava aqui.')
+    this.name = 'ConflitoDeVersao'
+  }
+}
+
 /** Documento como trafega: cofre cifrado + metadados de versão. */
 export interface DocRemoto {
   docId: string

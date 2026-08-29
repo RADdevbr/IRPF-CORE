@@ -18,6 +18,17 @@ supabase link --project-ref SEU_REF
 supabase functions deploy apagar-conta
 ```
 
+Restrinja de onde ela aceita ser chamada — a autorização é por Bearer, então não
+havia CSRF a explorar, mas `Access-Control-Allow-Origin: *` não descreve a
+intenção de uma função que só a tela de admin deste app usa:
+
+```sh
+supabase secrets set ORIGENS="https://seu-app.vercel.app,http://localhost:5173"
+```
+
+Sem `ORIGENS`, ela continua aceitando qualquer origem — para não quebrar quem já
+a tinha implantada.
+
 Sem implantar, nada quebra: o app detecta a ausência e cai no plano B — apaga o
 cofre e os embrulhos e bloqueia a conta —, dizendo na tela qual dos dois
 aconteceu.

@@ -11,6 +11,23 @@
 // posição real de cada uma. Não lê fórmula, estilo nem formatação — nada disso
 // muda o dado.
 
+/**
+ * Limites do próprio formato, usados como teto de confiança.
+ *
+ * O leitor abre planilha que veio de fora — do banco, da corretora, do contador,
+ * de um e-mail. Um arquivo malformado (ou malicioso) não pode custar a aba: um
+ * `<row r="500000000">` fazia o leitor materializar meio bilhão de linhas
+ * vazias, porque o índice vinha do arquivo e ninguém o conferia. Medido: só
+ * `r="5000000"` já custava 1,6 s e 212 MB.
+ *
+ * Os tetos não são arbitrários — são os do OOXML. Nenhuma planilha legítima os
+ * ultrapassa, então recusar acima disso não fecha porta de ninguém.
+ */
+export const MAX_LINHAS = 1_048_576
+export const MAX_COLUNAS = 16_384
+/** Teto do que se aceita descompactar de um único arquivo interno (zip bomb). */
+export const MAX_DESCOMPACTADO = 64 * 1024 * 1024
+
 export interface Celula {
   /** Valor como texto, já resolvido da tabela de strings quando for o caso. */
   valor: string
@@ -82,9 +99,20 @@ async function inflar(dados: Uint8Array): Promise<Uint8Array> {
   const fluxo = new Blob([dados as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
   const pedacos: Uint8Array[] = []
   const leitor = fluxo.getReader()
+  let acumulado = 0
   for (;;) {
     const { done, value } = await leitor.read()
     if (done) break
+    acumulado += (value as Uint8Array).length
+    // Aborta em vez de acumular até o navegador morrer: alguns kB de zip podem
+    // virar gigabytes descompactados, e uma aba travada não diz o que houve.
+    if (acumulado > MAX_DESCOMPACTADO) {
+      await leitor.cancel().catch(() => {})
+      throw new Error(
+        `Este .xlsx descompacta para mais de ${Math.round(MAX_DESCOMPACTADO / 1024 / 1024)} MB. ` +
+          'Planilha de extrato não chega perto disso — confira a origem do arquivo.',
+      )
+    }
     pedacos.push(value as Uint8Array)
   }
   const total = pedacos.reduce((s, p) => s + p.length, 0)
@@ -113,12 +141,17 @@ async function conteudoDoZip(buf: ArrayBuffer, querido: (nome: string) => boolea
 
 const ENTIDADES: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" }
 
+/** Ponto de código válido para `String.fromCodePoint` — fora disso ele lança. */
+const codigo = (n: number): string =>
+  Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ''
+
 export const desescapar = (s: string): string =>
-  s.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (_, e: string) =>
-    e[0] === '#'
-      ? String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1)))
-      : ENTIDADES[e],
-  )
+  s.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (inteiro, e: string) => {
+    if (e[0] !== '#') return ENTIDADES[e]
+    // `&#x110000;` num arquivo qualquer derrubava o import inteiro com um
+    // RangeError fora de qualquer try. Entidade impossível vira ela mesma.
+    return codigo(e[1] === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) || inteiro
+  })
 
 /** Ocorrências de <tag ...>conteúdo</tag>, inclusive a forma vazia <tag ... />. */
 export function* elementos(xml: string, tag: string): Generator<{ atributos: string; conteudo: string }> {
@@ -153,12 +186,20 @@ const textoDe = (xml: string): string => {
 
 // ------------------------------------------------------------------ planilha
 
-/** 'C' → 2, 'AA' → 26. A posição da célula é informação, não enfeite. */
+/**
+ * 'C' → 2, 'AA' → 26. A posição da célula é informação, não enfeite.
+ *
+ * Capado em `MAX_COLUNAS`: a referência vem do arquivo, e `"ZZZZZZZZ"` viraria
+ * um índice astronômico num array.
+ */
 export const colunaDaRef = (ref: string): number => {
   const letras = (ref.match(/^[A-Z]+/) ?? ['A'])[0]
   let n = 0
-  for (const c of letras) n = n * 26 + (c.charCodeAt(0) - 64)
-  return n - 1
+  for (const c of letras) {
+    n = n * 26 + (c.charCodeAt(0) - 64)
+    if (n > MAX_COLUNAS) return MAX_COLUNAS - 1
+  }
+  return Math.max(0, n - 1)
 }
 
 function abasDeclaradas(workbook: string, rels: string) {
@@ -183,7 +224,13 @@ function lerLinhas(xml: string, strings: string[]): (Celula | undefined)[][] {
   const linhas: (Celula | undefined)[][] = []
 
   for (const linha of elementos(xml, 'row')) {
-    const n = Number(atributo(linha.atributos, 'r') ?? linhas.length + 1)
+    // O índice vem do ARQUIVO. Sem o teto, `linhas[n - 1]` planta um array
+    // esparso do tamanho que o arquivo mandar, e o preenchimento logo abaixo
+    // materializa cada buraco. Linha fora da faixa do formato é descartada, não
+    // truncada para outra posição: mover o dado de lugar seria pior que perdê-lo.
+    const bruto = Number(atributo(linha.atributos, 'r') ?? linhas.length + 1)
+    if (!Number.isInteger(bruto) || bruto < 1 || bruto > MAX_LINHAS) continue
+    const n = bruto
     const celulas: (Celula | undefined)[] = []
     for (const c of elementos(linha.conteudo, 'c')) {
       const ref = atributo(c.atributos, 'r') ?? ''

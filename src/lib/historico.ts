@@ -6,6 +6,7 @@
 // QUANTO do patrimônio, se resgatado, joga rendimento na base do IRPFM.
 
 import type { DecResult, Lancamento, Pagamento } from './decParser'
+import { sugerirCategoria } from './deducoes'
 import { computeIrpfm } from '../calc/irpfm'
 
 /** O que acontece com a base do IRPFM quando este bem vira dinheiro. */
@@ -117,6 +118,53 @@ export const REGIME: Record<ClassePatrimonio, Regime> = {
   veiculo: 'depende',
   desconhecido: 'depende',
 }
+
+/**
+ * O que o valor de «Bens e Direitos» significa em cada classe.
+ *
+ * O painel somava tudo como se fosse a mesma grandeza, e não é — esta é a
+ * origem do achado PAT-01. A declaração pede coisas diferentes por classe:
+ *
+ * * `mercado` — o valor declarado é o SALDO em 31/12, que já inclui o
+ *   rendimento do ano. Renda fixa, fundos, conta corrente. VGBL entra aqui:
+ *   a declaração traz o valor em 31/12 do ano anterior e o do atual, sem os
+ *   aportes, ou seja, o que se vê é o resultado.
+ * * `custo` — o valor declarado é o custo de aquisição do que se possui em
+ *   31/12 (para ações, o preço médio × quantidade). Ele se move quando se
+ *   compra ou vende, NUNCA por valorização: essa só aparece na venda, na ficha
+ *   de renda variável. Medir «crescimento» aqui mede aporte líquido, não
+ *   retorno — e foi exatamente isso que a tela vinha chamando de crescimento.
+ * * `incerto` — a descrição não diz o bastante. `exterior` pode ser conta
+ *   (saldo) ou imóvel (custo); `desconhecido` é o que não foi reconhecido.
+ *   Segue a mesma regra do `REGIME`: onde não se sabe, não se afirma.
+ *
+ * PGBL não aparece nesta tabela porque não aparece em Bens e Direitos — ele
+ * mora em «Pagamentos Efetuados» (Registro 26). Ver `pgblAportado()`.
+ */
+export type ComoValora = 'mercado' | 'custo' | 'incerto'
+
+export const COMO_VALORA: Record<ClassePatrimonio, ComoValora> = {
+  cdb: 'mercado',
+  tesouro: 'mercado',
+  fundo: 'mercado',
+  debentureComum: 'mercado',
+  lci: 'mercado',
+  cri: 'mercado',
+  debentureInc: 'mercado',
+  poupanca: 'mercado',
+  contaCorrente: 'mercado',
+  previdencia: 'mercado', // VGBL: 31/12 anterior e 31/12 atual
+  acoes: 'custo', // preço médio × quantidade em 31/12
+  fii: 'custo',
+  participacao: 'custo',
+  imovel: 'custo',
+  veiculo: 'custo',
+  exterior: 'incerto',
+  desconhecido: 'incerto',
+}
+
+/** `true` só onde o valor declarado acompanha o mercado de verdade. */
+export const segueMercado = (c: ClassePatrimonio) => COMO_VALORA[c] === 'mercado'
 
 export const NOME_CLASSE: Record<ClassePatrimonio, string> = {
   cdb: 'CDB / RDB',
@@ -307,20 +355,84 @@ export interface PontoPatrimonio {
   inBase: number
   foraBase: number
   depende: number
+  /** Bruto: a soma de tudo que está em Bens e Direitos. */
   total: number
+  /** Parte cujo valor declarado acompanha o mercado (ver `COMO_VALORA`). */
+  aMercado: number
+  /** Parte declarada pelo custo de aquisição — não se move por valorização. */
+  aoCusto: number
+  /** Parte que não dá para dizer em qual dos dois cai. */
+  incerto: number
+  /** Dívidas informadas para o ano. `null` = ninguém informou (≠ zero). */
+  dividas: number | null
+  /** `total − dividas`. Sem dívida informada, é o próprio bruto. */
+  liquido: number
 }
 
-export function seriePatrimonio(h: Historico): PontoPatrimonio[] {
+/**
+ * Dívidas por ano-base, como a tela de consistência as guarda.
+ *
+ * Vem por parâmetro em vez de sair do `Historico` porque o `.DEC` que o app lê
+ * hoje não traz dívidas — quem informa é a pessoa. O dia em que o leitor
+ * aprender o registro delas, só muda quem preenche este mapa.
+ */
+export type DividasPorAno = Record<string | number, number | undefined>
+
+export function seriePatrimonio(h: Historico, dividas: DividasPorAno = {}): PontoPatrimonio[] {
   return Object.values(h)
     .map((d) => {
-      const p = { anoBase: d.anoBase, inBase: 0, foraBase: 0, depende: 0, total: 0 }
+      const p = { anoBase: d.anoBase, inBase: 0, foraBase: 0, depende: 0, total: 0, aMercado: 0, aoCusto: 0, incerto: 0 }
       for (const pos of d.posicoes) {
         p[pos.regime] += pos.saldoAtual
         p.total += pos.saldoAtual
+        const como = COMO_VALORA[pos.classe]
+        if (como === 'mercado') p.aMercado += pos.saldoAtual
+        else if (como === 'custo') p.aoCusto += pos.saldoAtual
+        else p.incerto += pos.saldoAtual
       }
-      return p
+      // Ausente é diferente de zero: «não informou» não pode virar «não deve».
+      const div = dividas[d.anoBase]
+      const divida = typeof div === 'number' ? div : null
+      return { ...p, dividas: divida, liquido: p.total - (divida ?? 0) }
     })
     .sort((a, b) => a.anoBase - b.anoBase)
+}
+
+export interface PontoPgbl {
+  anoBase: number
+  /** Aportado NAQUELE ano, pelo Registro 26. */
+  noAno: number
+  /** Soma do que foi aportado até aquele ano, nos anos importados. */
+  acumulado: number
+}
+
+/**
+ * O PGBL, que o painel de patrimônio não enxerga.
+ *
+ * Ele não está em «Bens e Direitos» — mora em «Pagamentos Efetuados», porque foi
+ * deduzido na declaração. O efeito é que quem acumula PGBL tem patrimônio que a
+ * tela não mostra, e é justamente o ativo mais caro de resgatar: no resgate o
+ * valor INTEIRO é tributável, principal e rendimento, não só o ganho.
+ *
+ * O que dá para reconstruir daqui é o APORTADO, não o saldo: o Registro 26 traz
+ * o que se pagou no ano, e o rendimento do plano não aparece em lugar nenhum da
+ * declaração. Então este número é um PISO, e a tela precisa dizer isso — somar
+ * como se fosse saldo repetiria, do outro lado, o erro que o PAT-01 corrige.
+ *
+ * Só conta os anos importados: quem começou o plano antes do .DEC mais antigo
+ * tem uma parte que ninguém aqui pode saber.
+ */
+export function pgblAportado(h: Historico): PontoPgbl[] {
+  let acumulado = 0
+  return Object.values(h)
+    .sort((a, b) => a.anoBase - b.anoBase)
+    .map((d) => {
+      const noAno = (d.pagamentos ?? [])
+        .filter((pg) => sugerirCategoria(pg).categoria === 'previdenciaPrivada')
+        .reduce((t, pg) => t + Math.max(0, pg.valor - (pg.naoDedutivel || 0)), 0)
+      acumulado += noAno
+      return { anoBase: d.anoBase, noAno, acumulado }
+    })
 }
 
 export interface PontoBacktest {

@@ -35,6 +35,14 @@ export interface Cofre {
 
 export type KdfNome = 'argon2id' | 'pbkdf2' | 'hkdf'
 
+/**
+ * Este método foi protegido por uma derivação mais fraca do que a pretendida?
+ *
+ * Só vale para senha: `hkdf` é o certo para segredo já forte (o PRF da passkey,
+ * a chave de recuperação sorteada), e ali não há senha fraca a proteger.
+ */
+export const protecaoFraca = (w: Wrap): boolean => w.metodo === 'senha' && w.kdf === 'pbkdf2'
+
 /** Parâmetros do Argon2id. m em KiB. Defaults de produção; testes usam menores. */
 export interface Argon2Params {
   m: number
@@ -101,6 +109,10 @@ export async function kekDeSegredo(segredo: Uint8Array, salt: Uint8Array, info: 
  * KEK a partir de senha. Argon2id (hash-wasm) por padrão; se o wasm falhar, cai
  * para PBKDF2 — mais fraco, mas não trava o app. O `kdf` efetivamente usado é
  * gravado no Wrap para que o desbloqueio reproduza exatamente a mesma derivação.
+ *
+ * A queda é gravada, mas nunca era DITA: o cofre nascia mais fraco e ninguém
+ * ficava sabendo, nem depois. `protecaoFraca()` existe para a tela poder contar
+ * — o dado sempre esteve ali, faltava alguém olhar.
  */
 export async function kekDeSenha(
   senha: string,
