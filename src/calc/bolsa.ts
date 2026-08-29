@@ -302,6 +302,71 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
  * O IR pago (15/20%) volta como dedução, do mesmo jeito que o IRRF do JCP e o
  * da renda fixa — é imposto já recolhido sobre renda que está na base.
  */
+/**
+ * Entrada da apuração ENCADEADA — vários anos, um atrás do outro.
+ *
+ * Diferente de `EntradaBolsa`: aqui não há um `ano`, porque a série apura todos
+ * os que aparecem nas operações. `posicaoInicial` e `prejuizoAnterior` valem
+ * para antes do PRIMEIRO ano, não para cada um.
+ */
+export interface EntradaSerie {
+  operacoes: Operacao[]
+  eventos?: EventoQuantidade[]
+  /** Posição antes do primeiro ano: papéis comprados antes do que o extrato cobre. */
+  posicaoInicial?: Posicao[]
+  /** Prejuízo trazido de antes do primeiro ano. */
+  prejuizoAnterior?: Partial<Record<Modalidade, number>>
+  /** Apurar até aqui mesmo sem operação no ano — o ano-base, tipicamente. */
+  ate?: number
+  /**
+   * Anos a apurar mesmo sem operação neles.
+   *
+   * O confronto com a declaração precisa disto: um ano em que não houve negócio
+   * nenhum continua tendo posição em 31/12 — a que veio do ano anterior — e é
+   * essa que a declaração daquele ano informa. Sem estes anos, o ano parado
+   * simplesmente não era conferido.
+   */
+  anosExtras?: number[]
+}
+
+/**
+ * Apura ano a ano, encadeando o que a lei encadeia.
+ *
+ * Apurar um ano isolado é errado por dois motivos, e os dois custam imposto:
+ *
+ *   · o CUSTO MÉDIO vem das compras dos anos anteriores. Uma ação comprada em
+ *     2023 e vendida em 2026, apurada só em 2026, aparece como venda sem custo
+ *     conhecido — o papel inteiro sai da conta, e a compra de 2023 fica guardada
+ *     sem servir para nada;
+ *   · o PREJUÍZO de um ano abate o ganho do seguinte, sem prazo. Sem a cadeia,
+ *     ele some e o imposto sai maior do que é.
+ *
+ * A posição final de cada ano vira a inicial do próximo, e o prejuízo
+ * acumulado vira o anterior. É por isso que a série existe em vez de um
+ * seletor de ano por cima de `apurarBolsa`.
+ */
+export function apurarSerie(e: EntradaSerie): ApuracaoBolsa[] {
+  const anos = [
+    ...new Set([
+      ...e.operacoes.map((o) => o.ano),
+      ...(e.eventos ?? []).map((v) => v.ano),
+      ...(e.ate === undefined ? [] : [e.ate]),
+      ...(e.anosExtras ?? []),
+    ]),
+  ].sort((a, b) => a - b)
+
+  let posicaoInicial = e.posicaoInicial
+  let prejuizoAnterior = e.prejuizoAnterior
+  const saida: ApuracaoBolsa[] = []
+  for (const ano of anos) {
+    const a = apurarBolsa({ ano, operacoes: e.operacoes, eventos: e.eventos, posicaoInicial, prejuizoAnterior })
+    saida.push(a)
+    posicaoInicial = a.posicaoFinal
+    prejuizoAnterior = a.prejuizoAcumulado
+  }
+  return saida
+}
+
 export function paraBase(
   ap: ApuracaoBolsa,
   opcoes: { entraNaBase: boolean; isentoEntraNaBase: boolean },
