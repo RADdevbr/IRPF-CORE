@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { apurarBolsa, paraBase, ISENCAO_MENSAL, type Operacao, type EntradaBolsa } from './bolsa'
+import { apurarBolsa, paraBase, ISENCAO_MENSAL, type Operacao, type EntradaBolsa, apurarSerie } from './bolsa'
 
 const compra = (mes: number, ticker: string, quantidade: number, precoUnitario: number): Operacao => ({
   ano: 2026, mes, ticker, tipo: 'compra', quantidade, precoUnitario,
@@ -241,5 +241,83 @@ describe('para a base do IRPFM', () => {
     const b = paraBase(r, { entraNaBase: true, isentoEntraNaBase: true })
     perto(b.base, 49000)
     perto(b.deducao, 40000 * 0.15)
+  })
+})
+
+// Apurar um ano isolado é errado de dois jeitos, e os dois custam imposto: o
+// custo médio vem das compras dos anos anteriores, e o prejuízo de um ano abate
+// o ganho do seguinte. Antes disto, a operação de 2023 ficava guardada e não
+// servia para nada — nem para dar custo à venda de 2026.
+describe('apurarSerie — os anos se encadeiam', () => {
+  const op = (ano: number, mes: number, tipo: 'compra' | 'venda', quantidade: number, precoUnitario: number, ticker = 'ABCD3') => ({
+    ano,
+    mes,
+    ticker,
+    tipo,
+    quantidade,
+    precoUnitario,
+  })
+
+  it('a compra de um ano dá custo à venda de outro', () => {
+    const serie = apurarSerie({ operacoes: [op(2023, 5, 'compra', 100, 200), op(2026, 5, 'venda', 100, 300)] })
+    const em2026 = serie.find((a) => a.ano === 2026)!
+    expect(em2026.semCusto).toEqual([])
+    expect(em2026.ganhoTributavel).toBe(10_000)
+  })
+
+  it('e sem a cadeia essa mesma venda ficaria sem custo, fora da conta inteira', () => {
+    const sozinho = apurarBolsa({ ano: 2026, operacoes: [op(2023, 5, 'compra', 100, 200), op(2026, 5, 'venda', 100, 300)] })
+    expect(sozinho.semCusto).toEqual(['ABCD3'])
+    expect(sozinho.ganhoTributavel).toBe(0)
+  })
+
+  it('o prejuízo de um ano abate o ganho do seguinte', () => {
+    const serie = apurarSerie({
+      operacoes: [
+        // 2025: compra 100 a 500, vende 100 a 250 → prejuízo de 25 mil (venda > 20 mil, aproveitável)
+        op(2025, 3, 'compra', 100, 500),
+        op(2025, 6, 'venda', 100, 250),
+        // 2026: compra 100 a 100, vende 100 a 400 → ganho bruto de 30 mil
+        op(2026, 3, 'compra', 100, 100),
+        op(2026, 6, 'venda', 100, 400),
+      ],
+    })
+    expect(serie.map((a) => a.ano)).toEqual([2025, 2026])
+    expect(serie[0].prejuizoAcumulado.comum).toBe(25_000)
+    // 30 mil de ganho menos 25 mil de prejuízo trazido = 5 mil tributáveis
+    expect(serie[1].ganhoTributavel).toBe(5_000)
+    expect(serie[1].ir).toBeCloseTo(750, 6)
+  })
+
+  it('a posição do fim de um ano é a do começo do próximo', () => {
+    const serie = apurarSerie({ operacoes: [op(2024, 1, 'compra', 50, 100), op(2025, 1, 'compra', 50, 300)] })
+    expect(serie[0].posicaoFinal).toEqual([{ ticker: 'ABCD3', quantidade: 50, custoMedio: 100 }])
+    // preço médio dos dois anos juntos: (50×100 + 50×300) / 100 = 200
+    expect(serie[1].posicaoFinal).toEqual([{ ticker: 'ABCD3', quantidade: 100, custoMedio: 200 }])
+  })
+
+  it('«ate» apura o ano-base mesmo sem operação nele, em vez de sumir da tela', () => {
+    const serie = apurarSerie({ operacoes: [op(2024, 1, 'compra', 10, 100)], ate: 2026 })
+    expect(serie.map((a) => a.ano)).toEqual([2024, 2026])
+    expect(serie[1].posicaoFinal).toEqual([{ ticker: 'ABCD3', quantidade: 10, custoMedio: 100 }])
+  })
+
+  it('e não duplica o ano quando «ate» já tem operação', () => {
+    const serie = apurarSerie({ operacoes: [op(2026, 1, 'compra', 10, 100)], ate: 2026 })
+    expect(serie.map((a) => a.ano)).toEqual([2026])
+  })
+
+  it('a posição informada à mão vale para antes do primeiro ano, e só uma vez', () => {
+    const serie = apurarSerie({
+      operacoes: [op(2025, 6, 'venda', 100, 300), op(2026, 6, 'venda', 100, 400)],
+      posicaoInicial: [{ ticker: 'ABCD3', quantidade: 200, custoMedio: 100 }],
+    })
+    expect(serie[0].ganhoTributavel).toBe(20_000) // 100 × (300 − 100)
+    expect(serie[1].ganhoTributavel).toBe(30_000) // 100 × (400 − 100), com o custo que sobrou
+    expect(serie[1].posicaoFinal).toEqual([])
+  })
+
+  it('sem operação nenhuma, série vazia — não um ano fantasma', () => {
+    expect(apurarSerie({ operacoes: [] })).toEqual([])
   })
 })
