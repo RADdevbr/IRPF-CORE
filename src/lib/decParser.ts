@@ -182,6 +182,38 @@ export interface Censo {
 /** O mínimo que o censo precisa — é o que sobrevive à gravação no cofre. */
 export type ContagemTipo = { tipo: string; count: number }
 
+/**
+ * Censo de um arquivo que o leitor NÃO sabe ler — o `.DBK`, por exemplo, que é
+ * o backup do programa da Receita e não o arquivo de transmissão. Só conta os
+ * prefixos de dois caracteres: nenhuma suposição de layout, nenhum campo
+ * inventado. Serve para responder «o que tem aqui dentro?» antes de escrever
+ * qualquer leitor — que é a pergunta que eu deveria ter feito antes de afirmar
+ * que as dívidas moravam num Registro 28.
+ */
+export function censoDe(texto: string): ContagemTipo[] {
+  const tipos = new Map<string, number>()
+  for (const l of texto.split(/\r\n|\r|\n/)) {
+    if (!l.trim()) continue
+    const t = l.slice(0, 2)
+    tipos.set(t, (tipos.get(t) ?? 0) + 1)
+  }
+  return [...tipos].map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count || a.tipo.localeCompare(b.tipo))
+}
+
+/**
+ * O arquivo é texto por linhas, ou é binário? Sem isto o censo de um arquivo
+ * comprimido vira uma tabela de lixo com cara de resposta. Bytes de controle
+ * (fora de tab/CR/LF) praticamente não aparecem em arquivo de registro; num
+ * binário são comuns.
+ */
+export function pareceTexto(texto: string): boolean {
+  const amostra = texto.slice(0, 8000)
+  if (amostra.trim().length === 0) return false
+  // eslint-disable-next-line no-control-regex
+  const controle = (amostra.match(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g) ?? []).length
+  return controle / amostra.length < 0.02
+}
+
 export function censo(registros: readonly ContagemTipo[]): Censo {
   const lidos = registros.filter((r) => LEITURA[r.tipo])
   const somar = (rs: readonly ContagemTipo[]) => rs.reduce((s, r) => s + r.count, 0)

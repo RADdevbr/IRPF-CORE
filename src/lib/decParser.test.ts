@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDec, censo, leituraDe, LEITURA } from './decParser'
+import { parseDec, censo, censoDe, pareceTexto, leituraDe, LEITURA } from './decParser'
 
 // Constrói uma linha de largura fixa por posição (1-indexado inclusivo).
 function put(base: string[], ini: number, s: string, len: number): void {
@@ -214,5 +214,38 @@ describe('censo', () => {
     expect(leituraDe('27')).toBe('bem ou direito')
     expect(leituraDe('16')).toBeNull()
     expect(leituraDe('T9')).toBeNull()
+  })
+})
+
+// O .DBK é o backup do programa da Receita e pode ter ficha que o .DEC
+// transmitido não tem. Para responder «o que tem aqui dentro?» sem inventar
+// layout, o censo do arquivo cru só conta prefixos.
+describe('censoDe — olhar um arquivo que o leitor não sabe ler', () => {
+  it('conta prefixos de duas letras, sem tocar em campo nenhum', () => {
+    const texto = ['27 bem um', '27 bem dois', '28 divida', '', '  ', 'T9fim'].join('\n')
+    expect(censoDe(texto)).toEqual([
+      { tipo: '27', count: 2 },
+      { tipo: '28', count: 1 },
+      { tipo: 'T9', count: 1 },
+    ])
+  })
+
+  it('não confunde linha em branco com registro', () => {
+    expect(censoDe('\n\n   \n')).toEqual([])
+  })
+
+  it('empata por tipo, para a lista não dançar entre leituras', () => {
+    expect(censoDe('BB x\nAA y').map((r) => r.tipo)).toEqual(['AA', 'BB'])
+  })
+
+  it('pareceTexto separa arquivo de registro de arquivo binário', () => {
+    expect(pareceTexto('27 bem\n28 divida\n')).toBe(true)
+    expect(pareceTexto('PK\u0003\u0004' + '\u0000\u0001\u0002'.repeat(200))).toBe(false)
+    expect(pareceTexto('')).toBe(false)
+    expect(pareceTexto('   \n  ')).toBe(false)
+  })
+
+  it('tab e quebra de linha não contam como binário', () => {
+    expect(pareceTexto('27\tbem\r\n28\tdivida\r\n')).toBe(true)
   })
 })
