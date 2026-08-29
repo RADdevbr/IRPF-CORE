@@ -318,6 +318,15 @@ export interface EntradaSerie {
   prejuizoAnterior?: Partial<Record<Modalidade, number>>
   /** Apurar até aqui mesmo sem operação no ano — o ano-base, tipicamente. */
   ate?: number
+  /**
+   * Anos a apurar mesmo sem operação neles.
+   *
+   * O confronto com a declaração precisa disto: um ano em que não houve negócio
+   * nenhum continua tendo posição em 31/12 — a que veio do ano anterior — e é
+   * essa que a declaração daquele ano informa. Sem estes anos, o ano parado
+   * simplesmente não era conferido.
+   */
+  anosExtras?: number[]
 }
 
 /**
@@ -342,6 +351,7 @@ export function apurarSerie(e: EntradaSerie): ApuracaoBolsa[] {
       ...e.operacoes.map((o) => o.ano),
       ...(e.eventos ?? []).map((v) => v.ano),
       ...(e.ate === undefined ? [] : [e.ate]),
+      ...(e.anosExtras ?? []),
     ]),
   ].sort((a, b) => a - b)
 
