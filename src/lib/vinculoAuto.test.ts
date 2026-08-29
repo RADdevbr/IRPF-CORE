@@ -194,6 +194,21 @@ describe('mapa de vínculos', () => {
     expect(unirVinculos({ a: 'auto' }, { b: 'manual' })).toEqual({ a: 'auto', b: 'manual' })
   })
 
+  it('cadeia de ligações manuais chega inteira ao ano mais novo', () => {
+    // é o bem que mudou de nome três vezes: ligado em dois cliques, 2020→2021 e
+    // 2021→2022. Sem resolver a cadeia, o de 2020 parava num id que não existe
+    expect(unirVinculos({}, { p2020: 'p2021', p2021: 'p2022' })).toEqual({ p2020: 'p2022', p2021: 'p2022' })
+  })
+
+  it('ligação manual em cima de automática também colapsa', () => {
+    expect(unirVinculos({ p2020: 'p2021' }, { p2021: 'p2022' })).toEqual({ p2020: 'p2022', p2021: 'p2022' })
+  })
+
+  it('ciclo contraditório não trava o app', () => {
+    const r = unirVinculos({}, { a: 'b', b: 'a' })
+    expect(Object.keys(r).length).toBeLessThanOrEqual(2)
+  })
+
   it('histórico de um ano só não tem o que ligar', () => {
     expect(vinculosAutomaticos(historico({ exercicio: '2026', bens: [pos('CDB', 1)] }))).toEqual({})
   })
