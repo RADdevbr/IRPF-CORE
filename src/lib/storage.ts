@@ -134,6 +134,21 @@ export interface PersistedState {
     /** ⟨confirmar⟩ A isenção mensal dos R$ 20 mil alcança o mínimo? */
     isentoEntraNaBase: boolean
   }
+  /**
+   * Provento lido da B3, por ano e por pagador.
+   *
+   * A grade de dividendos guarda UM ano — o que entra na conta do IRPFM. Mas o
+   * extrato de movimentação traz vários, e até agora os anos que não eram o
+   * ano-base eram lidos, aplicados e esquecidos. Sem eles não dá para
+   * confrontar o que a corretora pagou com o que a declaração daquele ano
+   * informou, que é a pergunta que sobra depois de conferir os bens.
+   *
+   * Guarda o mês a mês porque o gatilho do Art. 6º-A é mensal: um total anual
+   * não permite refazer a retenção.
+   *
+   * Chave: o ano-base como texto.
+   */
+  proventosB3?: Record<string, { pagador: string; meses: number[] }[]>
 }
 
 export interface NamedScenario {
