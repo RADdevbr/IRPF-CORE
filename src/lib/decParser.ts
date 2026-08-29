@@ -144,6 +144,50 @@ const REGISTROS: Record<string, RegistroSpec> = {
 // Obs.: os dividendos NÃO são lidos do Registro 33 — no arquivo real eles vêm no
 // Registro 84 linha 09 (junto com LCI/LCA etc.). Ler os dois dobraria o valor.
 
+/**
+ * O que o leitor faz com cada tipo de registro.
+ *
+ * Existe porque o censo sozinho não diz nada: um arquivo real tem duas dezenas
+ * de tipos, e despejar «16 19 20 21 22 23 24 26 27 37 40 …» na tela é ruído. A
+ * pergunta que o usuário faz é «o app entendeu o meu arquivo?», e para responder
+ * isso é preciso saber quais desses tipos viram número aqui dentro.
+ *
+ * A fonte da verdade continua sendo o laço de `parseDec` e a tabela `REGISTROS`
+ * acima — esta tabela é só o rótulo legível. Um teste compara as duas listas
+ * para que não seja possível passar a ler um registro e esquecer daqui.
+ */
+export const LEITURA: Record<string, string> = {
+  '21': 'rendimento tributável de PJ',
+  '22': 'rendimento de PF, exterior e carnê-leão',
+  '24': 'rendimento de aplicação financeira',
+  '25': 'dependente',
+  '26': 'pagamento efetuado',
+  '27': 'bem ou direito',
+  '84': 'rendimento isento e dividendo',
+  '88': 'rendimento de tributação definitiva',
+}
+
+/** Rótulo do que o leitor extrai deste tipo, ou `null` se ele só conta a linha. */
+export const leituraDe = (tipo: string): string | null => LEITURA[tipo] ?? null
+
+export interface Censo {
+  /** Quantos tipos distintos o arquivo tem. */
+  tipos: number
+  /** Destes, quantos o leitor transforma em número. */
+  lidos: number
+  linhas: number
+  linhasLidas: number
+}
+
+/** O mínimo que o censo precisa — é o que sobrevive à gravação no cofre. */
+export type ContagemTipo = { tipo: string; count: number }
+
+export function censo(registros: readonly ContagemTipo[]): Censo {
+  const lidos = registros.filter((r) => LEITURA[r.tipo])
+  const somar = (rs: readonly ContagemTipo[]) => rs.reduce((s, r) => s + r.count, 0)
+  return { tipos: registros.length, lidos: lidos.length, linhas: somar(registros), linhasLidas: somar(lidos) }
+}
+
 // Âncora "CNPJ (14 díg.) + nome (texto) + valor (13 díg.)" — o padrão comum aos
 // registros de detalhe (21, 33 e o 24 por fundo). Independe de offset exato.
 const ANCHOR = /(\d{14})([A-Za-zÀ-ÿ][^\d]{0,59}?)\s*(\d{13})/g
