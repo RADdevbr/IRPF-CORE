@@ -155,3 +155,26 @@ describe('apagar tudo deste aparelho', () => {
     expect(localStorage.getItem('outro-app:coisa')).toBe('fica')
   })
 })
+
+// Campo novo tem de atravessar a porta de entrada. Se `migrarEstado` passasse a
+// listar campos, o palpite de emissor que a pessoa desfez e o provento guardado
+// por ano sumiriam no primeiro reload — sem erro, sem aviso, só o número
+// voltando ao que era.
+describe('estado novo sobrevive à porta de entrada', () => {
+  const base = { schemaVersion: SCHEMA_VERSION, vals: { salario: 100 }, ndep: 0 }
+
+  it('a resposta de quem discordou do agrupamento de pagador não se perde', () => {
+    const r = migrarEstado({ ...base, b3Emissor: { 'PETR4 - PETROLEO': 'PETR4 - PETROLEO' } })
+    expect(r.b3Emissor).toEqual({ 'PETR4 - PETROLEO': 'PETR4 - PETROLEO' })
+  })
+
+  it('o provento guardado ano a ano também não', () => {
+    const proventos = { 2024: [{ pagador: 'PETR', meses: [1000, ...Array(11).fill(0)] }] }
+    expect(migrarEstado({ ...base, proventosB3: proventos }).proventosB3).toEqual(proventos)
+  })
+
+  it('e o que o app não conhece passa igual, em vez de ser descartado', () => {
+    const r = migrarEstado({ ...base, campoDeUmaVersaoFutura: { qualquer: 'coisa' } }) as unknown as Record<string, unknown>
+    expect(r.campoDeUmaVersaoFutura).toEqual({ qualquer: 'coisa' })
+  })
+})
