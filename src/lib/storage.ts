@@ -26,6 +26,7 @@ import type { Historico, Overrides, Aportes, Vinculos } from './historico'
 import type { Entradas } from './consistencia'
 import type { Operacao, EventoQuantidade, Posicao, Modalidade } from '../calc/bolsa'
 import type { PapelNaCarteira } from './b3posicao'
+import type { ArquivoB3 } from './b3acervo'
 import type { Origem } from './origem'
 import type { OverridesParametros } from '../calc/params'
 import type { DeducoesLegais } from '../calc/declaracao'
@@ -161,6 +162,25 @@ export interface PersistedState {
    * Chave: o ano-base como texto.
    */
   proventosB3?: Record<string, { pagador: string; meses: number[] }[]>
+  /**
+   * Um registro por arquivo da B3 que já entrou: nome, o que era, anos, linhas
+   * e o total lido por ano e por tipo.
+   *
+   * Existe por dois motivos que são o mesmo. Primeiro: sem ele, a lista do que
+   * foi importado morria ao fechar o painel, e três meses depois não havia como
+   * responder «de onde veio este número». Segundo: os dois relatórios da B3 se
+   * conferem — o Consolidado tem o total impresso e não tem data, o Extrato tem
+   * data e não tem total nenhum —, e essa conferência só é útil se sobreviver à
+   * sessão. Quem importou o Consolidado em março e o Extrato em agosto precisa
+   * ser avisado em agosto.
+   *
+   * Por isso guarda o total POR TIPO E POR ANO, não só o nome do arquivo: é o
+   * bastante para refazer a comparação sem o arquivo em mãos.
+   *
+   * (O plano da auditoria chamava isto de `b3.arquivos`; aqui é campo irmão
+   * porque `b3` já é o mapa de classificação.)
+   */
+  b3Arquivos?: ArquivoB3[]
 }
 
 export interface NamedScenario {

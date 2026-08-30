@@ -173,6 +173,28 @@ describe('estado novo sobrevive à porta de entrada', () => {
     expect(migrarEstado({ ...base, proventosB3: proventos }).proventosB3).toEqual(proventos)
   })
 
+  it('o acervo de arquivos da B3 atravessa inteiro', () => {
+    // é ele que responde «de onde veio este número» meses depois, e é ele que
+    // faz um relatório conferir o outro entre sessões: perder no reload
+    // devolveria os dois furos de uma vez
+    const acervo = [
+      {
+        chave: 'sha256:abc',
+        nome: 'movimentacao-2024.xlsx',
+        relatorio: 'movimentacao' as const,
+        anos: [2024],
+        linhas: 412,
+        proventos: { 2024: { Dividendo: 1750 } },
+        semValor: { 2024: { Dividendo: 2 } },
+        instituicoes: ['CORRETORA A'],
+        totalImpresso: null,
+        confere: null,
+        em: '2026-03-01T10:00:00.000Z',
+      },
+    ]
+    expect(migrarEstado({ ...base, b3Arquivos: acervo }).b3Arquivos).toEqual(acervo)
+  })
+
   it('e o que o app não conhece passa igual, em vez de ser descartado', () => {
     const r = migrarEstado({ ...base, campoDeUmaVersaoFutura: { qualquer: 'coisa' } }) as unknown as Record<string, unknown>
     expect(r.campoDeUmaVersaoFutura).toEqual({ qualquer: 'coisa' })
