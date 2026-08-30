@@ -27,6 +27,16 @@ export interface DivGrid {
 // Dividendos: gatilho e alíquota do IRRF mensal (Art. 6º-A, Lei 15.270/2025).
 export const DIV_TRIGGER = 50000
 export const DIV_ALIQ = 0.1
+/**
+ * Primeiro ano-base em que o dividendo pago à pessoa física sofre retenção na
+ * fonte.
+ *
+ * Antes disso o valor creditado no extrato JÁ É o bruto: não há o que
+ * reconstituir, e reconstituir inventaria imposto que ninguém pagou. É por isso
+ * que a reconstituição precisa saber o ano, e é por isso que ela mora no
+ * caminho do extrato — que tem data — e não na grade, que não tem.
+ */
+export const DIV_ANO_RETENCAO = 2026
 
 export const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 

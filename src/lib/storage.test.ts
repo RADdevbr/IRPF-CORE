@@ -173,6 +173,12 @@ describe('estado novo sobrevive à porta de entrada', () => {
     expect(migrarEstado({ ...base, proventosB3: proventos }).proventosB3).toEqual(proventos)
   })
 
+  it('o pagador marcado como «veio bruto» não se perde', () => {
+    // perder isso no reload faria o app reconstituir de novo um dividendo que
+    // nunca sofreu retenção — imposto pago inventado, e ninguém veria
+    expect(migrarEstado({ ...base, b3DividendoBruto: ['PETR'] }).b3DividendoBruto).toEqual(['PETR'])
+  })
+
   it('o acervo de arquivos da B3 atravessa inteiro', () => {
     // é ele que responde «de onde veio este número» meses depois, e é ele que
     // faz um relatório conferir o outro entre sessões: perder no reload
