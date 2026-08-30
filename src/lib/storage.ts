@@ -105,6 +105,22 @@ export interface PersistedState {
    */
   b3Emissor?: Record<string, string>
   /**
+   * Pagadores cujo dividendo de 2026 em diante veio BRUTO, sem retenção.
+   *
+   * O padrão é o contrário: a partir de 2026 o dividendo que passa de R$ 50 mil
+   * no mês vem líquido de 10% (Art. 6º-A), e o app refaz o bruto — senão a base
+   * sai menor e a retenção, que é dedução do próprio IRPFM, é jogada fora.
+   *
+   * Mas a lei tem uma saída que o arquivo não conta: lucro apurado e
+   * distribuição aprovada antes da virada, paga depois, cai em 2026 pelo valor
+   * cheio. Reconstituir esse criaria imposto pago que não existe. Quem sabe
+   * disso — está no anúncio da companhia — marca o pagador aqui.
+   *
+   * Lista de exceções, e não mapa de respostas, porque não há o que confirmar
+   * do lado do padrão: ausente da lista = lido como líquido.
+   */
+  b3DividendoBruto?: string[]
+  /**
    * De onde veio cada número, pela mesma chave dos `vals`. Ausente = não
    * registrado (estado salvo antes deste campo existir), que é diferente de
    * digitado.
