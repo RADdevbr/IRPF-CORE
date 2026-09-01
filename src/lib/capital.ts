@@ -21,7 +21,7 @@
 import { analisarConsistencia, type Entradas } from './consistencia'
 import { taxaDoPeriodo, ultimoFechamento, NOME_INDICE, type BenchmarksInformados } from './benchmarks'
 import { composicaoRenda } from './renda'
-import { chaveAporte, NOME_CLASSE, COMO_VALORA, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from './historico'
+import { chaveAporte, NOME_CLASSE, COMO_VALORA, quedaEhSaida, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from './historico'
 
 export interface AnoCapital {
   anoBase: number
@@ -258,6 +258,15 @@ export interface AnoClasse {
   /** Valor no começo do ano dos bens que entram na conta. */
   inicial: number
   final: number
+  /**
+   * Saldo declarado da classe inteira em 31/12 — inclusive o que ficou fora da
+   * medição. É o número que a pessoa reconhece da declaração; `final` é só a
+   * parte que sustenta um retorno, e os dois divergem sempre que há bem
+   * comprado, vendido ou resgatado no ano.
+   */
+  saldoDeclarado: number
+  /** O mesmo, no começo do ano. */
+  saldoDeclaradoInicial: number
   aporte: number
   /** final − inicial − aporte, só dos bens que ficaram o ano inteiro. */
   rendimento: number
@@ -268,6 +277,24 @@ export interface AnoClasse {
   foraDaConta: number
   /** Algum bem ficou de fora: o retorno é do que ficou parado, não da classe toda. */
   parcial: boolean
+  /**
+   * Quanto saiu de bens que não podem cair sozinhos (ver `ACUMULA_JUROS`).
+   *
+   * É PISO, não valor: a LCA que caiu R$ 10 mil teve resgate de pelo menos R$ 10
+   * mil — foi mais, pelo tanto que ela rendeu no caminho. O número existe para a
+   * tela dizer «houve saque de ao menos X» no lugar onde dizia «rendeu −10%».
+   */
+  resgatePresumido: number
+  /**
+   * Nenhum bem desta classe teve fluxo informado no ano.
+   *
+   * O retorno então SUPÕE que não houve aporte nem resgate — e um aporte não
+   * informado aparece inteiro como rendimento. Não é erro de conta, é o limite
+   * do dado: a declaração traz saldo, não movimento. A tela mostra o número
+   * marcado, e o caminho para apertá-lo é informar o fluxo (ou importar o
+   * extrato da B3, que os traz).
+   */
+  presumido: boolean
 }
 
 export interface ClasseRetorno {
@@ -287,6 +314,10 @@ export interface ClasseRetorno {
   retornoMedio: number | null
   saldoFinal: number
   algumParcial: boolean
+  /** Algum ano mediu supondo fluxo zero — ver `AnoClasse.presumido`. */
+  algumPresumido: boolean
+  /** Soma dos resgates presumidos de todos os anos. Piso, nunca valor exato. */
+  resgatePresumido: number
 }
 
 /**
@@ -302,6 +333,18 @@ export interface ClasseRetorno {
  * prejuízo. Os dois ficam de fora, e a linha diz quanto ficou. A exceção é o
  * aporte informado: aí o app sabe quanto foi dinheiro novo e o bem entra na
  * conta, com a entrada valendo meio ano na base.
+ *
+ * A segunda regra veio de um caso concreto: **uma LCA que cai de um ano para o
+ * outro não rendeu negativo — saiu dinheiro dela**. O bem ficou o ano inteiro,
+ * então passava pela primeira regra e entrava na conta com o resgate inteiro
+ * vestido de prejuízo. Onde o valor declarado acumula juros (`ACUMULA_JUROS`) e
+ * o saldo caiu sem fluxo informado, o bem sai da medição e a queda vira
+ * `resgatePresumido` — piso do que foi sacado, nunca «rendeu −10%».
+ *
+ * O que sobra de honesto para dizer, quando ninguém informou fluxo nenhum, é que
+ * o número SUPÕE fluxo zero: é o que `presumido` marca. Aporte não informado
+ * ainda entra como rendimento, e essa é a distância entre este número e a
+ * verdade — a mesma que o extrato da B3 fecha quando é importado.
  */
 export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRetorno[] {
   const porClasse = new Map<ClassePatrimonio, AnoClasse[]>()
@@ -321,6 +364,11 @@ export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRet
       let base = 0
       let foraDaConta = 0
       let parcial = false
+      let resgatePresumido = 0
+      let entrouSemFluxo = false
+      let entrouComFluxo = false
+      const saldoDeclarado = posicoes.reduce((t, p) => t + p.saldoAtual, 0)
+      const saldoDeclaradoInicial = posicoes.reduce((t, p) => t + p.saldoAnterior, 0)
 
       for (const p of posicoes) {
         const chave = chaveAporte(p.id, d.anoBase)
@@ -331,7 +379,17 @@ export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRet
           parcial = true
           continue
         }
+        // Queda em bem que só sobe: é saque, e o app não sabe de quanto. Medir
+        // aqui produziria o «rendeu −10%» que na verdade era uma retirada.
+        if (!informado && p.saldoAtual < p.saldoAnterior && quedaEhSaida(classe)) {
+          resgatePresumido += p.saldoAnterior - p.saldoAtual
+          foraDaConta += p.saldoAnterior
+          parcial = true
+          continue
+        }
         const a = informado ? aportes[chave] : 0
+        if (informado) entrouComFluxo = true
+        else entrouSemFluxo = true
         inicial += p.saldoAnterior
         final += p.saldoAtual
         aporte += a
@@ -345,12 +403,17 @@ export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRet
         anoBase: d.anoBase,
         inicial,
         final,
+        saldoDeclarado,
+        saldoDeclaradoInicial,
         aporte,
         rendimento,
         base,
         retorno: base > 0 ? rendimento / base : null,
         foraDaConta,
         parcial,
+        resgatePresumido,
+        // só é «presumido» se sobrou alguém medido supondo fluxo zero
+        presumido: entrouSemFluxo && !entrouComFluxo,
       }
       const lista = porClasse.get(classe)
       if (lista) lista.push(linha)
@@ -372,8 +435,10 @@ export function retornoPorClasse(h: Historico, aportes: Aportes = {}): ClasseRet
           mensuravel && medidos.length > 0
             ? medidos.reduce((s, a) => s + (a.retorno as number), 0) / medidos.length
             : null,
-        saldoFinal: anos[anos.length - 1]?.final ?? 0,
+        saldoFinal: anos[anos.length - 1]?.saldoDeclarado ?? 0,
         algumParcial: anos.some((a) => a.parcial),
+        algumPresumido: anos.some((a) => a.presumido && a.retorno !== null),
+        resgatePresumido: anos.reduce((t, a) => t + a.resgatePresumido, 0),
       }
     })
     .sort((a, b) => b.saldoFinal - a.saldoFinal)
