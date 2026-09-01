@@ -166,6 +166,60 @@ export const COMO_VALORA: Record<ClassePatrimonio, ComoValora> = {
 /** `true` só onde o valor declarado acompanha o mercado de verdade. */
 export const segueMercado = (c: ClassePatrimonio) => COMO_VALORA[c] === 'mercado'
 
+/**
+ * Classes cujo valor declarado SÓ SOBE enquanto o dinheiro está lá.
+ *
+ * É a distinção que faltava para o app parar de chamar resgate de prejuízo. A
+ * declaração pede, para renda fixa de acumulação, o valor aplicado mais os
+ * rendimentos creditados até 31/12 — um número que anda para frente todo ano,
+ * porque juro creditado não é devolvido. Se o saldo de uma LCA caiu de um ano
+ * para o outro, **não foi o papel que rendeu negativo: saiu dinheiro dali**.
+ * Era exatamente isso que a tela vinha reportando como retorno de −10%.
+ *
+ * `false` onde a queda é ambígua de verdade, e aí o app não escolhe por conta
+ * própria:
+ *
+ * * `tesouro` — marcado a mercado. Um IPCA+ longo cai de valor sem ninguém
+ *   resgatar nada, e chamar isso de saque seria o erro simétrico;
+ * * `fundo` e `previdencia` (VGBL) — cota que oscila, pelo mesmo motivo;
+ * * as classes declaradas ao custo (`COMO_VALORA === 'custo'`), onde a variação
+ *   já não é retorno em primeiro lugar;
+ * * `exterior` e `desconhecido`, pela regra do resto do módulo: onde não se
+ *   sabe o que o valor é, não se afirma o que a queda significa.
+ *
+ * A leitura vale para o VALOR DECLARADO, não para o mercado: um CDB pós-fixado
+ * pode até ter marcação negativa no extrato da corretora, e ainda assim entra na
+ * declaração pela curva. É o número da declaração que estes gráficos leem.
+ */
+export const ACUMULA_JUROS: Record<ClassePatrimonio, boolean> = {
+  cdb: true,
+  lci: true,
+  cri: true,
+  debentureComum: true,
+  debentureInc: true,
+  poupanca: true,
+  contaCorrente: false, // saldo de conta cai o tempo todo, e não é resgate de nada
+  tesouro: false,
+  fundo: false,
+  previdencia: false,
+  acoes: false,
+  fii: false,
+  participacao: false,
+  imovel: false,
+  veiculo: false,
+  exterior: false,
+  desconhecido: false,
+}
+
+/**
+ * A queda de saldo desta classe só pode ser dinheiro que saiu.
+ *
+ * Quem pergunta isto está decidindo entre "esta classe rendeu −10%" e "houve um
+ * resgate de pelo menos R$ X". A segunda é a resposta certa onde o valor
+ * declarado acumula juros, e é a única que não inventa prejuízo.
+ */
+export const quedaEhSaida = (c: ClassePatrimonio) => ACUMULA_JUROS[c]
+
 export const NOME_CLASSE: Record<ClassePatrimonio, string> = {
   cdb: 'CDB / RDB',
   tesouro: 'Tesouro Direto',

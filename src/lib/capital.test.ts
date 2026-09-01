@@ -355,6 +355,75 @@ describe('retorno por classe', () => {
     expect(cdb.anos[0].foraDaConta).toBe(50_000)
   })
 
+  it('LCA que caiu não rendeu −10%: caiu porque saiu dinheiro dela', () => {
+    // o caso que motivou a regra — 100k → 90k numa LCA, sem fluxo informado
+    const h = historico({
+      exercicio: '2025',
+      rendas: [],
+      bens: [pos('LCA BANCO X', 90_000, 100_000)],
+    })
+    const [lca] = retornoPorClasse(h)
+    expect(lca.nome).toBe('LCI / LCA')
+    // nada de retorno negativo: o bem sai da medição
+    expect(lca.anos[0].retorno).toBe(null)
+    expect(lca.retornoMedio).toBe(null)
+    // e a queda vira o piso do que foi sacado
+    expect(lca.anos[0].resgatePresumido).toBe(10_000)
+    expect(lca.resgatePresumido).toBe(10_000)
+    expect(lca.anos[0].parcial).toBe(true)
+    // o saldo que a pessoa reconhece da declaração continua inteiro
+    expect(lca.saldoFinal).toBe(90_000)
+  })
+
+  it('resgate informado devolve a medição: aí o app sabe de quanto foi', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('LCA BANCO X', 90_000, 100_000)] })
+    const id = h['2024'].posicoes[0].id
+    // sacou 18k; a LCA rendeu 8k no caminho
+    const [lca] = retornoPorClasse(h, { [`${id}@2024`]: -18_000 })
+    expect(lca.anos[0].rendimento).toBe(8_000)
+    // base = 100.000 − 18.000/2: o que saiu no meio do ano rendeu meio ano
+    expect(lca.anos[0].retorno).toBeCloseTo(8_000 / 91_000, 6)
+    expect(lca.anos[0].resgatePresumido).toBe(0)
+    expect(lca.anos[0].presumido).toBe(false)
+  })
+
+  it('fundo que caiu pode ter perdido mesmo — ali a queda não vira saque', () => {
+    const h = historico({
+      exercicio: '2025',
+      rendas: [],
+      bens: [pos('FUNDO MULTIMERCADO XP', 90_000, 100_000, '71')],
+    })
+    const [fundo] = retornoPorClasse(h)
+    expect(fundo.classe).toBe('fundo')
+    expect(fundo.anos[0].retorno).toBeCloseTo(-0.1, 6)
+    expect(fundo.anos[0].resgatePresumido).toBe(0)
+  })
+
+  it('sem fluxo informado o número é marcado: ele supõe que ninguém aportou', () => {
+    const h = historico({ exercicio: '2025', rendas: [], bens: [pos('CDB BANCO X', 120_000, 100_000)] })
+    const [cdb] = retornoPorClasse(h)
+    expect(cdb.anos[0].presumido).toBe(true)
+    expect(cdb.algumPresumido).toBe(true)
+    const id = h['2024'].posicoes[0].id
+    const [comFluxo] = retornoPorClasse(h, { [`${id}@2024`]: 5_000 })
+    expect(comFluxo.anos[0].presumido).toBe(false)
+    expect(comFluxo.algumPresumido).toBe(false)
+  })
+
+  it('o saldo declarado da classe não encolhe quando um bem sai da medição', () => {
+    const h = historico({
+      exercicio: '2025',
+      rendas: [],
+      bens: [pos('CDB VELHO', 110_000, 100_000), pos('CDB NOVO', 50_000, 0)],
+    })
+    const [cdb] = retornoPorClasse(h)
+    // a medição vê só os 110k que ficaram o ano inteiro…
+    expect(cdb.anos[0].final).toBe(110_000)
+    // …mas a classe tem 160k na declaração, e é esse o número reconhecível
+    expect(cdb.anos[0].saldoDeclarado).toBe(160_000)
+    expect(cdb.saldoFinal).toBe(160_000)
+  })
+
   it('classes vêm da maior para a menor, pelo saldo do fim', () => {
     const h = historico({
       exercicio: '2025',
