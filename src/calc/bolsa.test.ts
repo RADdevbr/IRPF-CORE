@@ -43,6 +43,38 @@ describe('preço médio', () => {
   })
 })
 
+describe('preço médio de venda', () => {
+  it('soma as vendas do papel no ano, mesmo em meses diferentes', () => {
+    const r = apurar({
+      operacoes: [
+        compra(1, 'A', 200, 10),
+        venda(2, 'A', 100, 20),
+        venda(6, 'A', 100, 30),
+      ],
+    })
+    expect(r.vendasPorTicker).toEqual([
+      { ticker: 'A', quantidadeVendida: 200, precoMedioVenda: 25, custoMedioNaVenda: 10, resultado: 3000 },
+    ])
+  })
+
+  it('não confunde papéis diferentes do mesmo pote', () => {
+    const r = apurar({
+      operacoes: [
+        compra(1, 'A', 100, 10), compra(1, 'B', 100, 40),
+        venda(2, 'A', 100, 15), venda(2, 'B', 100, 50),
+      ],
+    })
+    const porTicker = Object.fromEntries(r.vendasPorTicker.map((v) => [v.ticker, v]))
+    perto(porTicker.A.precoMedioVenda, 15)
+    perto(porTicker.B.precoMedioVenda, 50)
+  })
+
+  it('papel não vendido não aparece', () => {
+    const r = apurar({ operacoes: [compra(1, 'A', 100, 10)] })
+    expect(r.vendasPorTicker).toEqual([])
+  })
+})
+
 describe('eventos que mexem na quantidade', () => {
   it('desdobro 1:2 dobra a quantidade e parte o custo unitário ao meio', () => {
     const r = apurar({
