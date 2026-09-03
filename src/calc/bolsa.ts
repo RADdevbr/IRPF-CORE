@@ -69,6 +69,24 @@ export interface Posicao {
   custoMedio: number
 }
 
+/**
+ * Resumo das vendas do ano por papel: quanto saiu, a que preço médio de
+ * venda, com que custo médio de aquisição (o preço médio de COMPRA do lote
+ * que foi vendido, não o da posição que sobrou) e o resultado disso.
+ *
+ * Existe separado de `MesApurado` porque mês×pote mistura papéis — a
+ * pergunta "a que preço médio vendi PETR4 este ano" precisa do ticker
+ * isolado, e a soma mensal por pote não guarda isso.
+ */
+export interface VendaTicker {
+  ticker: string
+  quantidadeVendida: number
+  precoMedioVenda: number
+  /** Custo médio de aquisição do que foi vendido — não da posição restante. */
+  custoMedioNaVenda: number
+  resultado: number
+}
+
 export interface MesApurado {
   mes: number
   /** Total vendido no mês, por pote. */
@@ -98,6 +116,8 @@ export interface ApuracaoBolsa {
    */
   semCusto: string[]
   posicaoFinal: Posicao[]
+  /** Uma linha por papel vendido no ano, com preço médio de venda e de custo. */
+  vendasPorTicker: VendaTicker[]
 }
 
 export interface EntradaBolsa {
@@ -194,6 +214,11 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     resultado[m] = zeros()
   }
 
+  // Mesma venda que alimenta `resultado` (mês×pote), somada agora por ticker:
+  // é o que dá o preço médio de venda e o custo médio do lote vendido, que a
+  // agregação por mês×pote perde ao misturar papéis diferentes no mesmo pote.
+  const porTicker = new Map<string, { quantidade: number; valorVenda: number; custoVenda: number }>()
+
   ordenar(e).forEach((lanc) => {
     if (!vale(lanc.ticker)) return
 
@@ -219,6 +244,12 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     resultado[lanc.mes][p] += bruto - lanc.quantidade * medio
     c.quantidade -= lanc.quantidade
     c.custoTotal -= lanc.quantidade * medio
+
+    const t = porTicker.get(lanc.ticker) ?? { quantidade: 0, valorVenda: 0, custoVenda: 0 }
+    t.quantidade += lanc.quantidade
+    t.valorVenda += bruto
+    t.custoVenda += lanc.quantidade * medio
+    porTicker.set(lanc.ticker, t)
   })
 
   const prejuizo: Record<Modalidade, number> = {
@@ -281,6 +312,16 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     }))
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 
+  const vendasPorTicker: VendaTicker[] = [...porTicker.entries()]
+    .map(([ticker, v]) => ({
+      ticker,
+      quantidadeVendida: v.quantidade,
+      precoMedioVenda: v.valorVenda / v.quantidade,
+      custoMedioNaVenda: v.custoVenda / v.quantidade,
+      resultado: v.valorVenda - v.custoVenda,
+    }))
+    .sort((a, b) => a.ticker.localeCompare(b.ticker))
+
   return {
     ano: e.ano,
     meses,
@@ -290,6 +331,7 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     prejuizoAcumulado: prejuizo,
     semCusto: [...semCusto].sort(),
     posicaoFinal,
+    vendasPorTicker,
   }
 }
 
