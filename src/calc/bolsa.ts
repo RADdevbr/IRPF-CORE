@@ -21,18 +21,49 @@
  */
 
 /**
- * Os três potes de compensação. Prejuízo de um pote não abate lucro de outro:
- * é a regra da apuração, e misturá-los inventaria imposto a menos.
+ * Os potes de compensação. Prejuízo de um pote não abate lucro de outro: é a
+ * regra da apuração, e misturá-los inventaria imposto a menos.
+ *
+ * `etf` existe porque ETF de ações não é ação nem é FII, e caía sempre no pote
+ * errado: em `comum` ganhava a isenção mensal dos R$ 20 mil, que ETF não tem;
+ * marcado como fundo pelo sufixo 11, pagava 20% em vez de 15%. São dois erros
+ * de sinais opostos, e nenhum deles se resolve escolhendo o «menos errado» —
+ * a alíquota é 15% e a isenção não existe.
+ *
+ * ETF de renda fixa tem regra própria (25%/20%/15% por prazo) e NÃO cabe aqui:
+ * quem tiver um continua lançando à mão, e a tela diz isso.
  */
-export type Modalidade = 'comum' | 'daytrade' | 'fii'
+export type Modalidade = 'comum' | 'daytrade' | 'fii' | 'etf'
 
-export const MODALIDADES: Modalidade[] = ['comum', 'daytrade', 'fii']
+export const MODALIDADES: Modalidade[] = ['comum', 'daytrade', 'fii', 'etf']
+
+/**
+ * A soma dos potes.
+ *
+ * Existe porque cinco lugares somavam `comum + daytrade + fii` à mão, e um pote
+ * novo entraria no app inteiro sendo INVISÍVEL em todos eles — vendido, ganho e
+ * imposto de ETF sumindo do painel, da memória de cálculo e da base realizada
+ * sem uma linha de erro. Derivar de `MODALIDADES` é o que faz o próximo pote
+ * aparecer sozinho.
+ */
+export const somaPotes = (r: Record<Modalidade, number>): number =>
+  MODALIDADES.reduce((s, p) => s + (r[p] || 0), 0)
+
+/** O nome de cada pote na tela, para não haver dois vocabulários. */
+export const NOME_MODALIDADE: Record<Modalidade, string> = {
+  comum: 'ações (comum)',
+  daytrade: 'day trade',
+  fii: 'FII',
+  etf: 'ETF de ações',
+}
 
 /** Alíquotas do IR sobre o ganho, por pote. */
 export const ALIQUOTAS: Record<Modalidade, number> = {
   comum: 0.15,
   daytrade: 0.20,
   fii: 0.20,
+  // ETF de ações: 15%, como ação — e, ao contrário dela, sem a isenção mensal.
+  etf: 0.15,
 }
 
 /** Teto mensal de vendas abaixo do qual o ganho em ações é isento. */
@@ -130,7 +161,7 @@ export interface EntradaBolsa {
   prejuizoAnterior?: Partial<Record<Modalidade, number>>
 }
 
-const zeros = (): Record<Modalidade, number> => ({ comum: 0, daytrade: 0, fii: 0 })
+const zeros = (): Record<Modalidade, number> => ({ comum: 0, daytrade: 0, fii: 0, etf: 0 })
 
 const pote = (o: Operacao): Modalidade => o.modalidade ?? 'comum'
 
@@ -256,6 +287,7 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     comum: e.prejuizoAnterior?.comum ?? 0,
     daytrade: e.prejuizoAnterior?.daytrade ?? 0,
     fii: e.prejuizoAnterior?.fii ?? 0,
+    etf: e.prejuizoAnterior?.etf ?? 0,
   }
 
   const meses: MesApurado[] = []
@@ -265,7 +297,10 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
 
   for (let m = 1; m <= 12; m++) {
     // A isenção olha o total VENDIDO no mês, não o lucro, e só alcança ações
-    // fora de day trade. Cota de FII nunca é isenta.
+    // fora de day trade. Cota de FII nunca é isenta, e cota de ETF também não —
+    // por isso `vendas[m].comum`, e não a soma do mês: incluir ETF aqui daria a
+    // ele uma isenção que a lei não dá, e ainda faria uma venda de ETF empurrar
+    // a venda de ações para fora da isenção que ela tem.
     const isentoNoMes = vendas[m].comum > 0 && vendas[m].comum <= ISENCAO_MENSAL
     const tributavel = zeros()
     let irDoMes = 0

@@ -14,6 +14,23 @@ export interface YtdConfig {
 
 export interface DivPJ {
   nome: string
+  /**
+   * Renda do MESMO pagador que entra na base e NÃO entra no gatilho mensal —
+   * hoje, o JCP. Bruto por mês (12 posições).
+   *
+   * Mora na PJ, e não numa matriz paralela a `cells`, porque a tela adiciona e
+   * remove coluna: uma segunda matriz sairia de alinhamento no primeiro «tirar
+   * PJ» e passaria o JCP de uma companhia para outra.
+   *
+   * Está aqui porque o gatilho do Art. 6º-A é do dividendo. O JCP sofre 15% na
+   * fonte, por conta própria; somá-lo na célula do dividendo fazia o app cobrar
+   * 10% de quem recebeu R$ 30 mil de dividendo e R$ 25 mil de JCP no mês — uma
+   * retenção que ninguém sofreu — e, do outro lado, jogava fora os 15% que
+   * abatem o IRPFM.
+   */
+  jcp?: number[]
+  /** IRRF já retido nesse JCP, mês a mês. É dedução do próprio IRPFM. */
+  jcpIr?: number[]
 }
 
 export interface DivGrid {
@@ -77,6 +94,11 @@ export function projectAnnual(cfg: YtdConfig, mesRef: number): number {
 
 export interface DivPjResult {
   nome: string
+  /** JCP bruto do ano e o IRRF que veio com ele — fora do gatilho mensal. */
+  jcpAnual: number
+  jcpIr: number
+  /** A parte do JCP que caiu nos meses já fechados. */
+  jcpRealizado: number
   sumRealizado: number
   irrfRealizado: number
   /** Estimativa mensal aplicada aos meses futuros ainda em branco. */
@@ -150,15 +172,29 @@ export function divProjection(grid: DivGrid, mesRef: number): DivResult {
     const futTotal = futuros.reduce((s, x) => s + x, 0)
     const irrfFuturo = futuros.reduce((s, x) => s + irrfDoMes(x), 0)
 
+    // O JCP entra pelo que foi lançado, e não é projetado: ele vem do extrato,
+    // que só tem o passado. Projetá-lo pela média do dividendo suporia um
+    // pagamento que não é o mesmo evento nem tem o mesmo calendário. Fica de
+    // fora de `sumRealizado` porque é dali que sai a média do run-rate — somá-lo
+    // ali inflaria a projeção dos meses futuros de dividendo.
+    const jcpMeses = pj.jcp ?? []
+    const jcpIrMeses = pj.jcpIr ?? []
+    const soma = (v: number[], ate = 12) => v.slice(0, ate).reduce((s, x) => s + (x || 0), 0)
+    const jcpAnual = soma(jcpMeses)
+    const jcpIr = soma(jcpIrMeses)
+
     return {
       nome: pj.nome,
+      jcpAnual,
+      jcpIr,
+      jcpRealizado: soma(jcpMeses, k),
       sumRealizado,
       irrfRealizado,
       futMensal,
       futTotal,
       irrfFuturo,
-      annual: sumRealizado + futTotal,
-      irrf: irrfRealizado + irrfFuturo,
+      annual: sumRealizado + futTotal + jcpAnual,
+      irrf: irrfRealizado + irrfFuturo + jcpIr,
       mensal,
       estimados,
     }
@@ -167,13 +203,15 @@ export function divProjection(grid: DivGrid, mesRef: number): DivResult {
   // Um mês conta como lançado quando qualquer PJ tem valor nele.
   let mesesComLancamento = 0
   for (let m = 0; m < 12; m++) {
-    if (grid.pjs.some((_, j) => (grid.cells[j]?.[m] || 0) > 0)) mesesComLancamento += 1
+    const temDividendo = grid.pjs.some((_, j) => (grid.cells[j]?.[m] || 0) > 0)
+    const temJcp = grid.pjs.some((p) => (p.jcp?.[m] || 0) > 0)
+    if (temDividendo || temJcp) mesesComLancamento += 1
   }
 
   return {
     pjs,
     annual: pjs.reduce((s, p) => s + p.annual, 0),
-    realized: pjs.reduce((s, p) => s + p.sumRealizado, 0),
+    realized: pjs.reduce((s, p) => s + p.sumRealizado + p.jcpRealizado, 0),
     irrf: pjs.reduce((s, p) => s + p.irrf, 0),
     mesesComLancamento,
   }
