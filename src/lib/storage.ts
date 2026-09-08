@@ -121,6 +121,32 @@ export interface PersistedState {
    */
   b3DividendoBruto?: string[]
   /**
+   * O pote de cada papel, por ticker, quando a pessoa confirma.
+   *
+   * Existe porque o sufixo 11 não separa FII (20%, sem isenção), ETF de ações
+   * (15%, sem isenção) e unit (15%, com isenção): o app sugere o mais caro dos
+   * três e a pessoa corrige. Mapa de respostas, e não lista, porque as três
+   * escolhas são diferentes entre si — não há um padrão que dispense confirmar.
+   */
+  b3Modalidade?: Record<string, string>
+  /**
+   * Dias confirmados como day trade, na forma `TICKER@dd/mm/aaaa`.
+   *
+   * O extrato da B3 não marca modalidade, e comprar e vender o mesmo papel no
+   * dia é indício, não prova (pode ser venda de posição antiga). Confirmado o
+   * dia, só a QUANTIDADE CASADA vira day trade — o resto continua sendo venda
+   * comum, com a isenção mensal que ela tem.
+   */
+  b3DayTrade?: string[]
+  /**
+   * IRRF que a corretora informou, por `ano·pagador`, mês a mês.
+   *
+   * O extrato traz o líquido e não traz o imposto; o informe de rendimentos
+   * traz os dois. Onde ele existe, o app para de inferir a retenção a partir do
+   * gatilho e usa o número informado — que é fato, não leitura.
+   */
+  b3IrrfInformado?: Record<string, number[]>
+  /**
    * De onde veio cada número, pela mesma chave dos `vals`. Ausente = não
    * registrado (estado salvo antes deste campo existir), que é diferente de
    * digitado.
