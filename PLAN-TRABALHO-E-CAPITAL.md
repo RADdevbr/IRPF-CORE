@@ -1,8 +1,13 @@
 # Plano — Separar renda de trabalho de renda de capital
 
-> Estado: **proposta**, nada implementado. Escrito antes do trabalho começar; o
-> resultado de cada fase deve ser anotado no fim dela, inclusive onde divergir do
-> previsto — é a parte do documento que ensina alguma coisa.
+> Estado: **fases 1 e 2 feitas**; 3 a 6 em aberto. Escrito antes do trabalho
+> começar e deixado como estava, com o resultado anotado no fim de cada fase,
+> inclusive onde divergir do previsto — é a parte do documento que ensina alguma
+> coisa.
+>
+> ⟨confirmar⟩ nº 1 está **respondido**: lucro da própria PJ é trabalho. Isso é a
+> resposta DESTA pessoa e vira a sugestão e a migração do booleano; continua não
+> sendo regra no app, porque a próxima pessoa pode ser sócia sem trabalhar lá.
 >
 > Vale para os quatro repositórios. Mora aqui porque a primeira fase é do
 > **modelo**, e porque três apps leem a mesma classificação: uma segunda cópia
@@ -191,8 +196,8 @@ chutado.
 
 | # | Fase | Onde | Por que nessa posição |
 |---|---|---|---|
-| 1 | Vocabulário: origem por pagador | IRPF-CORE | nada anda sem o tipo; sozinha já substitui o booleano |
-| 2 | Guardar o pagador no import | IRPF-CORE + IRPF-calc | é o dado; sem ele a fase 1 vive de palpite |
+| 1 | ✅ Vocabulário: origem por pagador | IRPF-CORE | nada anda sem o tipo; sozinha já substitui o booleano |
+| 2 | ✅ Guardar o pagador no import | IRPF-CORE + IRPF-calc | é o dado; sem ele a fase 1 vive de palpite |
 | 3 | A tela de responder | IRPF-calc | é onde mora a correção manual, por decisão de fronteira |
 | 4 | **Projeção em duas pernas** | IRPF-CORE + networthcontrol | corrige RT-04, que é número errado com cara de certo |
 | 5 | Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
@@ -203,7 +208,7 @@ um patrimônio projetado meio milhão acima do que a premissa diz.
 
 ---
 
-## Fase 1 — Vocabulário: origem por pagador
+## Fase 1 — Vocabulário: origem por pagador — ✅ FEITO
 
 **Muda** `IRPF-CORE/src/patrimonio/renda.ts`.
 
@@ -234,7 +239,22 @@ sai da fração de capital mesmo com a fonte sendo `divBR`; pagador indefinido n
 entra em `trabalho` nem em `capital` e aparece em `indefinido`; dois pagadores na
 mesma fonte com origens opostas dividem o valor certo.
 
-## Fase 2 — Guardar o pagador no import
+### O que saiu
+
+Saiu como previsto, com duas coisas a mais que o desenho pediu quando virou código:
+
+- **`FonteRenda.id`.** Uma ficha que se divide em duas origens vira duas fatias,
+  e `chave` deixou de ser identidade — duas fatias com a mesma chave dariam chave
+  de React repetida e legenda dobrada. `id` é `chave` no caso comum e
+  `chave·origem` quando divide, então quem já lia `chave` não muda.
+- **`ComposicaoRenda.porOrigem`.** A tela reagrupava por origem sozinha, com a
+  regra de empilhamento duplicada dentro dela. Agora o agrupamento sai pronto.
+
+O critério de que a fase não mudou comportamento: os 445 testes que já existiam
+passaram **sem uma edição**, e os 95 do networthcontrol e os 212 do IRPFM-2027
+também, com o núcleo novo instalado e nenhuma linha de código mudada nos dois.
+
+## Fase 2 — Guardar o pagador no import — ✅ FEITO
 
 **Muda** `historico/historico.ts` e `dec/decParser.ts` (só o que já lê).
 
@@ -272,6 +292,43 @@ dito, porque «guardou CNPJ» é a pergunta que alguém vai fazer.
 **Testes.** Um `.DEC` de exemplo com duas fontes pagando `divBR` produz duas
 linhas em `porPagador`, cuja soma bate com `vals.divBR` **exatamente** — a
 igualdade é invariante, e é ela que impede o detalhamento de divergir do total.
+
+### O que saiu
+
+**A igualdade acima estava errada, e o Registro 22 é quem mostrou.** Ele traz
+exterior e carnê-leão sem fonte pagadora nenhuma — campo de CNPJ zerado, nome em
+branco. Havia duas saídas:
+
+- inventar um pagador «não identificado». Recusada: daria à pessoa uma linha para
+  responder sobre algo que ela não tem como reconhecer, e uma resposta sobre ela
+  erraria várias fichas de uma vez (todo registro sem fonte tem o mesmo CNPJ
+  zerado, então todos viriam colados no mesmo pagador);
+- deixar o lançamento fora do detalhamento, inteiro em `vals`.
+
+Ficou a segunda, e a invariante virou **`soma dos pagadores ≤ vals[ficha]`**.
+Quem lê atribui a diferença ao padrão da ficha, o que também cobre de graça o
+outro caso em que `porPagador` está vazio: o ano importado por leitura anterior à
+4. Os dois caem no mesmo caminho, e é por isso que a fase não mudou número nenhum.
+
+**`sugerirOrigens` veio para cá, e não para a fase 3.** Sugerir a origem a partir
+do que o próprio arquivo mostra é modelo, não pergunta — a fronteira que o resto
+da família já usa. A fase 3 fica sendo só uma tela.
+
+Dos indícios da tabela acima, **um foi recusado na implementação**: «uma PJ só, e
+ela concentra os dividendos → trabalho». É o mais fraco dos quatro e erra
+exatamente quem tem uma posição grande e concentrada em bolsa. Os outros três
+ficaram. Quem não cai em nenhum — a PJ que distribui lucro sem pagar pró-labore,
+que é caso comum — fica `indefinido`, e essa é a resposta certa: só quem tem o
+contrato social sabe.
+
+**O que não estava previsto e teve de entrar:** subir `LEITURA_ATUAL` quebrou o
+aviso de «reimporte este ano», que tinha a lista do que falta escrita na tela.
+Todo ano lido pela versão 3 passaria a ser mandado procurar os rendimentos
+isentos que ele já tem — motivo errado, que é pior do que nenhum. `GANHOS_DA_LEITURA`
+e `oQueFaltaNaLeitura` passam a dizer o que cada versão trouxe, com a
+consequência junto, e as duas telas do IRPF-calc montam o texto de lá. A marca
+também passou a aparecer na linha de cada ano do histórico: descobrir três telas
+adiante que o ano precisa ser relido é descobrir tarde.
 
 ## Fase 3 — A tela de responder
 
