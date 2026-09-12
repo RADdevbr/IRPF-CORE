@@ -1,3 +1,8 @@
+// A tela de controle de contas. O arquivo se chama `TelaAdmin` e não `Admin`
+// porque `admin.ts`, ao lado, é a biblioteca que ela usa: dois módulos que só
+// diferem por maiúscula resolvem para o mesmo arquivo em qualquer ferramenta
+// que normalize caminho — e o esbuild faz isso. O sintoma foi o build de um app
+// morrer com «No matching export in admin.js for import Admin».
 import { useEffect, useState } from 'react'
 import { C } from '../ui/theme.js'
 import { clienteSupabase } from './remoto.js'

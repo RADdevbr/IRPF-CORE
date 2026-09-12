@@ -6,4 +6,4 @@
 export { remotoSupabase, clienteSupabase, esquecerClienteSupabase, docDaLinha, wrapDaLinha } from './remoto.js'
 export * from './admin.js'
 export { ContaSync } from './ContaSync.js'
-export { Admin } from './Admin.js'
+export { Admin } from './TelaAdmin.js'
