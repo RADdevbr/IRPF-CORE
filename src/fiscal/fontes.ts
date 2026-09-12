@@ -46,3 +46,14 @@ export const FIELDS: Field[] = [
   { key: 'bolsa', label: 'Ganho em bolsa (renda variável)', ir: 'bolsa_ir', base: true, autoSal: false, autoCdb: false, naDeclaracao: false, info: 'Ganho líquido na venda de ações, ETF e FII. A entrada na base do IRPFM é leitura da lei, não texto expresso — veja o painel da apuração.' },
   { key: 'outros', label: 'Outros rendimentos tributáveis', ir: 'outros_ir', base: true, autoSal: false, autoCdb: false, naDeclaracao: false, info: 'Qualquer outro rendimento não isento por lei, tributado só na fonte.' },
 ]
+
+/**
+ * A chave é imposto retido, e não renda recebida.
+ *
+ * Toda fonte com IR tem duas chaves em `vals` — `salario` e `salario_ir` — e
+ * quem soma renda precisa ficar com a primeira. A regra morava em comentário nos
+ * dois lugares que a aplicavam; aqui ela é uma função, porque o terceiro lugar
+ * (a renda por pagador) errá-la somaria o IR à renda e inflaria a proporção de
+ * trabalho sem avisar.
+ */
+export const ehImpostoRetido = (alvo: string): boolean => alvo.endsWith('_ir')

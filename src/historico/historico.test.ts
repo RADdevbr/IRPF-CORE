@@ -5,6 +5,9 @@ import {
   REGIME,
   somaPorAlvo,
   idPosicao,
+  idPagador,
+  rendaPorPagador,
+  LEITURA_ATUAL,
   montarDeclaracao,
   seriePatrimonio,
   cagr,
@@ -621,5 +624,116 @@ describe('PGBL — o patrimônio que a declaração esconde', () => {
     let h: Historico = {}
     h = upsertDeclaracao(h, montarDeclaracao(dec('2026', [], [pos('CDB', 100_000)]), 'x.DEC', 'agora')!)
     expect(pgblAportado(h)[0].noAno).toBe(0)
+  })
+})
+
+describe('identidade do pagador', () => {
+  it('o CNPJ manda, porque é ele que não muda entre os anos', () => {
+    expect(idPagador('CIA XPTO S/A', '12345678000199')).toBe('cnpj:12345678000199')
+    expect(idPagador('CIA XPTO SA', '12.345.678/0001-99')).toBe('cnpj:12345678000199')
+  })
+
+  it('zero à esquerda faz parte do número e fica', () => {
+    expect(idPagador('CIA', '00011222000133')).toBe('cnpj:00011222000133')
+  })
+
+  it('CNPJ todo zero não é CNPJ — cai no nome', () => {
+    // o campo vem zerado em registro sem fonte; aceitá-lo juntaria num pagador
+    // só todo mundo que não tem pagador, e uma resposta erraria várias fichas
+    expect(idPagador('BANCO Y', '00000000000000')).toBe('nome:BANCO Y')
+  })
+
+  it('sem CNPJ, o nome normalizado; sem nome nenhum, vazio', () => {
+    expect(idPagador('  Banco   Ômega S.A. ')).toBe('nome:BANCO MEGA S A')
+    expect(idPagador('', '')).toBe('')
+    expect(idPagador('   ', '000')).toBe('')
+  })
+})
+
+describe('renda por pagador', () => {
+  const l = (alvo: string, valor: number, fonte: string, cnpj = ''): Lancamento => ({
+    linha: 1,
+    tipo: '84',
+    tipoLabel: 'x',
+    fonte,
+    cnpj,
+    rotulo: 'Rendimento',
+    valor,
+    alvo,
+  })
+
+  it('separa dois pagadores dentro da mesma ficha', () => {
+    const r = rendaPorPagador([
+      l('divBR', 360_000, 'MINHA CLINICA LTDA', '11111111000111'),
+      l('divBR', 120_000, 'ITAUSA', '22222222000122'),
+    ])
+    expect(r.map((x) => [x.pagador.id, x.valor])).toEqual([
+      ['cnpj:11111111000111', 360_000],
+      ['cnpj:22222222000122', 120_000],
+    ])
+    expect(r[0].pagador.cnpj).toBe('11111111000111')
+  })
+
+  it('o mesmo pagador em duas fichas vira duas linhas', () => {
+    // a resposta sobre ele vale para as duas, porque a chave é o pagador
+    const r = rendaPorPagador([
+      l('cdb', 10_000, 'BANCO X', '33333333000133'),
+      l('isentos', 5_000, 'BANCO X', '33333333000133'),
+    ])
+    expect(r).toHaveLength(2)
+    expect(new Set(r.map((x) => x.pagador.id)).size).toBe(1)
+    expect(r.map((x) => x.alvo).sort()).toEqual(['cdb', 'isentos'])
+  })
+
+  it('soma o mesmo pagador quando ele aparece duas vezes na mesma ficha', () => {
+    const r = rendaPorPagador([
+      l('divBR', 30_000, 'CIA', '44444444000144'),
+      l('divBR', 20_000, 'CIA', '44444444000144'),
+    ])
+    expect(r).toEqual([
+      { alvo: 'divBR', pagador: { id: 'cnpj:44444444000144', nome: 'CIA', cnpj: '44444444000144' }, valor: 50_000 },
+    ])
+  })
+
+  it('imposto retido não é renda, e não vira pagador', () => {
+    const r = rendaPorPagador([l('salario', 300_000, 'EMPRESA', '55555555000155'), l('salario_ir', 80_000, 'EMPRESA', '55555555000155')])
+    expect(r).toHaveLength(1)
+    expect(r[0].valor).toBe(300_000)
+  })
+
+  it('lançamento sem fonte identificada fica de fora — o Registro 22 não traz nenhuma', () => {
+    // inventar um pagador «não identificado» daria à pessoa uma linha para
+    // responder sobre algo que ela não tem como reconhecer
+    expect(rendaPorPagador([l('exterior', 50_000, '', '')])).toEqual([])
+  })
+
+  it('a soma por ficha nunca passa do total da ficha', () => {
+    const lancamentos = [
+      l('divBR', 360_000, 'MINHA CLINICA', '11111111000111'),
+      l('divBR', 120_000, 'ITAUSA', '22222222000122'),
+      l('exterior', 50_000, '', ''),
+      l('salario_ir', 80_000, 'EMPRESA', '55555555000155'),
+    ]
+    const vals = somaPorAlvo(lancamentos)
+    const porPagador = rendaPorPagador(lancamentos)
+    for (const alvo of new Set(porPagador.map((x) => x.alvo))) {
+      const soma = porPagador.filter((x) => x.alvo === alvo).reduce((t, x) => t + x.valor, 0)
+      expect(soma).toBeLessThanOrEqual(vals[alvo])
+    }
+    // e o que ficou de fora é exatamente o lançamento sem fonte
+    expect(porPagador.some((x) => x.alvo === 'exterior')).toBe(false)
+    expect(vals.exterior).toBe(50_000)
+  })
+
+  it('a declaração montada guarda o detalhamento e carimba a leitura', () => {
+    const d = montarDeclaracao(
+      dec('2026', [l('divBR', 400_000, 'MINHA CLINICA', '11111111000111'), l('cdb', 60_000, 'BANCO X', '33333333000133')], []),
+      'x.DEC',
+      'agora',
+    )!
+    expect(d.versaoLeitura).toBe(LEITURA_ATUAL)
+    expect(d.porPagador).toHaveLength(2)
+    expect(d.vals.divBR).toBe(400_000)
+    expect(d.porPagador!.find((x) => x.alvo === 'divBR')!.valor).toBe(400_000)
   })
 })

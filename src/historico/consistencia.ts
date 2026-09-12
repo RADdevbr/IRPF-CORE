@@ -143,6 +143,8 @@ export interface AnoAnalisado {
    * tela ficava muda e a pessoa ia procurar um número que nunca ia aparecer.
    */
   leituraAntiga: boolean
+  /** Com que versão do leitor este ano foi lido — ver `oQueFaltaNaLeitura`. */
+  versaoLeitura: number
 }
 
 export interface Consolidado {
@@ -422,6 +424,7 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       semAnoAnterior: !anterior,
       semDespesas: !(e.despesas && e.despesas > 0),
       leituraAntiga: (d.versaoLeitura ?? 1) < LEITURA_ATUAL,
+      versaoLeitura: d.versaoLeitura ?? 1,
       pagamentosDeclarados: (d.pagamentos ?? []).reduce((soma, p) => soma + p.valor, 0),
       pagamentos: (d.pagamentos ?? [])
         .filter((p) => p.valor > 0)

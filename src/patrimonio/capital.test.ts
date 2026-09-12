@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal } from './capital.js'
+import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal, yieldDistribuido } from './capital.js'
 import { composicaoRenda } from './renda.js'
 import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks.js'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from '../historico/historico.js'
@@ -443,5 +443,60 @@ describe('retorno real', () => {
 
   it('render menos que a inflação é perder poder de compra', () => {
     expect(retornoReal(0.03, 0.06)).toBeLessThan(0)
+  })
+})
+
+describe('o que a carteira distribui', () => {
+  // 1M no começo, 1,2M no fim, 60k de dividendo declarado: 60k sobre a média de
+  // 1,1M = 5,45% distribuídos. É diferente do RETORNO, que inclui os 200k de
+  // crescimento — e é essa diferença que a projeção precisa.
+  const h = historico(
+    { exercicio: '2025', rendas: [lanc('divBR', 60_000)], bens: [pos('CARTEIRA', 1_000_000, 1_000_000)] },
+    { exercicio: '2026', rendas: [lanc('divBR', 60_000)], bens: [pos('CARTEIRA', 1_200_000, 1_000_000)] },
+  )
+
+  it('mede a fatia que SAIU da carteira, não o retorno', () => {
+    const y = yieldDistribuido(analiseCapital(h, { 2025: { despesas: 50_000 } }))
+    const ano = y.anos.find((a) => a.anoBase === 2025)!
+    expect(ano.taxa).toBeCloseTo(60_000 / 1_100_000, 6)
+  })
+
+  it('não depende do gasto informado — os dois números saem da declaração', () => {
+    // ao contrário do retorno, que sem gasto vira piso
+    const comGasto = yieldDistribuido(analiseCapital(h, { 2025: { despesas: 50_000 } }))
+    const semGasto = yieldDistribuido(analiseCapital(h))
+    expect(semGasto.taxa).toBeCloseTo(comGasto.taxa as number, 9)
+  })
+
+  it('renda de origem indefinida faz a taxa sair marcada como piso', () => {
+    // o que não foi classificado pode ser capital; se for, a carteira distribui
+    // mais do que este número diz
+    const comExterior = historico({
+      exercicio: '2026',
+      rendas: [lanc('divBR', 60_000), lanc('exterior', 40_000)],
+      bens: [pos('CARTEIRA', 1_200_000, 1_000_000)],
+    })
+    expect(yieldDistribuido(analiseCapital(comExterior)).piso).toBe(true)
+    expect(yieldDistribuido(analiseCapital(h)).piso).toBe(false)
+  })
+
+  it('sem patrimônio não há taxa, e isso não vira zero', () => {
+    const vazio = historico({ exercicio: '2026', rendas: [lanc('divBR', 10_000)], bens: [] })
+    expect(yieldDistribuido(analiseCapital(vazio)).taxa).toBeNull()
+  })
+})
+
+describe('as três origens da renda, ano a ano', () => {
+  it('trabalho, capital e indefinido saem separados na linha do ano', () => {
+    const h = historico({
+      exercicio: '2026',
+      rendas: [lanc('salario', 400_000), lanc('divBR', 80_000), lanc('exterior', 20_000)],
+      bens: [pos('CARTEIRA', 1_200_000, 1_000_000)],
+    })
+    const a = analiseCapital(h).anos[0]
+    expect(a.rendaDeTrabalho).toBe(400_000)
+    expect(a.rendaDeCapital).toBe(80_000)
+    expect(a.rendaIndefinida).toBe(20_000)
+    expect(a.rendaDeTrabalho + a.rendaDeCapital + a.rendaIndefinida).toBe(a.renda)
   })
 })
