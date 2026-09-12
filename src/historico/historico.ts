@@ -60,9 +60,9 @@ export const LEITURA_ATUAL = 4
  * errado é pior do que nenhum: manda a pessoa atrás de um número que está lá.
  */
 export const GANHOS_DA_LEITURA: Record<number, string> = {
-  2: 'os pagamentos efetuados (plano de saúde, previdência)',
-  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII',
-  4: 'a renda por fonte pagadora, que separa o que é trabalho do que é capital',
+  2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
+  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
+  4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
 }
 
 /** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
