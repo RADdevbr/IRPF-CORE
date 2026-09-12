@@ -7,6 +7,8 @@ import {
   idPosicao,
   idPagador,
   rendaPorPagador,
+  pagadoresDoHistorico,
+  rendaPorPagadorDoHistorico,
   LEITURA_ATUAL,
   montarDeclaracao,
   seriePatrimonio,
@@ -735,5 +737,56 @@ describe('renda por pagador', () => {
     expect(d.porPagador).toHaveLength(2)
     expect(d.vals.divBR).toBe(400_000)
     expect(d.porPagador!.find((x) => x.alvo === 'divBR')!.valor).toBe(400_000)
+  })
+})
+
+describe('os pagadores do histórico', () => {
+  const l = (alvo: string, valor: number, fonte: string, cnpj = ''): Lancamento => ({
+    linha: 1, tipo: '84', tipoLabel: 'x', fonte, cnpj, rotulo: 'Rendimento', valor, alvo,
+  })
+  const CLINICA = '11111111000111'
+  const BANCO = '33333333000133'
+
+  const h = (() => {
+    let acc: Historico = {}
+    for (const ex of ['2025', '2026']) {
+      acc = upsertDeclaracao(
+        acc,
+        montarDeclaracao(
+          dec(ex, [l('divBR', 300_000, 'MINHA CLINICA', CLINICA), l('salario', 100_000, 'MINHA CLINICA', CLINICA), l('cdb', 20_000, 'BANCO X', BANCO)], []),
+          `${ex}.DEC`,
+          'agora',
+        )!,
+      )
+    }
+    return acc
+  })()
+
+  it('soma o mesmo pagador entre os anos, do maior para o menor', () => {
+    const p = pagadoresDoHistorico(h)
+    expect(p.map((x) => [x.pagador.id, x.total])).toEqual([
+      [`cnpj:${CLINICA}`, 800_000],
+      [`cnpj:${BANCO}`, 40_000],
+    ])
+  })
+
+  it('guarda em que fichas e em que anos ele apareceu', () => {
+    const clinica = pagadoresDoHistorico(h)[0]
+    expect(clinica.fichas).toEqual([
+      { alvo: 'divBR', total: 600_000 },
+      { alvo: 'salario', total: 200_000 },
+    ])
+    expect(clinica.anos).toEqual([2024, 2025])
+  })
+
+  it('ano lido por versão anterior à 4 não contribui, e não quebra', () => {
+    const antigo: Historico = { 2020: { ...Object.values(h)[0], anoBase: 2020, porPagador: undefined } }
+    expect(pagadoresDoHistorico(antigo)).toEqual([])
+    expect(rendaPorPagadorDoHistorico(antigo)).toEqual([])
+  })
+
+  it('a soma dos pagadores bate com a soma dos lançamentos do histórico', () => {
+    const total = rendaPorPagadorDoHistorico(h).reduce((t, r) => t + r.valor, 0)
+    expect(pagadoresDoHistorico(h).reduce((t, p) => t + p.total, 0)).toBe(total)
   })
 })

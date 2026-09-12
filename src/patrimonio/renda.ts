@@ -83,8 +83,23 @@ const FONTES: Fonte[] = [
  */
 export const FONTES_COM_COR = FONTES.filter((f) => f.origem !== 'indefinido').map((f) => f.chave)
 
+/**
+ * A ficha admite as duas leituras, e só o pagador desempata.
+ *
+ * É o que separa «tenho de perguntar sobre este pagador» de «não há o que
+ * perguntar»: ninguém precisa responder de onde vem o rendimento do CDB de um
+ * banco, e pôr essa linha na frente da pessoa gasta a atenção dela no que já
+ * está resolvido.
+ */
+export const fichaPrecisaDeResposta = (chave: string): boolean =>
+  FONTES.some((f) => f.chave === chave && f.perguntar === true)
+
 /** Todas as fontes, na ordem em que a tela deve empilhá-las dentro do grupo. */
 export const ORDEM_FONTES = FONTES.map((f) => f.chave)
+
+/** O rótulo de uma ficha, para a tela não repetir a tabela. */
+export const rotuloDaFicha = (chave: string): string =>
+  FONTES.find((f) => f.chave === chave)?.rotulo ?? chave
 
 export interface ComposicaoRenda {
   fontes: FonteRenda[]

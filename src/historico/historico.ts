@@ -433,6 +433,66 @@ function normalizar(texto: string): string {
     .slice(0, 60)
 }
 
+export interface PagadorConsolidado {
+  pagador: Pagador
+  /** Total recebido dele em todos os anos importados. */
+  total: number
+  /** As fichas em que ele aparece, da maior para a menor. */
+  fichas: { alvo: string; total: number }[]
+  /** Anos-base em que ele aparece, do mais antigo ao mais recente. */
+  anos: number[]
+}
+
+/**
+ * Todos os pagadores do histórico, somados entre os anos, do maior para o menor.
+ *
+ * A resposta sobre a origem é do PAGADOR e vale para todos os anos — então a
+ * lista que a pessoa responde também tem de ser por pagador, e não por ano.
+ * Perguntar ano a ano seria pedir a mesma resposta cinco vezes e abrir a chance
+ * de ela divergir entre eles.
+ *
+ * Ano lido por versão anterior à 4 não tem `porPagador` e simplesmente não
+ * contribui: o aviso de reimportação é quem cobra isso, não esta função.
+ */
+export function pagadoresDoHistorico(h: Historico): PagadorConsolidado[] {
+  const acc = new Map<string, PagadorConsolidado & { porFicha: Map<string, number>; anosSet: Set<number> }>()
+  for (const d of Object.values(h).sort((a, b) => a.anoBase - b.anoBase)) {
+    for (const r of d.porPagador ?? []) {
+      const atual = acc.get(r.pagador.id)
+      if (atual) {
+        atual.total += r.valor
+        atual.porFicha.set(r.alvo, (atual.porFicha.get(r.alvo) ?? 0) + r.valor)
+        atual.anosSet.add(d.anoBase)
+        if (!atual.pagador.nome && r.pagador.nome) atual.pagador.nome = r.pagador.nome
+      } else {
+        acc.set(r.pagador.id, {
+          pagador: { ...r.pagador },
+          total: r.valor,
+          fichas: [],
+          anos: [],
+          porFicha: new Map([[r.alvo, r.valor]]),
+          anosSet: new Set([d.anoBase]),
+        })
+      }
+    }
+  }
+
+  return [...acc.values()]
+    .map(({ porFicha, anosSet, ...p }) => ({
+      ...p,
+      fichas: [...porFicha.entries()]
+        .map(([alvo, total]) => ({ alvo, total }))
+        .sort((a, b) => b.total - a.total),
+      anos: [...anosSet].sort((a, b) => a - b),
+    }))
+    .sort((a, b) => b.total - a.total)
+}
+
+/** Todos os lançamentos por pagador do histórico — a entrada de `sugerirOrigens`. */
+export function rendaPorPagadorDoHistorico(h: Historico): RendaPorPagador[] {
+  return Object.values(h).flatMap((d) => d.porPagador ?? [])
+}
+
 /** Identidade estável da posição entre anos: classe + descrição normalizada. */
 export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
   return `${classe}:${normalizar(descricao)}`
