@@ -439,6 +439,23 @@ bolsa), então projetá-la direito é por ficha, que é o desenho da 6.
 só apareceu no teste: no ano que cai na regra dos 30%, a faixa é 30% da renda
 indefinida, não ela inteira. A regra incide dos dois lados.
 
+**Dois defeitos só apareceram ao abrir o app com histórico dentro**, e os dois
+sobreviveram a uma suíte verde pelo mesmo motivo: todo teste de módulo passava a
+classificação dos dividendos explicitamente, e nenhum exercitava a fiação da
+tela.
+
+1. `projetar`, `projecaoCapital` e a curva de renda × gasto recebiam tudo menos
+   a resposta sobre os dividendos. O estrago era duplo e na mesma tela: a
+   poupança perdia o que é trabalho e o yield perdia o que é capital.
+2. A caixa DESMARCADA era lida como ausência de resposta, quando ela é a
+   resposta «vêm de ações e fundos» — palavra da própria tela. Só a ausência do
+   campo é silêncio.
+
+O guarda que ficou renderiza o painel nas duas classificações e exige que o
+número mostrado mude; foi conferido que ele falha com a fiação removida. A lição
+para as fases seguintes: **abrir o app é parte de terminar**, e uma suíte verde
+não cobre o que só a tela liga.
+
 ## Fase 5 — Leitura e cor
 
 **Cor.** Duas famílias, não seis avulsas: trabalho em uma faixa quente, capital em
