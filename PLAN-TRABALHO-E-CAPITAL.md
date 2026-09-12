@@ -1,6 +1,8 @@
 # Plano — Separar renda de trabalho de renda de capital
 
-> Estado: **fases 1 e 2 feitas**; 3 a 6 em aberto. Escrito antes do trabalho
+> Estado: **fases 1, 2 e 4 feitas**; 3, 5 e 6 em aberto. A 4 passou na frente da
+> 3 porque é ela que conserta número errado, e porque o booleano antigo cobre a
+> classificação enquanto a tela de responder não existe. Escrito antes do trabalho
 > começar e deixado como estava, com o resultado anotado no fim de cada fase,
 > inclusive onde divergir do previsto — é a parte do documento que ensina alguma
 > coisa.
@@ -199,9 +201,9 @@ chutado.
 | 1 | ✅ Vocabulário: origem por pagador | IRPF-CORE | nada anda sem o tipo; sozinha já substitui o booleano |
 | 2 | ✅ Guardar o pagador no import | IRPF-CORE + IRPF-calc | é o dado; sem ele a fase 1 vive de palpite |
 | 3 | A tela de responder | IRPF-calc | é onde mora a correção manual, por decisão de fronteira |
-| 4 | **Projeção em duas pernas** | IRPF-CORE + networthcontrol | corrige RT-04, que é número errado com cara de certo |
+| 4 | ✅ **Projeção em duas pernas** | IRPF-CORE + networthcontrol | corrige RT-04, que é número errado com cara de certo |
 | 5 | Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
-| 6 | Base do IRPFM por fonte | IRPFM-2027 | mesma correção, no número mais consequente |
+| 6 | Base do IRPFM por fonte | IRPFM-2027 **e networthcontrol** | mesma correção, no número mais consequente |
 
 A fase 4 é a que justifica o lote. As outras cinco melhoram a leitura; a 4 conserta
 um patrimônio projetado meio milhão acima do que a premissa diz.
@@ -351,7 +353,7 @@ novo. Campo novo e opcional: `PACOTE_VERSAO` **não** sobe.
 O booleano `dividendosSaoTrabalho` sai da tela do networthcontrol e vira migração
 silenciosa: ligado = todo pagador de `divBR` sugerido como trabalho.
 
-## Fase 4 — Projeção em duas pernas
+## Fase 4 — Projeção em duas pernas — ✅ FEITO
 
 A fase que conserta RT-04 e RT-03. Toda em `networthcontrol/src/analise/`, com o
 modelo em `IRPF-CORE/src/patrimonio/`.
@@ -398,6 +400,44 @@ ser a faixa do **trabalho** — o capital tem a dele, que é a premissa de juros
 **Testes.** O que prova RT-04: histórico onde toda a renda é de capital e o gasto
 é zero deve projetar patrimônio **idêntico** a `pat × (1 + juros)^n`, sem um real
 de poupança somado. Hoje falha. É o teste que não deixa a regressão voltar.
+
+### O que saiu
+
+O teste acima existe e passa. A magnitude prevista foi conferida contra a
+implementação, não contra a aritmética de quem escreveu o plano: com pró-labore
+400k, custo de vida 300k e carteira de 2,2 M distribuindo 80k reinvestidos, o
+patrimônio de cinco anos sai de 4,55 M para 4,07 M — **R$ 483.569**.
+
+**A duplicação era maior do que o plano dizia.** Não eram só as premissas que
+divergiam: havia DUAS projeções da mesma vida, em módulos separados. O painel
+estendia o patrimônio por juro mais poupança; `serieRendaGasto` estendia a renda
+por uma taxa própria; e `projecaoCapital` compunha uma terceira. Nada obrigava a
+renda projetada a caber no patrimônio projetado ao lado dela. A fase virou, por
+isso, uma unificação: `analise/rendaFutura.ts` é a conta, e os três consomem. O
+teste que guarda isso compara ponto a ponto as saídas de dois deles.
+
+**Três testes do painel codificavam o bug.** O fixture tem renda toda em `cdb`,
+então eles afirmavam que quem vive de rendimento aporta 140 mil por ano de
+dinheiro novo. Foram reescritos sobre um fixture irmão com renda de trabalho — e
+o caso antigo, intacto, virou o teste de regressão do RT-04.
+
+**O campo «Renda» da tela virou dois.** Ele governava a base do IRPFM e a renda
+do gráfico ao mesmo tempo, o que só funcionava enquanto «renda» fosse uma
+grandeza só. Agora são «Renda de trabalho» e «Base do IRPFM». A renda de capital
+não ganhou campo de propósito: ela não é premissa, é consequência do patrimônio.
+
+**Divergência de escopo, e ela abre trabalho.** O plano põe a projeção da base do
+IRPFM na fase 6, «em IRPFM-2027». Mas o networthcontrol tem a sua PRÓPRIA
+extrapolação da base — `projetar` ainda faz `base × (1 + taxaBase)` sobre a soma
+das fichas —, e é dela que saem o «quando cruzo os R$ 600 mil» e a faixa deste
+painel. É o mesmo RT-03, na mesma tela que a fase 4 acabou de consertar.
+**A fase 6 cobre os dois apps**, e não só o IRPFM-2027. Ficou de fora daqui de
+propósito: a base não é a soma das origens (ela exclui FII e isentos e inclui
+bolsa), então projetá-la direito é por ficha, que é o desenho da 6.
+
+**O que ninguém classificou virou faixa, como previsto** — e com uma sutileza que
+só apareceu no teste: no ano que cai na regra dos 30%, a faixa é 30% da renda
+indefinida, não ela inteira. A regra incide dos dois lados.
 
 ## Fase 5 — Leitura e cor
 
