@@ -98,20 +98,24 @@ export interface ComposicaoRenda {
   fracaoCapital: number
 }
 
-export interface OpcoesComposicao {
-  /** Renda por pagador do ano (ver `Declaracao.porPagador`). Vazio = só `vals`. */
-  porPagador?: RendaPorPagador[]
+/**
+ * Como ler a origem da renda — o que todo consumidor do histórico precisa passar.
+ *
+ * Separado de `OpcoesComposicao` porque `porPagador` NÃO entra aqui: ele é do
+ * ano, não da preferência, e vem de dentro da própria declaração. Quem passasse
+ * os dois correria o risco de casar o detalhamento de um ano com os `vals` de
+ * outro — e o erro sairia como uma proporção plausível, sem avisar.
+ */
+export interface OpcoesOrigem {
   /** O que a pessoa respondeu sobre cada pagador. */
   origens?: OrigemPorPagador
-  /**
-   * Lucros e dividendos contam como trabalho — a resposta única, de quando ela
-   * era única.
-   *
-   * @deprecated Vale para estado gravado antes da resposta por pagador existir, e
-   * é o que ele vira ao migrar. Com `porPagador` e `origens`, ela só decide o
-   * pagador que ninguém respondeu ainda.
-   */
+  /** @deprecated Ver `OpcoesComposicao.dividendosSaoTrabalho`. */
   dividendosSaoTrabalho?: boolean
+}
+
+export interface OpcoesComposicao extends OpcoesOrigem {
+  /** Renda por pagador do ano (ver `Declaracao.porPagador`). Vazio = só `vals`. */
+  porPagador?: RendaPorPagador[]
 }
 
 const VAZIO = (): Record<Origem, FonteRenda[]> => ({ trabalho: [], capital: [], indefinido: [] })
@@ -196,6 +200,21 @@ export function composicaoRenda(
     indefinido,
     fracaoCapital: total > 0 ? capital / total : 0,
   }
+}
+
+/**
+ * A composição da renda de UMA declaração — a porta por onde ela deve sair.
+ *
+ * Existe porque `porPagador` mora dentro da declaração e chamar `composicaoRenda`
+ * direto convida a esquecê-lo: o resultado então não quebra nada, só ignora em
+ * silêncio tudo o que a pessoa respondeu e devolve a leitura antiga com cara de
+ * nova. Uma porta, e ninguém esquece.
+ */
+export function composicaoDoAno(
+  d: { vals: Record<string, number>; porPagador?: RendaPorPagador[] } | undefined,
+  opts: OpcoesOrigem = {},
+): ComposicaoRenda {
+  return composicaoRenda(d?.vals ?? {}, { ...opts, porPagador: d?.porPagador })
 }
 
 // ------------------------------------------------------------- a sugestão

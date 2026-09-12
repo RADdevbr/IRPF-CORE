@@ -20,7 +20,7 @@
 
 import { analisarConsistencia, type Entradas } from '../historico/consistencia.js'
 import { taxaDoPeriodo, ultimoFechamento, NOME_INDICE, type BenchmarksInformados } from './benchmarks.js'
-import { composicaoRenda } from './renda.js'
+import { composicaoDoAno, type OpcoesOrigem } from './renda.js'
 import { chaveAporte, NOME_CLASSE, COMO_VALORA, quedaEhSaida, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from '../historico/historico.js'
 
 export interface AnoCapital {
@@ -32,6 +32,23 @@ export interface AnoCapital {
   renda: number
   /** Parte da renda que veio do capital (dividendos, aplicações, aluguel…). */
   rendaDeCapital: number
+  /**
+   * Parte da renda que veio do trabalho — o dinheiro que entra de FORA da
+   * carteira.
+   *
+   * É esta, e não a renda inteira, que vira poupança na projeção. O dividendo
+   * reinvestido já está dentro do retorno do capital; somá-lo de novo como
+   * aporte conta a mesma entrada duas vezes.
+   */
+  rendaDeTrabalho: number
+  /**
+   * Renda cuja origem ninguém respondeu — não entra em nenhum dos dois lados.
+   *
+   * Distribuí-la por proporção, ou empurrá-la para o lado mais provável, faria
+   * a projeção afirmar o que ninguém mediu. Ela sai marcada, e quem projeta a
+   * transforma em FAIXA: o piso supõe capital, o teto supõe trabalho.
+   */
+  rendaIndefinida: number
   gasto: number
   /** renda − gasto: o que sobrou do seu bolso para virar patrimônio. */
   poupado: number
@@ -57,16 +74,12 @@ export interface AnaliseCapital {
   totalPoupado: number
 }
 
-export function analiseCapital(
-  h: Historico,
-  entradas: Entradas = {},
-  opts: { dividendosSaoTrabalho?: boolean } = {},
-): AnaliseCapital {
+export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: OpcoesOrigem = {}): AnaliseCapital {
   const consistencia = analisarConsistencia(h, entradas)
 
   const anos: AnoCapital[] = consistencia.anos.map((a) => {
     const d = h[String(a.anoBase)]
-    const comp = composicaoRenda(d?.vals ?? {}, opts)
+    const comp = composicaoDoAno(d, opts)
     const renda = a.rendimentos
     const gasto = a.despesas
     const poupado = renda - gasto
@@ -81,6 +94,8 @@ export function analiseCapital(
       crescimento: a.evolucao,
       renda,
       rendaDeCapital: comp.capital,
+      rendaDeTrabalho: comp.trabalho,
+      rendaIndefinida: comp.indefinido,
       gasto,
       poupado,
       embutido,
@@ -104,6 +119,56 @@ export function analiseCapital(
     retornoMedio,
     totalRendimento: anos.reduce((s, a) => s + a.rendimento, 0),
     totalPoupado: anos.reduce((s, a) => s + a.poupado, 0),
+  }
+}
+
+// ------------------------------------------------- o que a carteira distribui
+
+export interface YieldDistribuido {
+  /** Fração do patrimônio que volta como renda de capital no ano. */
+  taxa: number | null
+  /** Os anos que sustentaram a média, para a tela dizer de onde ela saiu. */
+  anos: { anoBase: number; taxa: number }[]
+  /**
+   * Há renda de origem indefinida nos anos medidos — a taxa é PISO.
+   *
+   * O que não foi classificado pode ser capital, e se for, a carteira distribui
+   * mais do que este número diz. Marcar é o que impede a projeção de apresentar
+   * um piso como medida.
+   */
+  piso: boolean
+}
+
+/**
+ * Quanto da carteira volta como renda no ano — e por que isto não é o retorno.
+ *
+ * O retorno (`analiseCapital`) é tudo o que o capital produziu, inclusive o que
+ * ficou dentro dos bens e nunca passou pela conta corrente. O yield distribuído
+ * é só a parte que SAIU: o dividendo creditado, o juro do CDB resgatado, o
+ * aluguel recebido. É a fatia que aparece na declaração como renda.
+ *
+ * Existe porque renda de capital não é uma série que se extrapola sozinha. Ela é
+ * função do patrimônio — carteira maior distribui mais, na mesma proporção —, e
+ * projetá-la por uma taxa de crescimento própria produz o absurdo silencioso de
+ * uma renda de capital que não cabe no patrimônio projetado ao lado dela.
+ *
+ * Os anos que entram são os que sustentam afirmação: patrimônio médio positivo e
+ * período de um ano. Ao contrário do retorno, o gasto informado NÃO é condição —
+ * os dois números desta conta (renda de capital e patrimônio) saem inteiros da
+ * declaração, sem passar pelo que a pessoa digitou.
+ */
+export function yieldDistribuido(analise: AnaliseCapital): YieldDistribuido {
+  const anos = analise.anos
+    .filter((a) => a.anosCobertos === 1 && a.patrimonioInicial + a.patrimonioFinal > 0)
+    .map((a) => ({
+      anoBase: a.anoBase,
+      taxa: a.rendaDeCapital / ((a.patrimonioInicial + a.patrimonioFinal) / 2),
+    }))
+
+  return {
+    taxa: anos.length > 0 ? anos.reduce((s, a) => s + a.taxa, 0) / anos.length : null,
+    anos,
+    piso: analise.anos.some((a) => a.rendaIndefinida > 0),
   }
 }
 
@@ -157,7 +222,7 @@ export function retornoVsIndices(
   h: Historico,
   entradas: Entradas = {},
   benchmarks: BenchmarksInformados = {},
-  opts: { dividendosSaoTrabalho?: boolean } = {},
+  opts: OpcoesOrigem = {},
 ): RetornoVsIndices {
   const analise = analiseCapital(h, entradas, opts)
   const temCdi = ultimoFechamento('cdi', benchmarks) !== null
