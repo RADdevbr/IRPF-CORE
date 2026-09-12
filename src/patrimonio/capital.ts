@@ -49,6 +49,17 @@ export interface AnoCapital {
    * transforma em FAIXA: o piso supõe capital, o teto supõe trabalho.
    */
   rendaIndefinida: number
+  /**
+   * Aluguel recebido no ano — a renda de capital que NÃO acompanha a carteira.
+   *
+   * Sai destacado porque projetá-lo pelo yield produz um absurdo específico: o
+   * imóvel entra na declaração pelo CUSTO de aquisição e nunca é remarcado a
+   * mercado, então `aluguel ÷ patrimônio` tem denominador defasado — e, pior,
+   * amarrar o aluguel ao patrimônio faz o aluguel subir porque você comprou
+   * ação. Ele segue a inflação, e quem projeta precisa saber qual pedaço tirar
+   * de dentro do yield para não contar o mesmo aluguel por duas regras.
+   */
+  aluguel: number
   gasto: number
   /** renda − gasto: o que sobrou do seu bolso para virar patrimônio. */
   poupado: number
@@ -96,6 +107,13 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
       rendaDeCapital: comp.capital,
       rendaDeTrabalho: comp.trabalho,
       rendaIndefinida: comp.indefinido,
+      // Só as fatias de aluguel que ficaram COMO capital: a pessoa que responde
+      // «trabalho» para o pagador de um aluguel (sublocação, ponto comercial) já
+      // tirou aquele valor da perna de capital, e descontá-lo de novo aqui o
+      // subtrairia duas vezes do yield.
+      aluguel: comp.porOrigem.capital
+        .filter((f) => f.chave === 'aluguel')
+        .reduce((t, f) => t + f.valor, 0),
       gasto,
       poupado,
       embutido,
@@ -127,6 +145,18 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
 export interface YieldDistribuido {
   /** Fração do patrimônio que volta como renda de capital no ano. */
   taxa: number | null
+  /**
+   * A parte do yield que ACOMPANHA a carteira — tudo menos o aluguel.
+   *
+   * É esta que projeta, e não `taxa`. O imóvel entra na declaração pelo custo de
+   * aquisição, então o aluguel dividido pelo patrimônio mede uma coisa sem
+   * sentido; e amarrá-lo ao patrimônio faria o aluguel crescer porque a carteira
+   * de ações cresceu. `taxa` continua sendo a MEDIDA — quanto a carteira
+   * devolveu —, e é ela que a tela mostra.
+   */
+  taxaCarteira: number | null
+  /** Aluguel do último ano medido. Projeta por inflação; ver `INFLACAO_LONGO_PRAZO`. */
+  aluguel: number
   /** Os anos que sustentaram a média, para a tela dizer de onde ela saiu. */
   anos: { anoBase: number; taxa: number }[]
   /**
@@ -158,15 +188,26 @@ export interface YieldDistribuido {
  * declaração, sem passar pelo que a pessoa digitou.
  */
 export function yieldDistribuido(analise: AnaliseCapital): YieldDistribuido {
-  const anos = analise.anos
-    .filter((a) => a.anosCobertos === 1 && a.patrimonioInicial + a.patrimonioFinal > 0)
-    .map((a) => ({
-      anoBase: a.anoBase,
-      taxa: a.rendaDeCapital / ((a.patrimonioInicial + a.patrimonioFinal) / 2),
-    }))
+  const medidos = analise.anos.filter(
+    (a) => a.anosCobertos === 1 && a.patrimonioInicial + a.patrimonioFinal > 0,
+  )
+  const medio = (a: AnoCapital) => (a.patrimonioInicial + a.patrimonioFinal) / 2
+  const anos = medidos.map((a) => ({ anoBase: a.anoBase, taxa: a.rendaDeCapital / medio(a) }))
+  // Mesmos anos, mesmo denominador: o que muda é só tirar o aluguel de cima. Com
+  // isso `taxaCarteira × patrimônio + aluguel` devolve a mesma renda de capital
+  // que `taxa × patrimônio` — a decomposição não cria nem perde dinheiro.
+  const semAluguel = medidos.map((a) => (a.rendaDeCapital - a.aluguel) / medio(a))
+  const media = (v: number[]) => (v.length > 0 ? v.reduce((s, x) => s + x, 0) / v.length : null)
 
   return {
-    taxa: anos.length > 0 ? anos.reduce((s, a) => s + a.taxa, 0) / anos.length : null,
+    taxa: media(anos.map((a) => a.taxa)),
+    taxaCarteira: media(semAluguel),
+    // O aluguel do ÚLTIMO ano DECLARADO, e não a média dos anos medidos: ele é
+    // um nível (o contrato vigente), não uma taxa. A média com anos em que o
+    // imóvel ainda não existia projetaria metade do aluguel que entra hoje, e o
+    // recorte dos anos «medidos» é condição para calcular TAXA, não para ler um
+    // nível — o último ano é de onde a projeção parte, medido ou não.
+    aluguel: analise.anos[analise.anos.length - 1]?.aluguel ?? 0,
     anos,
     piso: analise.anos.some((a) => a.rendaIndefinida > 0),
   }

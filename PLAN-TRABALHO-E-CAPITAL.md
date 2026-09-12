@@ -1,6 +1,6 @@
 # Plano — Separar renda de trabalho de renda de capital
 
-> Estado: **fases 1 a 5 feitas**; a 6 em aberto. A 4 passou na frente da
+> Estado: **as seis fases feitas**. A 4 passou na frente da
 > 3 porque é ela que conserta número errado, e porque o booleano antigo cobria a
 > classificação enquanto a tela de responder não existia. Escrito antes do trabalho
 > começar e deixado como estava, com o resultado anotado no fim de cada fase,
@@ -203,7 +203,7 @@ chutado.
 | 3 | ✅ A tela de responder | IRPF-calc | é onde mora a correção manual, por decisão de fronteira |
 | 4 | ✅ **Projeção em duas pernas** | IRPF-CORE + networthcontrol | corrige RT-04, que é número errado com cara de certo |
 | 5 | ✅ Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
-| 6 | Base do IRPFM por fonte | IRPFM-2027 **e networthcontrol** | mesma correção, no número mais consequente |
+| 6 | ✅ Base do IRPFM por fonte | IRPFM-2027 **e networthcontrol** | mesma correção, no número mais consequente |
 
 A fase 4 é a que justifica o lote. As outras cinco melhoram a leitura; a 4 conserta
 um patrimônio projetado meio milhão acima do que a premissa diz.
@@ -568,7 +568,7 @@ gasto desenhava a linha do gasto no zero nos anos sem custo de vida informado �
 afirmando que a pessoa não gastou nada, que é o erro que aquele módulo existe
 para pegar. A linha passou a ter buraco, e a legenda diz o que o buraco é.
 
-## Fase 6 — Base do IRPFM por fonte
+## Fase 6 — Base do IRPFM por fonte — ✅ FEITO
 
 **Muda** `IRPFM-2027`. A base deixa de ser extrapolada em bloco e passa a ser a
 soma das fontes projetadas, cada uma pela sua regra: pró-labore pela taxa do
@@ -588,6 +588,96 @@ Dois encaixes que já estão prontos e hoje não conversam:
 - o comparador de holding é, do começo ao fim, sobre renda de trabalho vestida de
   dividendo. Com a classificação por pagador ele para de perguntar `nPJ` — ele
   sabe quais são.
+
+### O que saiu
+
+**A fase são duas correções do mesmo erro, em escalas de tempo diferentes**, e
+só isso ficou claro escrevendo o código. O networthcontrol projeta a base por
+ANOS (`base × (1 + taxaBase)`); o IRPFM-2027 projeta o ano corrente por MESES
+(`baseRealizada ÷ mesRef`). As duas são a taxa de uma mistura aplicada à
+mistura, e as duas erram pelo mesmo motivo.
+
+**A magnitude, medida contra a implementação e não à mão.** Com pró-labore de
+400 mil, lucro da própria PJ de 400 mil, provento de papel listado de 72 mil,
+aluguel de 60 mil, CDB de 38 mil e uma venda de 180 mil no último ano:
+
+| Ano | Base pela taxa da mistura | Base ficha a ficha | Diferença |
+|---|---|---|---|
+| 2026 | 1.364.646 | 1.279.448 | −85.199 |
+| 2028 | 1.921.608 | 1.624.206 | −297.401 |
+| 2030 | **2.705.885** | **2.079.667** | **−626.218** |
+
+A taxa da mistura dava 18,66% ao ano. A carreira desta pessoa cresce 12,63% e a
+carteira devolve 8,38% — e era a carteira, composta e maior, que vinha puxando
+o pró-labore para cima. Acima de R$ 1,2 milhão a alíquota trava em 10%, então os
+626 mil de base inventada eram **R$ 62,6 mil por ano de imposto que não existe**,
+no gráfico que a pessoa usa para decidir sobre holding.
+
+**Quatro regras, e cada uma por um motivo diferente** (`regraDaFatia`):
+
+| Ficha | Regra | Por quê |
+|---|---|---|
+| `salario` | carreira | é trabalho por definição; nenhum pagador muda isso |
+| `divBR`, `exterior`, `outros` | **a resposta da fase 3** | a mesma ficha vira duas fatias com regras opostas |
+| `cdb` | carteira | fração do patrimônio, medida |
+| `aluguel` | inflação | ⟨confirmar⟩ 3, abaixo |
+| `bolsa` | repete | evento, não série |
+
+**O aluguel obrigou a mexer na fase 4, e isso não estava previsto.** ⟨confirmar⟩
+3 se respondeu sozinho quando as duas contas ficaram lado a lado: se a base
+projeta o aluguel por inflação e `projetarRenda` o projeta dentro do yield, o
+mesmo aluguel cresce por duas regras na mesma tela — que é exatamente o achado
+da fase 4 acontecendo de novo. `yieldDistribuido` ganhou `taxaCarteira` (o yield
+sem o aluguel) e `aluguel` (o nível do último ano), e as duas contas passaram a
+consumir a decomposição. `taxa` continua sendo o total, porque ela é a MEDIDA do
+que a carteira devolveu, e é ela que a tela mostra.
+
+**A faixa quase morreu, e foi o rentista que mostrou.** A faixa do PAT-05 saía
+das três leituras do histórico da BASE. Sem base extrapolada, as leituras passam
+a ser da renda de TRABALHO — e quem já vive de dividendos não tem renda de
+trabalho nenhuma: a faixa colapsava, e a base saía como linha dura justamente
+para quem o PAT-05 existe para proteger. A terceira fonte de incerteza entrou
+por isso, e ela é melhor do que a que havia: **as duas pontas do yield medido**
+(`FaixaBase.yieldMedido`). Não é uma leitura inventada, é a dispersão observada —
+uma carteira que devolveu 3,1% num ano e 4,8% noutro tem essa distância como
+incerteza de fato. Antes as duas dispersões vinham misturadas numa taxa só;
+agora cada uma é medida na série que lhe cabe.
+
+**O campo «Base do IRPFM» saiu da tela**, e pelo mesmo motivo que a renda de
+capital nunca teve campo: não é premissa, é consequência. Ele tinha nascido na
+fase 4, quando o campo «Renda» virou dois. Durou um lote.
+
+**No IRPFM-2027, a contradição estava no mesmo cartão.** A barra mostrava a
+projeção de fechamento por fonte — que o app já fazia certo — e, na linha de
+baixo, o mês do cruzamento tirado de `baseRealizada ÷ mesRef`. Uma podia dizer
+«fecha em 900 mil» e a outra «não cruza os 600 mil este ano». Agora as duas saem
+do mesmo caminho (`Resumo.caminhoBase`, 12 meses acumulados), e há teste fixando
+`caminhoBase[11] === calc.base` — o caminho não pode virar uma segunda conta.
+
+O caminho respeita o que o app já sabia e jogava fora no último passo: o mês em
+que a venda de bolsa aconteceu, o calendário da grade de dividendos, o mês em
+que cada papel da carteira entrou. Dentro de um período lançado (semestre,
+trimestre) o valor é dividido por igual — premissa, não medida, e dita no
+comentário: quem escolheu granularidade semestral disse que não tem o detalhe.
+
+**Os dois encaixes entraram, os dois como sugestão.** O pacote da base já
+carregava `proventos` por pagador e por mês desde antes, e o IRPFM-2027
+simplesmente ignorava o campo. Agora ele preenche as COLUNAS da grade — e só as
+colunas: as células são do ano passado, e lançá-las como realizadas deste ano
+seria afirmar dividendo que ninguém recebeu. O `nPJ` do comparador de holding
+virou um botão de um clique ao lado do campo, no mesmo formato do «usar
+projeção» que já existia ali.
+
+**Um defeito de React encontrado de passagem** e corrigido: `ScenarioCard`
+montava as linhas extras sem `key`. Pré-existente, no arquivo que a fase já
+estava tocando, e é o mesmo defeito que a fase 3 pegou na legenda.
+
+**E o que só a tela mostrou**, outra vez: com a ficha dividida, a lista de regras
+rotulava «Lucros e dividendos · trabalho» e, logo abaixo, «Lucros e dividendos»
+— a metade de capital saía sem rótulo, e quem lia não tinha como saber o que era
+a segunda linha. E o texto do cruzamento anunciava «no ritmo projetado, a base
+cruza R$ 600 mil em 2022», falando de um ano que já passou como se fosse
+previsão. Os dois só apareceram abrindo o app com histórico dentro.
 
 ---
 
@@ -625,10 +715,22 @@ que cai meio milhão sem explicação lê-se como bug.
 1. **Lucro da própria PJ é trabalho ou capital?** Não tem resposta única — depende
    de a pessoa trabalhar na empresa ou só ser sócia dela. Por isso é pergunta, e
    por isso a resposta é por pagador. O app não escolhe.
-2. **Yield distribuído: média dos anos medidos ou o do último ano?** Começar pela
-   média dos mesmos anos que `retornoMedio` já aceita.
-3. **Aluguel projeta por inflação ou pelo patrimônio?** É renda de capital, mas o
-   imóvel não é remarcado a mercado na declaração, então o yield sai errado.
-   Provavelmente inflação, com a premissa à vista.
-4. **JCP entra como capital sempre?** Hoje cai em `outros`, que é `indefinido`.
-   Quando vem da própria PJ, é a mesma pergunta 1.
+2. **Yield distribuído: média dos anos medidos ou o do último ano?**
+   **Respondido: média**, dos mesmos anos que `retornoMedio` aceita — com uma
+   diferença que a fase 4 encontrou e vale registrar: o gasto informado NÃO é
+   condição aqui, porque os dois números desta conta saem inteiros da declaração.
+   A fase 6 acrescentou a dispersão: a média projeta, e as duas pontas dos anos
+   medidos desenham a faixa.
+3. **Aluguel projeta por inflação ou pelo patrimônio?**
+   **Respondido: inflação**, e não por preferência — por obrigação de coerência.
+   Com as duas contas lado a lado (a base e a renda de capital), deixá-lo dentro
+   do yield fazia o mesmo aluguel crescer por duas regras na mesma tela. A
+   premissa fica à vista, com o motivo: o imóvel entra pelo custo de aquisição e
+   nunca é remarcado, então amarrá-lo ao patrimônio faz o aluguel subir porque
+   você comprou ação.
+4. **JCP entra como capital sempre?** Continua **em aberto**, e a fase 6 mostrou
+   por quê: no IRPFM-2027 o JCP já tem lugar próprio (`DivPJ.jcp`, fora do
+   gatilho mensal do Art. 6º-A, com os 15% dele); no histórico ele cai em
+   `outros`, que é `indefinido` e portanto pergunta. As duas leituras convivem
+   sem se contradizer, e resolver isto é ligar o pagador do JCP ao mesmo id —
+   trabalho de outro lote, não desta separação.
