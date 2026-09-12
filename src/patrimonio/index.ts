@@ -11,3 +11,4 @@
 export * from './capital.js'
 export * from './benchmarks.js'
 export * from './renda.js'
+export * from './baseFutura.js'
