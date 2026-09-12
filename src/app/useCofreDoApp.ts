@@ -24,7 +24,7 @@
 // montado e uma função que espalha um estado lido de fora nos setters do app.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { decifrarCofre } from '../cofre/crypto'
+import { decifrarCofre, type CofreCompleto } from '../cofre/crypto'
 import {
   dekLembrada,
   esquecerDek,
@@ -73,6 +73,16 @@ export interface CofreDoApp {
   sincronizarAgora: () => void
   /** Chame quando o `VaultGate` terminar de criar ou destravar. */
   aoAbrirCofre: (dek: Uint8Array, dados: unknown) => void
+  /**
+   * Chame com o que a tela de conta trouxe do servidor (`ContaSync.onBaixado`).
+   *
+   * `mesmoCofre` diz se dá para reaproveitar a chave desta sessão — mas não é
+   * palavra final: mesmo com ela `true`, tentamos decifrar antes de aceitar.
+   * Seguir com a sessão aberta sobre um conteúdo que a chave não abre deixaria o
+   * autosave re-cifrar o estado da TELA por cima do que acabou de ser trazido, e
+   * o que veio da conta sumiria sem ninguém ver.
+   */
+  aoBaixarCofre: (novo: CofreCompleto, mesmoCofre: boolean) => void
   /** Tranca à mão (o botão «trancar»); o auto-lock faz o mesmo sozinho. */
   travar: () => void
   /** Chame depois de apagar ou trocar o cofre por fora. */
@@ -152,6 +162,26 @@ export function useCofreDoApp<T extends EstadoVersionado>(o: OpcoesCofre<T>): Co
     if (dados !== null && dados !== undefined) aplicarRef.current(dados as T)
     prontoParaSalvar.current = true
   }, [])
+
+  const aoBaixarCofre = useCallback(
+    (novo: CofreCompleto, mesmoCofre: boolean) => {
+      gravarCofre(novo)
+      if (mesmoCofre && dek) {
+        decifrarCofre<T>(dek, novo.cofre)
+          .then((d) => {
+            aplicarRef.current(d)
+            flash('Cofre atualizado com a versão da conta.')
+          })
+          .catch(travar)
+        return
+      }
+      // Cofre diferente: a chave desta sessão não serve. Trancar deixa o
+      // destravar — que confere de verdade — dizer o que está errado, em vez de
+      // o app seguir gravando com uma chave que não abre o que está em disco.
+      travar()
+    },
+    [dek, flash, travar],
+  )
 
   const setVisita = useCallback((v: boolean) => {
     setVisitaState(v)
@@ -344,6 +374,7 @@ export function useCofreDoApp<T extends EstadoVersionado>(o: OpcoesCofre<T>): Co
       detalheSync,
       sincronizarAgora: () => void sincronizarAgora(),
       aoAbrirCofre,
+      aoBaixarCofre,
       travar,
       reavaliarCofre,
       msg,
@@ -363,6 +394,7 @@ export function useCofreDoApp<T extends EstadoVersionado>(o: OpcoesCofre<T>): Co
       detalheSync,
       sincronizarAgora,
       aoAbrirCofre,
+      aoBaixarCofre,
       travar,
       reavaliarCofre,
       msg,
