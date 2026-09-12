@@ -9,7 +9,14 @@ import {
   PISO_RELEVANCIA,
   type Entradas,
 } from './consistencia.js'
-import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico.js'
+import {
+  montarDeclaracao,
+  upsertDeclaracao,
+  oQueFaltaNaLeitura,
+  GANHOS_DA_LEITURA,
+  LEITURA_ATUAL,
+  type Historico,
+} from './historico.js'
 import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser.js'
 
 const pag = (codigo: string, beneficiario: string, valor: number): Pagamento => ({
@@ -542,5 +549,24 @@ describe('pagamentos que o próprio arquivo declara', () => {
     const a = analisarConsistencia(h).anos[0]
     expect(a.leituraAntiga).toBe(false)
     expect(analisarConsistencia(h).faltando.join(' ')).not.toMatch(/reimportar/)
+  })
+})
+
+describe('o que falta a um ano lido por versão antiga', () => {
+  it('lista só o que veio DEPOIS da versão que leu o ano', () => {
+    expect(oQueFaltaNaLeitura(3)).toEqual([GANHOS_DA_LEITURA[4]])
+    expect(oQueFaltaNaLeitura(2)).toEqual([GANHOS_DA_LEITURA[3], GANHOS_DA_LEITURA[4]])
+  })
+
+  it('ano sem carimbo é o mais antigo de todos, e falta tudo', () => {
+    expect(oQueFaltaNaLeitura(undefined)).toHaveLength(Object.keys(GANHOS_DA_LEITURA).length)
+  })
+
+  it('ano lido pela versão atual não tem o que reimportar', () => {
+    expect(oQueFaltaNaLeitura(LEITURA_ATUAL)).toEqual([])
+  })
+
+  it('toda versão até a atual tem o seu texto — senão o aviso sai mudo', () => {
+    for (let v = 2; v <= LEITURA_ATUAL; v++) expect(GANHOS_DA_LEITURA[v]).toBeTruthy()
   })
 })

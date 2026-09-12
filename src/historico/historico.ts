@@ -7,7 +7,7 @@
 
 import type { DecResult, Lancamento, Pagamento } from '../dec/decParser.js'
 import { sugerirCategoria } from '../fiscal/deducoes.js'
-import { FIELDS } from '../fiscal/fontes.js'
+import { FIELDS, ehImpostoRetido } from '../fiscal/fontes.js'
 
 /** O que acontece com a base do IRPFM quando este bem vira dinheiro. */
 export type Regime = 'inBase' | 'foraBase' | 'depende'
@@ -46,8 +46,57 @@ export interface Diagnostico {
  * 1 (ou ausente) — antes dos pagamentos (Registro 26)
  * 2 — pagamentos efetuados
  * 3 — rendimentos isentos e não tributáveis somados como renda
+ * 4 — renda por PAGADOR dentro de cada fonte (ver `porPagador`)
  */
-export const LEITURA_ATUAL = 3
+export const LEITURA_ATUAL = 4
+
+/**
+ * O que cada versão do leitor passou a extrair, em uma frase.
+ *
+ * Existe porque o aviso de «reimporte este ano» precisa dizer o QUE falta, e a
+ * resposta depende de quando o ano foi lido. Enquanto a lista estava escrita na
+ * tela, subir `LEITURA_ATUAL` fazia o aviso aparecer com o motivo errado — ele
+ * mandava procurar os rendimentos isentos num ano que já os tinha. Um motivo
+ * errado é pior do que nenhum: manda a pessoa atrás de um número que está lá.
+ */
+export const GANHOS_DA_LEITURA: Record<number, string> = {
+  2: 'os pagamentos efetuados (plano de saúde, previdência)',
+  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII',
+  4: 'a renda por fonte pagadora, que separa o que é trabalho do que é capital',
+}
+
+/** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
+export function oQueFaltaNaLeitura(versao: number | undefined): string[] {
+  const lida = versao ?? 1
+  return Object.entries(GANHOS_DA_LEITURA)
+    .filter(([v]) => Number(v) > lida)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([, texto]) => texto)
+}
+
+/**
+ * Quem pagou. A identidade estável de uma fonte pagadora entre anos e fichas.
+ *
+ * O CNPJ manda quando existe, porque é ele que não muda: a mesma companhia
+ * aparece como «CIA XPTO S/A» num ano e «CIA XPTO SA» no outro, e duas grafias
+ * viriam como dois pagadores — cada um pedindo a mesma resposta de novo. Onde
+ * não há CNPJ (o Registro 84 nem sempre traz), sobra o nome normalizado, com a
+ * mesma receita da identidade dos bens.
+ */
+export interface Pagador {
+  /** `cnpj:<14 dígitos>` ou `nome:<normalizado>`. */
+  id: string
+  nome: string
+  cnpj?: string
+}
+
+/** Quanto um pagador pagou dentro de uma fonte, num ano. */
+export interface RendaPorPagador {
+  /** A chave da ficha, em `fiscal/fontes.ts` — `salario`, `divBR`, `cdb`… */
+  alvo: string
+  pagador: Pagador
+  valor: number
+}
 
 export interface Declaracao {
   diagnostico: Diagnostico
@@ -68,6 +117,22 @@ export interface Declaracao {
    * abrindo o app, com a lista vazia até reimportar o .DEC.
    */
   pagamentos?: Pagamento[]
+  /**
+   * Renda por pagador, dentro de cada fonte. Ausente = leitura anterior à 4.
+   *
+   * `vals` continua sendo o total por fonte e continua sendo o que o resto da
+   * família lê; isto entra ao lado, derivado dos mesmos lançamentos.
+   *
+   * Existe porque a origem da renda — trabalho ou capital — é propriedade do
+   * PAGADOR, não da ficha. Dividendo pode ser o lucro da própria empresa ou o
+   * provento de um ETF, e a ficha é a mesma nos dois casos: sem saber quem
+   * pagou, a separação vira um botão que acerta metade das pessoas.
+   *
+   * Não cobre a fonte inteira, e não tem como cobrir: o Registro 22 (exterior e
+   * carnê-leão) não traz fonte pagadora nenhuma. A soma daqui é sempre MENOR OU
+   * IGUAL a `vals[alvo]`, e quem lê atribui a diferença ao padrão da ficha.
+   */
+  porPagador?: RendaPorPagador[]
   /** Soma das fontes que entram na base do imposto mínimo, naquele ano. */
   base: number
   /**
@@ -352,15 +417,80 @@ export function somaPorAlvo(lancamentos: Lancamento[]): Record<string, number> {
   return vals
 }
 
-/** Identidade estável da posição entre anos: classe + descrição normalizada. */
-export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
-  const norm = descricao
+/**
+ * Texto virando chave: maiúsculas, só letras e dígitos, espaço único, 60 chars.
+ *
+ * Um lugar só porque duas identidades dependem dela — a do bem e a do pagador —
+ * e receitas que divergem quebram o casamento entre anos justamente onde ele
+ * mais importa: o produto que o banco renomeou.
+ */
+function normalizar(texto: string): string {
+  return texto
     .toUpperCase()
     .replace(/[^A-Z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 60)
-  return `${classe}:${norm}`
+}
+
+/** Identidade estável da posição entre anos: classe + descrição normalizada. */
+export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
+  return `${classe}:${normalizar(descricao)}`
+}
+
+/**
+ * Identidade estável do pagador. Vazio quando o registro não identifica ninguém.
+ *
+ * Zeros não são CNPJ: o campo vem preenchido com `00000000000000` em registro
+ * que não tem fonte, e aceitá-lo juntaria num pagador só todo mundo que não tem
+ * pagador — que é o pior desfecho possível aqui, porque uma resposta erraria
+ * várias fichas de uma vez. Os zeros à ESQUERDA, esses ficam: fazem parte do
+ * número.
+ */
+export function idPagador(nome: string, cnpj?: string): string {
+  const digitos = (cnpj ?? '').replace(/\D/g, '')
+  if (digitos.length === 14 && !/^0+$/.test(digitos)) return `cnpj:${digitos}`
+  const norm = normalizar(nome ?? '')
+  return norm ? `nome:${norm}` : ''
+}
+
+/**
+ * Os lançamentos agrupados por ficha e pagador — a segunda saída do import.
+ *
+ * Três coisas ficam de fora, e cada uma por um motivo diferente:
+ *
+ *   · as chaves `*_ir`, que são imposto retido e não renda (`ehImpostoRetido`);
+ *   · o lançamento sem fonte identificada — o Registro 22 não traz nenhuma, e
+ *     inventar um pagador «não identificado» daria à pessoa uma linha para
+ *     responder sobre algo que ela não tem como reconhecer. Ele continua inteiro
+ *     em `vals`, e quem lê atribui a diferença ao padrão da ficha;
+ *   · o valor zero ou negativo, que não é renda recebida.
+ *
+ * O mesmo pagador em duas fichas vira duas linhas, e isso é de propósito: o
+ * banco que paga CDB e LCI aparece nas duas, e a resposta sobre ele vale para as
+ * duas porque a chave da resposta é o pagador, não a linha.
+ */
+export function rendaPorPagador(lancamentos: Lancamento[]): RendaPorPagador[] {
+  const acc = new Map<string, RendaPorPagador>()
+  for (const l of lancamentos) {
+    if (!l.alvo || ehImpostoRetido(l.alvo) || l.valor <= 0) continue
+    const id = idPagador(l.fonte, l.cnpj)
+    if (!id) continue
+    const chave = `${l.alvo}\u0000${id}`
+    const atual = acc.get(chave)
+    if (atual) {
+      atual.valor += l.valor
+      // o nome vazio de um lançamento não apaga o que outro trouxe
+      if (!atual.pagador.nome && l.fonte.trim()) atual.pagador.nome = l.fonte.trim()
+      continue
+    }
+    acc.set(chave, {
+      alvo: l.alvo,
+      pagador: { id, nome: l.fonte.trim(), ...(id.startsWith('cnpj:') ? { cnpj: id.slice(5) } : {}) },
+      valor: l.valor,
+    })
+  }
+  return [...acc.values()].sort((a, b) => b.valor - a.valor)
 }
 
 /**
@@ -375,6 +505,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
   if (!Number.isFinite(exercicio)) return null
 
   const vals = somaPorAlvo(dec.lancamentos)
+  const porPagador = rendaPorPagador(dec.lancamentos)
   const base = FIELDS.filter((f) => f.base).reduce((s, f) => s + (vals[f.key] || 0), 0)
 
   const posicoes: PosicaoAno[] = dec.posicoes
@@ -409,6 +540,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     arquivo,
     importadoEm: agora,
     vals,
+    porPagador,
     ndep: dec.ndep,
     posicoes,
     base,
