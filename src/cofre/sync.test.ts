@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { decidirSync, unirWraps, paraDoc, deDoc } from './sync'
-import type { Wrap, CofreCompleto } from './crypto'
+import { decidirSync, unirWraps, paraDoc, deDoc } from './sync.js'
+import type { Wrap, CofreCompleto } from './crypto.js'
 
 const wrap = (id: string, criadoEm = '2026-01-01T00:00:00.000Z'): Wrap => ({
   wrapId: id,

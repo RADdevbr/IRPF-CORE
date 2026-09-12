@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { C } from '../ui/theme'
-import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado, lerCofre } from './vault'
-import { apagarTudoDesteAparelho } from '../app/persistencia'
-import { prefixoApp } from '../app/config'
-import { PasskeyDoctor } from './PasskeyDoctor'
-import { gerarCodigoRecuperacao, type Wrap } from './crypto'
-import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey, dominioDaPasskey } from './passkey'
-import { rotuloDispositivo, deOutroAparelho } from './dispositivo'
+import { C } from '../ui/theme.js'
+import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado, lerCofre } from './vault.js'
+import { apagarTudoDesteAparelho } from '../app/persistencia.js'
+import { prefixoApp } from '../app/config.js'
+import { PasskeyDoctor } from './PasskeyDoctor.js'
+import { gerarCodigoRecuperacao, type Wrap } from './crypto.js'
+import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey, dominioDaPasskey } from './passkey.js'
+import { rotuloDispositivo, deOutroAparelho } from './dispositivo.js'
 
 // Telas A1–A3 dos mocks: criar o cofre e destravá-lo. O caminho padrão é a
 // passkey (biometria); senha e chave de recuperação são as alternativas.

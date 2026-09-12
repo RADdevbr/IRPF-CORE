@@ -14,7 +14,7 @@
 // ano. Os parâmetros (base isenta, base de alíquota cheia, alíquota máxima) já
 // moram em `params.ts`, então a conta que os lê mora ao lado.
 
-import { parametros, type ParametrosAno } from './params'
+import { parametros, type ParametrosAno } from './params.js'
 
 const PADRAO = parametros()
 

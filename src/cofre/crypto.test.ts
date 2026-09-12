@@ -12,7 +12,7 @@ import {
   gerarDek,
   type Argon2Params,
   type CofreCompleto,
-} from './crypto'
+} from './crypto.js'
 
 // Argon2id leve só para os testes — produção usa ARGON2_PADRAO (64 MiB, t=3).
 const LEVE: Argon2Params = { m: 8192, t: 1, p: 1 }

@@ -15,12 +15,12 @@ import {
   apagarTudoDesteAparelho,
   modoVisita,
   setModoVisita,
-} from './armazenamento'
-import { prefixoApp } from './config'
-import { criarPersistencia } from './persistencia'
-import { gravarCofre, lerCofre, lembrarDek, dekLembrada, gravarEstadoSync, lerEstadoSync } from '../cofre/vault'
-import { lembrarConta, contaLembrada, esquecerConta } from '../cofre/sessaoLembrada'
-import type { CofreCompleto } from '../cofre/crypto'
+} from './armazenamento.js'
+import { prefixoApp } from './config.js'
+import { criarPersistencia } from './persistencia.js'
+import { gravarCofre, lerCofre, lembrarDek, dekLembrada, gravarEstadoSync, lerEstadoSync } from '../cofre/vault.js'
+import { lembrarConta, contaLembrada, esquecerConta } from '../cofre/sessaoLembrada.js'
+import type { CofreCompleto } from '../cofre/crypto.js'
 
 // O núcleo não conhece o formato de estado de app nenhum — ver `persistencia.ts`.
 // Para este teste basta um objeto qualquer que atravesse a porta.

@@ -5,9 +5,9 @@
 // cresceu, se a lei nova teria pegado os anos passados, e — o ponto do pedido —
 // QUANTO do patrimônio, se resgatado, joga rendimento na base do IRPFM.
 
-import type { DecResult, Lancamento, Pagamento } from '../dec/decParser'
-import { sugerirCategoria } from '../fiscal/deducoes'
-import { FIELDS } from '../fiscal/fontes'
+import type { DecResult, Lancamento, Pagamento } from '../dec/decParser.js'
+import { sugerirCategoria } from '../fiscal/deducoes.js'
+import { FIELDS } from '../fiscal/fontes.js'
 
 /** O que acontece com a base do IRPFM quando este bem vira dinheiro. */
 export type Regime = 'inBase' | 'foraBase' | 'depende'

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal } from './capital'
-import { composicaoRenda } from './renda'
-import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
-import { montarDeclaracao, upsertDeclaracao, type Historico } from '../historico/historico'
-import type { DecResult, Lancamento, Posicao } from '../dec/decParser'
+import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal } from './capital.js'
+import { composicaoRenda } from './renda.js'
+import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks.js'
+import { montarDeclaracao, upsertDeclaracao, type Historico } from '../historico/historico.js'
+import type { DecResult, Lancamento, Posicao } from '../dec/decParser.js'
 
 const lanc = (alvo: string, valor: number): Lancamento => ({
   linha: 1,

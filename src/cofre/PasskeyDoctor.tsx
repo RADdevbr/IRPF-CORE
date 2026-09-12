@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { C } from '../ui/theme'
-import { diagnosticarPasskey, type Diagnostico } from './passkey'
-import { lembrarSuportePrf } from './vault'
+import { C } from '../ui/theme.js'
+import { diagnosticarPasskey, type Diagnostico } from './passkey.js'
+import { lembrarSuportePrf } from './vault.js'
 
 // Tabela de compatibilidade não resolve: o suporte à extensão PRF varia por
 // navegador, sistema e autenticador. Este painel mede no aparelho de quem está

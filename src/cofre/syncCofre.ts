@@ -2,7 +2,7 @@
 // Não conhece Supabase nem React: dá para exercitar o fluxo inteiro com um
 // servidor falso, que é como os testes cobrem conflito e cofres divergentes.
 
-import type { CofreCompleto, Wrap } from './crypto'
+import type { CofreCompleto, Wrap } from './crypto.js'
 import {
   decidirSync,
   deDoc,
@@ -15,7 +15,7 @@ import {
   type EstadoSync,
   type Remoto,
   type ResumoRemoto,
-} from './sync'
+} from './sync.js'
 
 export interface ResultadoSync {
   acao: Decisao['acao'] | 'adotar-chave'

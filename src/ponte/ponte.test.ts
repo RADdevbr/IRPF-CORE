@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { lerPacote, novoPacoteHistorico, novoPacoteBaseline, nomeDoArquivo, PACOTE_VERSAO } from './ponte'
+import { lerPacote, novoPacoteHistorico, novoPacoteBaseline, nomeDoArquivo, PACOTE_VERSAO } from './ponte.js'
 
 const AGORA = '2026-09-12T10:00:00.000Z'
 

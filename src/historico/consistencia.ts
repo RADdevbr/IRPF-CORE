@@ -19,7 +19,7 @@
 //    parece crescimento que a renda não cobre. Por isso dívidas são informadas
 //    à mão, por ano, e o app avisa quando não foram.
 
-import { LEITURA_ATUAL, type Historico } from './historico'
+import { LEITURA_ATUAL, type Historico } from './historico.js'
 
 /** O que só a pessoa sabe — o arquivo não conta. */
 export interface EntradaAno {

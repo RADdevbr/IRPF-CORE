@@ -5,10 +5,10 @@ import {
   defDeducoes,
   LINHAS_DEDUCAO,
   type DeducoesLegais,
-} from './declaracao'
-import { parametros } from './params'
-import { calcINSS, calcIRRF } from './tabela'
-import { FIELDS } from './fontes'
+} from './declaracao.js'
+import { parametros } from './params.js'
+import { calcINSS, calcIRRF } from './tabela.js'
+import { FIELDS } from './fontes.js'
 
 const par = parametros()
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDec, censo, censoDe, pareceTexto, leituraDe, LEITURA } from './decParser'
+import { parseDec, censo, censoDe, pareceTexto, leituraDe, LEITURA } from './decParser.js'
 
 // Constrói uma linha de largura fixa por posição (1-indexado inclusivo).
 function put(base: string[], ini: number, s: string, len: number): void {

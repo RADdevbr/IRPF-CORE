@@ -17,8 +17,8 @@
 // resto do app, com os limites declarados em `params.ts` e o modelo escolhido
 // visível na tela.
 
-import { parametros, type FaixaIRRF, type ParametrosAno } from './params'
-import { calcIRRF, aplicaReducao } from './tabela'
+import { parametros, type FaixaIRRF, type ParametrosAno } from './params.js'
+import { calcIRRF, aplicaReducao } from './tabela.js'
 
 /**
  * As deduções legais, no ano, como a pessoa informa.

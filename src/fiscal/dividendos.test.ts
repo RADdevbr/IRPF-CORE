@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { defDivGrid, divProjection, type DivGrid } from './dividendos'
+import { defDivGrid, divProjection, type DivGrid } from './dividendos.js'
 
 describe('divProjection — grade [mês × CNPJ] e gatilho de 50k', () => {
   const grid = (over: Partial<DivGrid>): DivGrid => ({ ...defDivGrid(), mode: 'ytd', ...over })

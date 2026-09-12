@@ -27,8 +27,8 @@ import {
   COMO_VALORA,
   segueMercado,
   pgblAportado,
-} from './historico'
-import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser'
+} from './historico.js'
+import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser.js'
 
 const lanc = (alvo: string, valor: number): Lancamento => ({
   linha: 1,

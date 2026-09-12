@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { C } from '../ui/theme'
-import { fmt } from '../ui/format'
-import { candidatosPara, LIMIAR, type Candidato } from './vinculoAuto'
-import { resolverCadeias, serieDaPosicao, type Historico as Hist, type PosicaoAno, type Vinculos } from './historico'
+import { C } from '../ui/theme.js'
+import { fmt } from '../ui/format.js'
+import { candidatosPara, LIMIAR, type Candidato } from './vinculoAuto.js'
+import { resolverCadeias, serieDaPosicao, type Historico as Hist, type PosicaoAno, type Vinculos } from './historico.js'
 
 // Ligar o mesmo bem entre anos, do lado de quem tem de conferir.
 //

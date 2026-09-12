@@ -6,8 +6,8 @@ import {
   totalIndefinido,
   chavePagamento,
   type CategoriaDeducao,
-} from './deducoes'
-import type { Pagamento } from '../dec/decParser'
+} from './deducoes.js'
+import type { Pagamento } from '../dec/decParser.js'
 
 const pag = (over: Partial<Pagamento>): Pagamento => ({
   linha: 1,

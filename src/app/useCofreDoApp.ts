@@ -24,7 +24,7 @@
 // montado e uma função que espalha um estado lido de fora nos setters do app.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { decifrarCofre, type CofreCompleto } from '../cofre/crypto'
+import { decifrarCofre, type CofreCompleto } from '../cofre/crypto.js'
 import {
   dekLembrada,
   esquecerDek,
@@ -36,13 +36,13 @@ import {
   lerEstadoSync,
   marcarSujo,
   salvarCifrado,
-} from '../cofre/vault'
-import { supabaseConfigurado } from '../cofre/config'
-import { contaLembrada, esquecerConta } from '../cofre/sessaoLembrada'
-import { docEstadoApp } from './config'
-import { modoVisita } from './armazenamento'
-import type { EstadoVersionado, Persistencia } from './persistencia'
-import { registrarSw } from '../pwa/sw'
+} from '../cofre/vault.js'
+import { supabaseConfigurado } from '../cofre/config.js'
+import { contaLembrada, esquecerConta } from '../cofre/sessaoLembrada.js'
+import { docEstadoApp } from './config.js'
+import { modoVisita } from './armazenamento.js'
+import type { EstadoVersionado, Persistencia } from './persistencia.js'
+import { registrarSw } from '../pwa/sw.js'
 
 /** Quanto tempo sem interação até a chave sair da memória. */
 const AUTO_LOCK_MS = 15 * 60 * 1000
@@ -266,8 +266,8 @@ export function useCofreDoApp<T extends EstadoVersionado>(o: OpcoesCofre<T>): Co
     }
     try {
       const [{ remotoSupabase }, { sincronizar }] = await Promise.all([
-        import('../cofre/conta'),
-        import('../cofre/syncCofre'),
+        import('../cofre/conta.js'),
+        import('../cofre/syncCofre.js'),
       ])
       const r = remotoSupabase()
       if (!(await r.usuario())) {
@@ -333,7 +333,7 @@ export function useCofreDoApp<T extends EstadoVersionado>(o: OpcoesCofre<T>): Co
           ),
         ),
       ])
-    import('../cofre/conta')
+    import('../cofre/conta.js')
       .then(({ remotoSupabase }) => comLimite(remotoSupabase().usuario()))
       .then((u) => {
         if (!vivo) return

@@ -1,5 +1,5 @@
 // O arquivo .DEC da declaração de IRPF: leitor posicional e anonimizador.
-export * from './decParser'
-export * from './anonimizar'
-export { Analisador } from './Analisador'
-export { Anonimizador } from './Anonimizador'
+export * from './decParser.js'
+export * from './anonimizar.js'
+export { Analisador } from './Analisador.js'
+export { Anonimizador } from './Anonimizador.js'

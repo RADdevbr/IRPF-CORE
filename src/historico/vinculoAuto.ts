@@ -12,7 +12,7 @@
 // entre anos consecutivos; para anos com buraco no meio sobram a descrição e o
 // código, que sozinhos não bastam para afirmar, então exigem-se dois sinais.
 
-import { resolverCadeias, type Historico, type PosicaoAno, type Vinculos } from './historico'
+import { resolverCadeias, type Historico, type PosicaoAno, type Vinculos } from './historico.js'
 
 export interface LigacaoAuto {
   /** Id da posição mais antiga (a que passa a apontar para a outra). */

@@ -22,7 +22,7 @@ import {
   setModoVisita,
   chavesGravadas,
   apagarTudoDesteAparelho,
-} from './armazenamento'
+} from './armazenamento.js'
 
 export { chaveApp, modoVisita, setModoVisita, chavesGravadas, apagarTudoDesteAparelho }
 

@@ -8,7 +8,7 @@
 // Supabase é `remoto.ts`, atrás de uma interface — o que deixa a decisão, que é
 // onde mora o risco de perder dado, coberta por testes sem servidor nenhum.
 
-import { mesmaChave, type CofreCompleto, type Wrap } from './crypto'
+import { mesmaChave, type CofreCompleto, type Wrap } from './crypto.js'
 
 export interface EstadoSync {
   /** Versão do servidor de onde saiu o conteúdo que está aqui. */

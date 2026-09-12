@@ -7,10 +7,10 @@
 // O que sobe daqui é sempre opaco: texto cifrado e chaves embrulhadas.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { credenciaisSupabase } from './config'
-import { armazenamentoLocal, chaveApp, modoVisita } from '../app/armazenamento'
-import type { Wrap } from './crypto'
-import { ConflitoDeVersao, type DocRemoto, type Remoto } from './sync'
+import { credenciaisSupabase } from './config.js'
+import { armazenamentoLocal, chaveApp, modoVisita } from '../app/armazenamento.js'
+import type { Wrap } from './crypto.js'
+import { ConflitoDeVersao, type DocRemoto, type Remoto } from './sync.js'
 
 /**
  * Onde a sessão da conta fica guardada.

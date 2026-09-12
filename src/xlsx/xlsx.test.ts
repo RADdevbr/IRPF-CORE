@@ -8,9 +8,9 @@ import {
   MAX_LINHAS,
   MAX_COLUNAS,
   type Celula,
-} from './xlsx'
-import { montarXlsx } from './montar'
-import { xlsxExemplo } from './exemplo'
+} from './xlsx.js'
+import { montarXlsx } from './montar.js'
+import { xlsxExemplo } from './exemplo.js'
 
 describe('leitor de .xlsx', () => {
   it('lê as abas na ordem em que a planilha as declara', async () => {

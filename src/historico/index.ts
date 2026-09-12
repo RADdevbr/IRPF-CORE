@@ -6,7 +6,7 @@
 //
 // As perguntas moram nos apps: «faltou declarar algo?» é do IRPF-calc, «quanto o
 // patrimônio cresceu e por quê» é do networthcontrol.
-export * from './historico'
-export * from './vinculoAuto'
-export * from './consistencia'
-export { BotaoVinculo, PainelVinculo } from './VinculoBem'
+export * from './historico.js'
+export * from './vinculoAuto.js'
+export * from './consistencia.js'
+export { BotaoVinculo, PainelVinculo } from './VinculoBem.js'

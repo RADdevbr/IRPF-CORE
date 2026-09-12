@@ -1,7 +1,7 @@
 import { Component, type ReactNode } from 'react'
-import { C } from './theme'
-import { armazenamentoLocal, modoVisita } from '../app/armazenamento'
-import { prefixoApp } from '../app/config'
+import { C } from './theme.js'
+import { armazenamentoLocal, modoVisita } from '../app/armazenamento.js'
+import { prefixoApp } from '../app/config.js'
 
 // Um erro em qualquer canto derrubava a árvore inteira e deixava a tela preta —
 // num app que guarda declaração de imposto, isso parece perda de dados mesmo

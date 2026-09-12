@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { C } from './theme'
+import { C } from './theme.js'
 
 // Legenda que segue o mouse nos gráficos. Sem isso, um valor só aparecia como
 // rótulo fixo (poucos cabem) ou no title do navegador (lento e feio).

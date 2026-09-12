@@ -13,8 +13,8 @@
 // sozinha: ela está na própria linha do arquivo, e somá-la seria deduzir
 // despesa que alguém devolveu.
 
-import type { Pagamento } from '../dec/decParser'
-import { defDeducoes, type DeducoesLegais } from './declaracao'
+import type { Pagamento } from '../dec/decParser.js'
+import { defDeducoes, type DeducoesLegais } from './declaracao.js'
 
 /** Para qual linha da declaração vai o pagamento. */
 export type CategoriaDeducao = keyof DeducoesLegais | 'naoDedutivel' | 'indefinido'

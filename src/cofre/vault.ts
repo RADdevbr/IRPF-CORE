@@ -21,9 +21,9 @@ import {
   deB64,
   type CofreCompleto,
   type Wrap,
-} from './crypto'
-import type { EstadoSync } from './sync'
-import { armazenamentoLocal, armazenamentoSessao, chaveApp } from '../app/armazenamento'
+} from './crypto.js'
+import type { EstadoSync } from './sync.js'
+import { armazenamentoLocal, armazenamentoSessao, chaveApp } from '../app/armazenamento.js'
 
 // As chaves nascem do prefixo do app, e por isso são funções: uma constante de
 // módulo seria avaliada no `import`, antes de `configurarApp()` rodar. Ver

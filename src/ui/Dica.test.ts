@@ -6,7 +6,7 @@
 // só, exercida três vezes.
 
 import { describe, it, expect } from 'vitest'
-import { legendasPresasAoMouse, graficosSemFaixaRolavel, graficosSemTabela } from './invariantes'
+import { legendasPresasAoMouse, graficosSemFaixaRolavel, graficosSemTabela } from './invariantes.js'
 
 const fontes = import.meta.glob('../**/*.tsx', { query: '?raw', import: 'default', eager: true }) as Record<
   string,

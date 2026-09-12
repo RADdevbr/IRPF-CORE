@@ -18,10 +18,10 @@
 // o poupado infla e o rendimento do capital some. Por isso cada linha diz se o
 // gasto daquele ano foi informado.
 
-import { analisarConsistencia, type Entradas } from '../historico/consistencia'
-import { taxaDoPeriodo, ultimoFechamento, NOME_INDICE, type BenchmarksInformados } from './benchmarks'
-import { composicaoRenda } from './renda'
-import { chaveAporte, NOME_CLASSE, COMO_VALORA, quedaEhSaida, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from '../historico/historico'
+import { analisarConsistencia, type Entradas } from '../historico/consistencia.js'
+import { taxaDoPeriodo, ultimoFechamento, NOME_INDICE, type BenchmarksInformados } from './benchmarks.js'
+import { composicaoRenda } from './renda.js'
+import { chaveAporte, NOME_CLASSE, COMO_VALORA, quedaEhSaida, type Aportes, type ClassePatrimonio, type ComoValora, type Historico } from '../historico/historico.js'
 
 export interface AnoCapital {
   anoBase: number

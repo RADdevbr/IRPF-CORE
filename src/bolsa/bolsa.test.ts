@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { apurarBolsa, paraBase, ISENCAO_MENSAL, type Operacao, type EntradaBolsa, apurarSerie } from './bolsa'
+import { apurarBolsa, paraBase, ISENCAO_MENSAL, type Operacao, type EntradaBolsa, apurarSerie } from './bolsa.js'
 
 const compra = (mes: number, ticker: string, quantidade: number, precoUnitario: number): Operacao => ({
   ano: 2026, mes, ticker, tipo: 'compra', quantidade, precoUnitario,

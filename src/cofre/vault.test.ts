@@ -14,9 +14,9 @@ import {
   dekLembrada,
   esquecerDek,
   type Store,
-} from './vault'
-import { gerarCodigoRecuperacao } from './crypto'
-import { prefixoApp } from '../app/config'
+} from './vault.js'
+import { gerarCodigoRecuperacao } from './crypto.js'
+import { prefixoApp } from '../app/config.js'
 // O cofre é genérico no que guarda: um objeto serializável qualquer. Este é o
 // mínimo que serve para os testes — antes era o `PersistedState` do app de
 // IRPFM, o que fazia o núcleo depender do formato de estado de um dos apps.
@@ -165,7 +165,7 @@ describe('sessão lembrada', () => {
       AGORA,
       st,
     )
-    const { lerDadosCifrados } = await import('./vault')
+    const { lerDadosCifrados } = await import('./vault.js')
     expect(await lerDadosCifrados(dek, st)).toEqual(ESTADO)
     await expect(lerDadosCifrados(new Uint8Array(32).fill(1), st)).rejects.toThrow()
   })
@@ -173,7 +173,7 @@ describe('sessão lembrada', () => {
 
 describe('memória do suporte a PRF', () => {
   it('guarda, devolve e esquece o resultado do diagnóstico', async () => {
-    const { lembrarSuportePrf, suportePrfLembrado } = await import('./vault')
+    const { lembrarSuportePrf, suportePrfLembrado } = await import('./vault.js')
     const st = fakeStore()
     expect(suportePrfLembrado(st)).toBe('desconhecido')
     lembrarSuportePrf('nao', st)
@@ -185,14 +185,14 @@ describe('memória do suporte a PRF', () => {
   })
 
   it('trata valor corrompido como desconhecido', async () => {
-    const { suportePrfLembrado } = await import('./vault')
+    const { suportePrfLembrado } = await import('./vault.js')
     const st = fakeStore()
     st.setItem(`${prefixoApp()}prf:v2`, 'talvez')
     expect(suportePrfLembrado(st)).toBe('desconhecido')
   })
 
   it('ignora o veredito da v1, que vinha de um diagnóstico defeituoso', async () => {
-    const { suportePrfLembrado } = await import('./vault')
+    const { suportePrfLembrado } = await import('./vault.js')
     const st = fakeStore()
     st.setItem(`${prefixoApp()}prf:v1`, 'nao')
     expect(suportePrfLembrado(st)).toBe('desconhecido')

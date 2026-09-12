@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deflatorPara, chaveBenchmark, type BenchmarksInformados } from './benchmarks'
+import { deflatorPara, chaveBenchmark, type BenchmarksInformados } from './benchmarks.js'
 
 
 // PAT-04 — o painel era nominal de ponta a ponta, e a janela que ele desenha

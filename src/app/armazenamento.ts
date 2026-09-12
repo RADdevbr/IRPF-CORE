@@ -19,7 +19,7 @@
 // Agora vem de `config.ts`, declarado por quem está rodando: três apps dividem
 // este código e não podem dividir a mesma família de chaves.
 
-import { prefixoApp } from './config'
+import { prefixoApp } from './config.js'
 
 /**
  * Monta uma chave sob o prefixo deste app.

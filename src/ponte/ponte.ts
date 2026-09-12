@@ -26,8 +26,8 @@
 // reataria os apps: mudar um campo interno de um quebraria a leitura do outro, e
 // estaríamos de volta ao tipo único que ninguém conseguia mexer.
 
-import type { Historico, Overrides, Aportes, Vinculos } from '../historico/historico'
-import type { Entradas } from '../historico/consistencia'
+import type { Historico, Overrides, Aportes, Vinculos } from '../historico/historico.js'
+import type { Entradas } from '../historico/consistencia.js'
 
 /**
  * Formato do pacote. Suba ao mudar o SIGNIFICADO de um campo; campo novo e

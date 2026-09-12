@@ -17,7 +17,7 @@ import {
   chavesGravadas,
   apagarTudoDesteAparelho,
   type EstadoVersionado,
-} from './persistencia'
+} from './persistencia.js'
 
 const VERSAO = 2
 

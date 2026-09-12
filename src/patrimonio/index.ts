@@ -8,6 +8,6 @@
 //
 // O que NÃO está aqui: as telas e as séries do painel (projeção, poupança, renda
 // menos gasto). Aquelas são as perguntas do networthcontrol.
-export * from './capital'
-export * from './benchmarks'
-export * from './renda'
+export * from './capital.js'
+export * from './benchmarks.js'
+export * from './renda.js'

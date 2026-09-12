@@ -1,4 +1,3 @@
-import { rpIdDoApp } from '../app/config'
 // Ponte com o WebAuthn — ver PLAN-CONTA-E-HISTORICO.md §1.3.
 //
 // A extensão PRF ("pseudo-random function", hmac-secret no nível CTAP) faz o
@@ -11,8 +10,9 @@ import { rpIdDoApp } from '../app/config'
 // recebe os 32 bytes já prontos. Cobertura da extensão varia por navegador —
 // por isso `suportaPasskey()` existe e a senha continua como alternativa.
 
+import { nomeApp, rpIdDoApp } from '../app/config.js'
+
 const SALT_PRF = new TextEncoder().encode('irpfm-vault-v1')
-const RP_NOME = 'Calculadora IRPFM 2027'
 
 /**
  * O domínio a que a passkey fica presa.
@@ -27,8 +27,9 @@ const RP_NOME = 'Calculadora IRPFM 2027'
  * `rpId` em `configurarApp()` fixa o domínio de produção. Sem ele, mantém-se o
  * comportamento anterior (host efetivo), que é o certo para quem roda em
  * localhost ou abre o arquivo direto.
- */
-/**
+ *
+ * ---
+ *
  * O domínio atual serve para a passkey que este app cadastraria?
  *
  * `rp.id` precisa ser o host ou um sufixo registrável dele — em qualquer outro
@@ -93,7 +94,7 @@ async function registrar(usuario: { id: Uint8Array; nome: string }): Promise<{ c
   const cred = (await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: RP_NOME, ...(dominioDaPasskey().rpId ? { id: dominioDaPasskey().rpId } : {}) },
+      rp: { name: nomeApp(), ...(dominioDaPasskey().rpId ? { id: dominioDaPasskey().rpId } : {}) },
       user: { id: usuario.id as BufferSource, name: usuario.nome, displayName: usuario.nome },
       pubKeyCredParams: [
         { type: 'public-key', alg: -7 }, // ES256

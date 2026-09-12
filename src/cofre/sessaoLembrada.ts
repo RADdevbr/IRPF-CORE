@@ -9,7 +9,7 @@
 // `armazenamento.ts` como todo o resto — em modo visita, o e-mail da conta é
 // exatamente o tipo de rastro que não deve ficar no computador de outra pessoa.
 
-import { armazenamentoLocal, chaveApp, type Armazenamento } from '../app/armazenamento'
+import { armazenamentoLocal, chaveApp, type Armazenamento } from '../app/armazenamento.js'
 
 // Escrita à mão, esta chave escapava do prefixo do app: com três apps na mesma
 // família, o e-mail lembrado por um apareceria para os outros, e «apagar deste

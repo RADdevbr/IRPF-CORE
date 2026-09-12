@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { anonimizarLinha, anonimizar, amostra } from './anonimizar'
+import { anonimizarLinha, anonimizar, amostra } from './anonimizar.js'
 
 const LINHA = '27BENS             CDB BANCO X S.A. 12.345.678/0001-99  00000030000000000000040000000'
 

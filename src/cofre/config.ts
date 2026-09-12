@@ -10,7 +10,7 @@
 // ambiente. O resto do desenho continua igual: o SDK do Supabase só é baixado
 // quando a tela de conta abre, e este módulo de propósito não o importa.
 
-import { supabaseDoApp } from '../app/config'
+import { supabaseDoApp } from '../app/config.js'
 
 export function supabaseConfigurado(): boolean {
   const s = supabaseDoApp()

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizaCodigo, validaConvite, conviteEsgotado, funcaoAusente, AVISO_APAGAR, type Convite } from './admin'
+import { normalizaCodigo, validaConvite, conviteEsgotado, funcaoAusente, AVISO_APAGAR, type Convite } from './admin.js'
 
 // A conversa com o banco não dá para testar aqui — quem autoriza é a RLS, e ela
 // mora no Postgres. O que dá é o que decide antes de mandar: o código que a

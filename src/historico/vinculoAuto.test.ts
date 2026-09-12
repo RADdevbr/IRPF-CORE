@@ -8,9 +8,9 @@ import {
   cnpjNaDescricao,
   candidatosPara,
   LIMIAR,
-} from './vinculoAuto'
-import { montarDeclaracao, upsertDeclaracao, aplicarVinculos, serieDaPosicao, type Historico } from './historico'
-import type { DecResult, Posicao } from '../dec/decParser'
+} from './vinculoAuto.js'
+import { montarDeclaracao, upsertDeclaracao, aplicarVinculos, serieDaPosicao, type Historico } from './historico.js'
+import type { DecResult, Posicao } from '../dec/decParser.js'
 
 const pos = (
   descricao: string,

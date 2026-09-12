@@ -8,9 +8,9 @@ import {
   usarPagamentosComoDespesa,
   PISO_RELEVANCIA,
   type Entradas,
-} from './consistencia'
-import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
-import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser'
+} from './consistencia.js'
+import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico.js'
+import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser.js'
 
 const pag = (codigo: string, beneficiario: string, valor: number): Pagamento => ({
   linha: 1,

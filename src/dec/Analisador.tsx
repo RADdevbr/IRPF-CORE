@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { C } from '../ui/theme'
-import { fmt } from '../ui/format'
-import { parseDec } from './decParser'
+import { C } from '../ui/theme.js'
+import { fmt } from '../ui/format.js'
+import { parseDec } from './decParser.js'
 
 // Analisador de registro do .DEC.
 //

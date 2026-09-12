@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { sincronizar, resolverComLocal, resolverComRemoto } from './syncCofre'
-import { ConflitoDeVersao, type DocRemoto, type Remoto, type EstadoSync } from './sync'
-import type { CofreCompleto, Wrap } from './crypto'
+import { sincronizar, resolverComLocal, resolverComRemoto } from './syncCofre.js'
+import { ConflitoDeVersao, type DocRemoto, type Remoto, type EstadoSync } from './sync.js'
+import type { CofreCompleto, Wrap } from './crypto.js'
 
 // Servidor falso, em memória: deixa exercitar o fluxo inteiro — inclusive os
 // caminhos que dão medo (conflito, cofres diferentes) — sem rede nenhuma.

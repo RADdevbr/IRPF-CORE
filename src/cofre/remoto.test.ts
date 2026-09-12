@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { docDaLinha, wrapDaLinha, linhaDoWrap, mensagemDeLogin, type LinhaVault, type LinhaWrap } from './remoto'
-import type { Wrap } from './crypto'
+import { docDaLinha, wrapDaLinha, linhaDoWrap, mensagemDeLogin, type LinhaVault, type LinhaWrap } from './remoto.js'
+import type { Wrap } from './crypto.js'
 
 // A conversa com a rede não dá para testar aqui; a tradução entre as colunas do
 // Postgres e os tipos do app dá — e é onde um campo trocado passaria despercebido.

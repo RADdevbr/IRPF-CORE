@@ -1,4 +1,4 @@
-import { C } from './theme'
+import { C } from './theme.js'
 
 // Campo monetário em BRL com máscara por centavos (dígitos → valor/100).
 export function NumInput({

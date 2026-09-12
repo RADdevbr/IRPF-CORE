@@ -9,7 +9,7 @@
 //
 // `irpfm.ts` reexporta as três, então quem já importava de lá continua igual.
 
-import { parametros, type ParametrosAno } from './params'
+import { parametros, type ParametrosAno } from './params.js'
 
 const PADRAO = parametros()
 

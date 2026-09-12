@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { C } from '../ui/theme'
-import { clienteSupabase } from './remoto'
+import { C } from '../ui/theme.js'
+import { clienteSupabase } from './remoto.js'
 import {
   admin,
   conviteEsgotado,
@@ -9,7 +9,7 @@ import {
   AVISO_APAGAR,
   type ContaAdmin,
   type Convite,
-} from './admin'
+} from './admin.js'
 
 // Controle de contas, dentro do app.
 //

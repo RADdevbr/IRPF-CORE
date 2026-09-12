@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { ANO_BASE, PARAMS, aplicarOverrides, manuais, parametros, pendencias, type ParametrosAno } from './params'
-import { aliqMinima } from './aliquota'
-import { calcINSS, calcIRRF, aplicaReducao } from './tabela'
+import { ANO_BASE, PARAMS, aplicarOverrides, manuais, parametros, pendencias, type ParametrosAno } from './params.js'
+import { aliqMinima } from './aliquota.js'
+import { calcINSS, calcIRRF, aplicaReducao } from './tabela.js'
 
 describe('parâmetros por ano', () => {
   it('tem o ano-base do app cadastrado', () => {
