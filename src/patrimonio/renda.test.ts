@@ -64,6 +64,20 @@ describe('origem por pagador', () => {
     expect(c.indefinido).toBe(0)
   })
 
+  it('o booleano DESMARCADO também é resposta — ele diz capital, não silêncio', () => {
+    // a tela antiga escreve isso com todas as letras: «contando como capital: só
+    // faz sentido se os dividendos vêm de ações e fundos». Tratá-lo como
+    // ausência de resposta levava junto o yield da carteira, que é medido
+    // justamente sobre a renda de capital.
+    const c = composicaoRenda(vals, { porPagador, dividendosSaoTrabalho: false })
+    expect(c.capital).toBe(480_000)
+    expect(c.indefinido).toBe(0)
+  })
+
+  it('sem o campo, aí sim é silêncio', () => {
+    expect(composicaoRenda(vals, { porPagador }).indefinido).toBe(480_000)
+  })
+
   it('a resposta por pagador vence o booleano antigo', () => {
     const c = composicaoRenda(vals, { porPagador, origens: { [ITAUSA]: 'capital' }, dividendosSaoTrabalho: true })
     expect(c.capital).toBe(120_000)

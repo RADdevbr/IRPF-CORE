@@ -135,15 +135,25 @@ export function composicaoRenda(
    * Origem de um pagador que ninguém respondeu.
    *
    * Ficha sem ambiguidade responde por ele — não há o que perguntar sobre o CDB
-   * de um banco. Ficha ambígua com o booleano antigo ligado herda a resposta que
-   * ele já dava, para quem ainda não migrou não ver a proporção virar cinza de
-   * um dia para o outro. Fora esses dois casos, «a classificar» — e essa é a
-   * resposta honesta, não um estado de erro.
+   * de um banco.
+   *
+   * O booleano antigo é resposta NOS DOIS ESTADOS, e isto custou uma leitura
+   * errada: marcado ele diz «são da minha PJ, conte como trabalho», desmarcado
+   * ele diz «vêm de ações e fundos», que é a palavra da própria tela. Tratar o
+   * desmarcado como ausência de resposta jogava todo dividendo de quem tinha a
+   * caixa vazia em «a classificar» — e com ele ia embora o yield da carteira,
+   * que é medido justamente sobre a renda de capital. Só a AUSÊNCIA do campo é
+   * ausência de resposta.
+   *
+   * Fora esses casos, «a classificar» — e essa é a resposta honesta, não um
+   * estado de erro.
    */
   const semResposta = (f: Fonte): Origem => {
     if (!f.perguntar) return padrao(f)
-    const comBooleano = padrao(f)
-    return comBooleano !== f.origem ? comBooleano : 'indefinido'
+    if (f.chave === 'divBR' && opts.dividendosSaoTrabalho !== undefined) {
+      return opts.dividendosSaoTrabalho ? 'trabalho' : 'capital'
+    }
+    return 'indefinido'
   }
 
   const fontes: FonteRenda[] = []
