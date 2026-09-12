@@ -1,6 +1,6 @@
 # Plano — Separar renda de trabalho de renda de capital
 
-> Estado: **fases 1, 2, 3 e 4 feitas**; 5 e 6 em aberto. A 4 passou na frente da
+> Estado: **fases 1 a 5 feitas**; a 6 em aberto. A 4 passou na frente da
 > 3 porque é ela que conserta número errado, e porque o booleano antigo cobria a
 > classificação enquanto a tela de responder não existia. Escrito antes do trabalho
 > começar e deixado como estava, com o resultado anotado no fim de cada fase,
@@ -202,7 +202,7 @@ chutado.
 | 2 | ✅ Guardar o pagador no import | IRPF-CORE + IRPF-calc | é o dado; sem ele a fase 1 vive de palpite |
 | 3 | ✅ A tela de responder | IRPF-calc | é onde mora a correção manual, por decisão de fronteira |
 | 4 | ✅ **Projeção em duas pernas** | IRPF-CORE + networthcontrol | corrige RT-04, que é número errado com cara de certo |
-| 5 | Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
+| 5 | ✅ Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
 | 6 | Base do IRPFM por fonte | IRPFM-2027 **e networthcontrol** | mesma correção, no número mais consequente |
 
 A fase 4 é a que justifica o lote. As outras cinco melhoram a leitura; a 4 conserta
@@ -500,7 +500,7 @@ número mostrado mude; foi conferido que ele falha com a fiação removida. A li
 para as fases seguintes: **abrir o app é parte de terminar**, e uma suíte verde
 não cobre o que só a tela liga.
 
-## Fase 5 — Leitura e cor
+## Fase 5 — Leitura e cor — ✅ FEITO
 
 **Cor.** Duas famílias, não seis avulsas: trabalho em uma faixa quente, capital em
 uma fria, e cada fonte é um degrau de luminosidade dentro da sua. A divisa passa a
@@ -526,6 +526,47 @@ mexe quando a outra metade encolhe.
 **Renda × gasto** (`RendaGasto.tsx`): a linha da renda vira duas áreas empilhadas,
 com a projeção seguindo as duas regras da fase 4b. Onde há `indefinido`, a área é
 hachurada — não uma terceira cor sólida, que leria como uma terceira renda.
+
+### O que saiu
+
+**O desenho de cor deste plano estava errado, e o validador de paleta provou.**
+«Duas famílias, cada fonte um degrau de luminosidade dentro da sua» reprova o
+piso de visão normal: a banda de luminosidade do modo escuro é estreita, e três
+degraus no mesmo matiz ficam com ΔE 8,9 onde o mínimo é 15 — nem quem enxerga
+todas as cores separa.
+
+A segunda tentativa, agrupar as seis cores existentes por família (quentes
+embaixo, frias em cima), reprova a separação de daltonismo. O motivo é bonito e
+vale guardar: **a ordem atual da paleta passa justamente porque ALTERNA matizes**,
+e agrupar por família é o oposto disso por construção. Família de cor e segurança
+de daltonismo puxam em direções contrárias.
+
+A terceira, manter uma cor por ficha, reprova sob `--pairs all` — que é o teste
+certo aqui, porque as fichas presentes mudam de pessoa para pessoa e qualquer
+fatia pode encostar em qualquer outra. Rosa e verde dão **ΔE 1,6 sob
+deuteranopia**: a mesma cor. Isso já era verdade antes desta fase; a fase só
+obrigou a olhar.
+
+**O que ficou: a barra mostra as duas ORIGENS, não as fichas.** Duas cores e um
+cinza dão ΔE 26,8 no mesmo teste. A troca sai barata porque a ficha nunca foi a
+pergunta — «quanto depende de eu acordar cedo» é a pergunta, e ela cabe em dois
+blocos. O detalhe por ficha continua inteiro na dica, na tabela acessível e na
+lista «ver ficha por ficha».
+
+A divisa virou uma **linha que atravessa os anos**, com o percentual escrito no
+último. Divisa parada não conta para onde ela está indo, e é para onde ela está
+indo que interessa.
+
+**Texture foi considerada e recusada**: ela é canal de acessibilidade, opt-in
+(daltonismo severo, impressão, `forced-colors`), e ligá-la por padrão é campo
+denso que vira ruído e risco vestibular. Ela sobrou num lugar só, e legítimo: a
+faixa do que ninguém classificou, no gráfico de renda × gasto, onde a hachura diz
+«isto pode ser dos dois lados» sem gastar cor de série num não-categoria.
+
+**Um defeito criado e corrigido dentro da própria fase:** a pilha nova do renda ×
+gasto desenhava a linha do gasto no zero nos anos sem custo de vida informado —
+afirmando que a pessoa não gastou nada, que é o erro que aquele módulo existe
+para pegar. A linha passou a ter buraco, e a legenda diz o que o buraco é.
 
 ## Fase 6 — Base do IRPFM por fonte
 
