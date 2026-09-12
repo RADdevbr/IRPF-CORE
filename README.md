@@ -147,7 +147,7 @@ rodá-lo de novo num projeto que já existe é seguro.
 
 ```sh
 npm install
-npm test          # 436 testes
+npm test          # 445 testes
 npm run build     # tsc → dist/, com .d.ts
 ```
 

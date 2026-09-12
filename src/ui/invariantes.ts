@@ -29,16 +29,37 @@ function codigo(texto: string): { n: number; linha: string }[] {
 const semAPorta = (fontes: Record<string, string>) =>
   Object.entries(fontes).filter(([caminho]) => !caminho.endsWith('Dica.tsx') && !/\.test\.tsx?$/.test(caminho))
 
+/** Quantas linhas em volta contam como «o mesmo elemento» num JSX formatado. */
+const JANELA = 8
+
 /**
  * Componentes que prendem a legenda ao mouse em vez de passar por `ComDica`.
  *
  * Devolve `arquivo:linha` de cada ocorrência. Vazio é o que se espera.
+ *
+ * Duas restrições, e as duas existem porque a primeira versão desta regra
+ * acusava código correto — e regra que acusa código correto é regra que alguém
+ * desliga:
+ *
+ *   · só arquivos que desenham SVG. O alvo é o gráfico que prende a legenda ao
+ *     ponteiro, não um botão de ajuda com tooltip;
+ *   · só quando o MESMO elemento não tem `onFocus`. `onMouseEnter` ao lado de
+ *     `onFocus` e `onClick` não exclui ninguém: é hover somado ao teclado, que é
+ *     exatamente o que se quer. O que a regra persegue é o mouse SOZINHO.
  */
 export function legendasPresasAoMouse(fontes: Record<string, string>): string[] {
   const fora: string[] = []
   for (const [caminho, texto] of semAPorta(fontes)) {
-    for (const { n, linha } of codigo(texto)) {
-      if (/\bonMouse(Move|Enter|Over|Leave)\b/.test(linha)) fora.push(`${caminho}:${n}`)
+    if (!/<svg[\s>]/.test(texto)) continue
+    const linhas = codigo(texto)
+    for (const { n, linha } of linhas) {
+      if (!/\bonMouse(Move|Enter|Over|Leave)\b/.test(linha)) continue
+      const perto = linhas
+        .slice(Math.max(0, n - 1 - JANELA), n + JANELA)
+        .map((l) => l.linha)
+        .join('\n')
+      if (/\bonFocus\b/.test(perto)) continue
+      fora.push(`${caminho}:${n}`)
     }
   }
   return fora
