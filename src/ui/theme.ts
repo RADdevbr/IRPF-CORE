@@ -37,6 +37,20 @@ export const VIZ = {
   serie: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300'] as const,
   /** Regime de resgate — ordem: cai na base, fora, a confirmar. */
   regime: { inBase: '#d95926', foraBase: '#199e70', depende: '#3987e5' } as const,
+  /**
+   * Origem da renda: o que você trabalha, o que a carteira produz, e o que
+   * ninguém classificou ainda.
+   *
+   * São DUAS cores e um cinza, e não uma por ficha, porque na pilha da origem
+   * qualquer fatia pode encostar em qualquer outra — as fichas presentes mudam
+   * de pessoa para pessoa. Sob esse teste (`--pairs all`) as seis de `serie`
+   * reprovam feio: rosa e verde ficam com ΔE 1,6 sob deuteranopia, que é a mesma
+   * cor para quem tem a condição. Estas duas dão ΔE 26,8 no mesmo teste.
+   *
+   * O «a classificar» é cinza de propósito: ele não é uma terceira origem, é a
+   * ausência de resposta, e gastar cor de série nele o promoveria a categoria.
+   */
+  origem: { trabalho: '#3987e5', capital: '#d95926', indefinido: '#949494' } as const,
   /** Projeção: mesma cor da série histórica, tracejada. */
   grid: '#3a3a3a',
 } as const

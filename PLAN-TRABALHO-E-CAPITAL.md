@@ -1,8 +1,8 @@
 # Plano — Separar renda de trabalho de renda de capital
 
-> Estado: **fases 1, 2 e 4 feitas**; 3, 5 e 6 em aberto. A 4 passou na frente da
-> 3 porque é ela que conserta número errado, e porque o booleano antigo cobre a
-> classificação enquanto a tela de responder não existe. Escrito antes do trabalho
+> Estado: **fases 1 a 5 feitas**; a 6 em aberto. A 4 passou na frente da
+> 3 porque é ela que conserta número errado, e porque o booleano antigo cobria a
+> classificação enquanto a tela de responder não existia. Escrito antes do trabalho
 > começar e deixado como estava, com o resultado anotado no fim de cada fase,
 > inclusive onde divergir do previsto — é a parte do documento que ensina alguma
 > coisa.
@@ -200,9 +200,9 @@ chutado.
 |---|---|---|---|
 | 1 | ✅ Vocabulário: origem por pagador | IRPF-CORE | nada anda sem o tipo; sozinha já substitui o booleano |
 | 2 | ✅ Guardar o pagador no import | IRPF-CORE + IRPF-calc | é o dado; sem ele a fase 1 vive de palpite |
-| 3 | A tela de responder | IRPF-calc | é onde mora a correção manual, por decisão de fronteira |
+| 3 | ✅ A tela de responder | IRPF-calc | é onde mora a correção manual, por decisão de fronteira |
 | 4 | ✅ **Projeção em duas pernas** | IRPF-CORE + networthcontrol | corrige RT-04, que é número errado com cara de certo |
-| 5 | Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
+| 5 | ✅ Leitura e cor | networthcontrol | o que a pessoa pediu ver; depende das quatro |
 | 6 | Base do IRPFM por fonte | IRPFM-2027 **e networthcontrol** | mesma correção, no número mais consequente |
 
 A fase 4 é a que justifica o lote. As outras cinco melhoram a leitura; a 4 conserta
@@ -332,7 +332,7 @@ consequência junto, e as duas telas do IRPF-calc montam o texto de lá. A marca
 também passou a aparecer na linha de cada ano do histórico: descobrir três telas
 adiante que o ano precisa ser relido é descobrir tarde.
 
-## Fase 3 — A tela de responder
+## Fase 3 — A tela de responder — ✅ FEITO
 
 **Muda** `IRPF-calc/src/importar/Historico.tsx`, e o estado ganha
 `origemPagador?: OrigemPorPagador`.
@@ -352,6 +352,50 @@ novo. Campo novo e opcional: `PACOTE_VERSAO` **não** sobe.
 
 O booleano `dividendosSaoTrabalho` sai da tela do networthcontrol e vira migração
 silenciosa: ligado = todo pagador de `divBR` sugerido como trabalho.
+
+### O que saiu
+
+A tela saiu como desenhada, com um botão a mais que o uso pediu: **aceitar as
+sugestões em bloco**, e só as que têm palpite. Quem não cai em indício nenhum — a
+PJ que distribui lucro sem pagar pró-labore, que é o caso comum — aparece como
+«sem palpite» e continua pendente. Sugestão que se aceita sozinha deixaria de ser
+sugestão.
+
+**O indício «veio da corretora» não encontrava nada**, e o motivo só aparece
+quando se liga as duas pontas: o extrato da corretora traz o NOME do pagador e
+não traz CNPJ; o `.DEC` traz os dois, e o id sai do CNPJ. Casar por id nunca
+casaria. `sugerirOrigens` passa a aceitar id ou nome cru.
+
+Aí apareceu o defeito de baixo, que é o que vale registrar: **`normalizar`
+apagava a letra acentuada em vez de dobrá-la**, porque ela cai fora de
+`[A-Z0-9 ]`. «ITAÚSA» virava `ITA SA` e «ITAUSA» ficava `ITAUSA` — dois
+pagadores, duas perguntas, para a mesma empresa. Passava despercebido na
+identidade do BEM porque ali as duas pontas vêm do mesmo arquivo e são estragadas
+igual.
+
+`idPagador` passa a dobrar o acento; `idPosicao` **fica como está**, e isso é
+decisão: ela é chave de `classeOverrides`, `vinculos` e `aportes` já gravados, e
+mudar a receita desgarraria em silêncio o trabalho manual em disco de quem tem
+bem com acento no nome. Um teste fixa cada uma das duas receitas com o porquê ao
+lado. Deu para corrigir sem custo porque `porPagador` nasceu na leitura 4: não há
+resposta gravada em lugar nenhum ainda.
+
+**A mensagem do painel mentia por omissão.** Com metade respondida ela dizia
+«origem respondida para 1 pagador» enquanto o booleano invisível decidia os
+outros R$ 280 mil — a decisão silenciosa que esta separação existe para acabar.
+Agora ela conta os dois lados e diz qual resposta está valendo para quem.
+
+**A fase 3 agravou o RT-05, e isso muda o peso da fase 5.** Enquanto a ficha
+tinha uma origem só, cor por ficha bastava. Agora a MESMA ficha aparece dividida
+em duas fatias vizinhas — «Lucros e dividendos · trabalho» e «· capital» —, e as
+duas saem com a mesma cor, separadas por 3px. A legenda e a dica dizem qual é
+qual, então não está errado; está ilegível justo no caso que a fase 3 existe para
+mostrar. A fase 5 deixou de ser acabamento.
+
+(O `FonteRenda.id` criado na fase 1 para isso não estava sendo usado pela tela: o
+React acusou chave repetida assim que a ficha se dividiu de verdade. A legenda
+tinha o defeito pior — deduplicando por ficha, mostraria uma entrada só, com a
+origem da metade que aparecesse primeiro.)
 
 ## Fase 4 — Projeção em duas pernas — ✅ FEITO
 
@@ -456,7 +500,7 @@ número mostrado mude; foi conferido que ele falha com a fiação removida. A li
 para as fases seguintes: **abrir o app é parte de terminar**, e uma suíte verde
 não cobre o que só a tela liga.
 
-## Fase 5 — Leitura e cor
+## Fase 5 — Leitura e cor — ✅ FEITO
 
 **Cor.** Duas famílias, não seis avulsas: trabalho em uma faixa quente, capital em
 uma fria, e cada fonte é um degrau de luminosidade dentro da sua. A divisa passa a
@@ -482,6 +526,47 @@ mexe quando a outra metade encolhe.
 **Renda × gasto** (`RendaGasto.tsx`): a linha da renda vira duas áreas empilhadas,
 com a projeção seguindo as duas regras da fase 4b. Onde há `indefinido`, a área é
 hachurada — não uma terceira cor sólida, que leria como uma terceira renda.
+
+### O que saiu
+
+**O desenho de cor deste plano estava errado, e o validador de paleta provou.**
+«Duas famílias, cada fonte um degrau de luminosidade dentro da sua» reprova o
+piso de visão normal: a banda de luminosidade do modo escuro é estreita, e três
+degraus no mesmo matiz ficam com ΔE 8,9 onde o mínimo é 15 — nem quem enxerga
+todas as cores separa.
+
+A segunda tentativa, agrupar as seis cores existentes por família (quentes
+embaixo, frias em cima), reprova a separação de daltonismo. O motivo é bonito e
+vale guardar: **a ordem atual da paleta passa justamente porque ALTERNA matizes**,
+e agrupar por família é o oposto disso por construção. Família de cor e segurança
+de daltonismo puxam em direções contrárias.
+
+A terceira, manter uma cor por ficha, reprova sob `--pairs all` — que é o teste
+certo aqui, porque as fichas presentes mudam de pessoa para pessoa e qualquer
+fatia pode encostar em qualquer outra. Rosa e verde dão **ΔE 1,6 sob
+deuteranopia**: a mesma cor. Isso já era verdade antes desta fase; a fase só
+obrigou a olhar.
+
+**O que ficou: a barra mostra as duas ORIGENS, não as fichas.** Duas cores e um
+cinza dão ΔE 26,8 no mesmo teste. A troca sai barata porque a ficha nunca foi a
+pergunta — «quanto depende de eu acordar cedo» é a pergunta, e ela cabe em dois
+blocos. O detalhe por ficha continua inteiro na dica, na tabela acessível e na
+lista «ver ficha por ficha».
+
+A divisa virou uma **linha que atravessa os anos**, com o percentual escrito no
+último. Divisa parada não conta para onde ela está indo, e é para onde ela está
+indo que interessa.
+
+**Texture foi considerada e recusada**: ela é canal de acessibilidade, opt-in
+(daltonismo severo, impressão, `forced-colors`), e ligá-la por padrão é campo
+denso que vira ruído e risco vestibular. Ela sobrou num lugar só, e legítimo: a
+faixa do que ninguém classificou, no gráfico de renda × gasto, onde a hachura diz
+«isto pode ser dos dois lados» sem gastar cor de série num não-categoria.
+
+**Um defeito criado e corrigido dentro da própria fase:** a pilha nova do renda ×
+gasto desenhava a linha do gasto no zero nos anos sem custo de vida informado —
+afirmando que a pessoa não gastou nada, que é o erro que aquele módulo existe
+para pegar. A linha passou a ter buraco, e a legenda diz o que o buraco é.
 
 ## Fase 6 — Base do IRPFM por fonte
 

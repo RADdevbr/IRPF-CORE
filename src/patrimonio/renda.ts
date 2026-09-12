@@ -16,7 +16,7 @@
 // mesmo formato da classe corrigida à mão. O app sugere com o motivo à vista
 // (`sugerirOrigens`) e nunca afirma.
 
-import type { RendaPorPagador } from '../historico/historico.js'
+import { idPagador, type RendaPorPagador } from '../historico/historico.js'
 
 export type Origem = 'trabalho' | 'capital' | 'indefinido'
 
@@ -83,8 +83,23 @@ const FONTES: Fonte[] = [
  */
 export const FONTES_COM_COR = FONTES.filter((f) => f.origem !== 'indefinido').map((f) => f.chave)
 
+/**
+ * A ficha admite as duas leituras, e só o pagador desempata.
+ *
+ * É o que separa «tenho de perguntar sobre este pagador» de «não há o que
+ * perguntar»: ninguém precisa responder de onde vem o rendimento do CDB de um
+ * banco, e pôr essa linha na frente da pessoa gasta a atenção dela no que já
+ * está resolvido.
+ */
+export const fichaPrecisaDeResposta = (chave: string): boolean =>
+  FONTES.some((f) => f.chave === chave && f.perguntar === true)
+
 /** Todas as fontes, na ordem em que a tela deve empilhá-las dentro do grupo. */
 export const ORDEM_FONTES = FONTES.map((f) => f.chave)
+
+/** O rótulo de uma ficha, para a tela não repetir a tabela. */
+export const rotuloDaFicha = (chave: string): string =>
+  FONTES.find((f) => f.chave === chave)?.rotulo ?? chave
 
 export interface ComposicaoRenda {
   fontes: FonteRenda[]
@@ -255,9 +270,22 @@ export interface Sugestao {
  */
 export function sugerirOrigens(
   porPagador: RendaPorPagador[],
-  opts: { pagadoresDaCorretora?: string[] } = {},
+  opts: {
+    /**
+     * Quem veio do extrato da corretora — por id de pagador OU pelo nome cru.
+     *
+     * Aceita os dois porque os dois lados existem: o extrato da corretora traz
+     * o NOME do pagador e não traz CNPJ, enquanto o `.DEC` traz os dois e o id
+     * sai do CNPJ. Casar só por id nunca encontraria nada, e este indício
+     * ficaria decorativo.
+     */
+    pagadoresDaCorretora?: string[]
+  } = {},
 ): Record<string, Sugestao> {
-  const daCorretora = new Set(opts.pagadoresDaCorretora ?? [])
+  const daCorretora = new Set(
+    (opts.pagadoresDaCorretora ?? []).map((x) => (x.startsWith('cnpj:') || x.startsWith('nome:') ? x : idPagador(x))),
+  )
+  const nomeDe = new Map(porPagador.map((p) => [p.pagador.id, p.pagador.nome]))
   const fichasDe = new Map<string, Set<string>>()
   for (const p of porPagador) {
     const atual = fichasDe.get(p.pagador.id)
@@ -271,7 +299,7 @@ export function sugerirOrigens(
       saida[id] = { origem: 'trabalho', motivo: 'também paga o seu salário ou pró-labore' }
       continue
     }
-    if (daCorretora.has(id)) {
+    if (daCorretora.has(id) || daCorretora.has(idPagador(nomeDe.get(id) ?? ''))) {
       saida[id] = { origem: 'capital', motivo: 'veio do extrato da corretora' }
       continue
     }

@@ -28,6 +28,7 @@
 
 import type { Historico, Overrides, Aportes, Vinculos } from '../historico/historico.js'
 import type { Entradas } from '../historico/consistencia.js'
+import type { OrigemPorPagador } from '../patrimonio/renda.js'
 
 /**
  * Formato do pacote. Suba ao mudar o SIGNIFICADO de um campo; campo novo e
@@ -69,6 +70,15 @@ export interface PacoteHistorico extends Cabecalho {
   vetados?: string[]
   /** Dívidas, entradas não recorrentes e gasto de vida, por ano. */
   consistencia?: Entradas
+  /**
+   * O que é trabalho e o que é capital, por pagador.
+   *
+   * É a resposta que só a pessoa tem: o lucro que a PJ dela distribui é
+   * pagamento pelo que ela fez, e o provento do ETF ao lado, na mesma ficha da
+   * declaração, não é. Sem este campo o painel de patrimônio perguntaria tudo de
+   * novo — e é para isso que o pacote existe.
+   */
+  origemPagador?: OrigemPorPagador
 }
 
 /**
