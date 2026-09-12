@@ -14,9 +14,20 @@
 // O mesmo desenho resolve a segunda metade do problema: como toda chave nasce
 // com o prefixo do app, «Apagar deste aparelho» consegue varrer tudo, inclusive
 // o que o SDK do Supabase grava.
+//
+// O prefixo era uma constante daqui (`'irpfm2027:'`) enquanto havia um app só.
+// Agora vem de `config.ts`, declarado por quem está rodando: três apps dividem
+// este código e não podem dividir a mesma família de chaves.
 
-/** Prefixo de tudo que este app grava. Uma família só, para poder varrer. */
-export const PREFIXO = 'irpfm2027:'
+import { prefixoApp } from './config'
+
+/**
+ * Monta uma chave sob o prefixo deste app.
+ *
+ * Use SEMPRE isto em vez de concatenar à mão: é o que garante que a chave nova
+ * nasça dentro da varredura de «Apagar deste aparelho» e dentro do modo visita.
+ */
+export const chaveApp = (sufixo: string): string => `${prefixoApp()}${sufixo}`
 
 /**
  * Modo visita: o app funciona inteiro, mas não grava nada neste computador.
@@ -120,7 +131,7 @@ function chavesCom(st: Armazenamento | null): string[] {
   try {
     for (let i = 0; i < st.length; i++) {
       const k = st.key(i)
-      if (k && k.startsWith(PREFIXO)) fora.push(k)
+      if (k && k.startsWith(prefixoApp())) fora.push(k)
     }
   } catch {
     /* sem acesso ao storage — devolve o que deu */

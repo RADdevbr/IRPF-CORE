@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react'
-import { C } from '../theme'
-import { armazenamentoLocal, modoVisita, PREFIXO } from '../lib/armazenamento'
+import { C } from './theme'
+import { armazenamentoLocal, modoVisita } from '../app/armazenamento'
+import { prefixoApp } from '../app/config'
 
 // Um erro em qualquer canto derrubava a árvore inteira e deixava a tela preta —
 // num app que guarda declaração de imposto, isso parece perda de dados mesmo
@@ -23,7 +24,7 @@ function baixarDados() {
     const st = armazenamentoLocal()
     for (let i = 0; i < st.length; i++) {
       const k = st.key(i)
-      if (k && k.startsWith(PREFIXO)) dump[k] = st.getItem(k)
+      if (k && k.startsWith(prefixoApp())) dump[k] = st.getItem(k)
     }
   } catch {
     /* sem acesso ao storage — segue com o que der */

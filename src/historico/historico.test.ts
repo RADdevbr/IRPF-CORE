@@ -7,7 +7,6 @@ import {
   idPosicao,
   montarDeclaracao,
   seriePatrimonio,
-  serieBacktest,
   cagr,
   porClasse,
   upsertDeclaracao,
@@ -29,7 +28,7 @@ import {
   segueMercado,
   pgblAportado,
 } from './historico'
-import type { DecResult, Lancamento, Pagamento, Posicao } from './decParser'
+import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser'
 
 const lanc = (alvo: string, valor: number): Lancamento => ({
   linha: 1,
@@ -128,7 +127,7 @@ describe('identidade da posição entre anos', () => {
 })
 
 describe('montagem da declaração', () => {
-  it('calcula base e IRPFM do ano, e deriva o ano-base do exercício', () => {
+  it('calcula a base do ano e deriva o ano-base do exercício', () => {
     const d = montarDeclaracao(
       dec('2026', [lanc('divBR', 800_000), lanc('cdb', 100_000)], [pos('CDB BANCO X', 500_000)]),
       'IRPF2026.DEC',
@@ -137,15 +136,22 @@ describe('montagem da declaração', () => {
     expect(d.exercicio).toBe(2026)
     expect(d.anoBase).toBe(2025)
     expect(d.base).toBe(900_000)
-    expect(d.irpfm).toBeGreaterThan(0)
+    // O imposto do ano não sai daqui: exige o cálculo inteiro do IRPFM, que é
+    // assunto do app de estimativa. Ver `Declaracao.irpfm`.
+    expect(d.irpfm).toBeUndefined()
     expect(d.patrimonio).toBe(500_000)
     expect(d.posicoes[0].regime).toBe('inBase')
   })
 
-  it('não cai no IRPFM abaixo de 600k', () => {
-    const d = montarDeclaracao(dec('2024', [lanc('cdb', 400_000)], []), 'x.DEC', 'agora')!
+  it('soma na base só o que a lista de fontes manda somar', () => {
+    const d = montarDeclaracao(
+      dec('2024', [lanc('cdb', 400_000), lanc('divFII', 90_000)], []),
+      'x.DEC',
+      'agora',
+    )!
+    // divFII é isento por lei (`base: false` em `fiscal/fontes.ts`): entra no
+    // histórico, não entra na base.
     expect(d.base).toBe(400_000)
-    expect(d.irpfm).toBe(0)
   })
 
   it('devolve null quando o ano não pôde ser lido', () => {
@@ -185,13 +191,6 @@ describe('séries do histórico', () => {
     expect(s.map((p) => p.anoBase)).toEqual([2023, 2025])
     expect(s[0]).toMatchObject({ inBase: 400_000, foraBase: 300_000, depende: 300_000, total: 1_000_000 })
     expect(s[1]).toMatchObject({ inBase: 800_000, foraBase: 400_000, depende: 400_000, total: 1_600_000 })
-  })
-
-  it('mostra em que anos a lei nova teria pegado', () => {
-    const b = serieBacktest(montar())
-    expect(b.map((p) => p.cruzou)).toEqual([false, true])
-    expect(b[0].irpfm).toBe(0)
-    expect(b[1].irpfm).toBeGreaterThan(0)
   })
 
   it('calcula o CAGR entre o primeiro e o último ano', () => {
@@ -312,8 +311,9 @@ describe('arquivos de anos antigos', () => {
 
   it('não perde o rendimento de um arquivo antigo só porque o ano veio à mão', () => {
     const d = montarDeclaracao(dec(null, [lanc('cdb', 700_000)], []), 'antigo.DEC', 'agora', 2021)!
+    // A base é o que se perdia: o arquivo sem ano detectado entrava no
+    // histórico com rendimento zero.
     expect(d.base).toBe(700_000)
-    expect(d.irpfm).toBeGreaterThan(0)
   })
 })
 

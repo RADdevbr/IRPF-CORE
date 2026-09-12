@@ -15,14 +15,25 @@ import {
   apagarTudoDesteAparelho,
   modoVisita,
   setModoVisita,
-  PREFIXO,
 } from './armazenamento'
-import { saveState, saveScenarios, loadState } from './storage'
-import { gravarCofre, lerCofre, lembrarDek, dekLembrada, gravarEstadoSync, lerEstadoSync } from './vault'
-import { lembrarConta, contaLembrada, esquecerConta } from './sessaoLembrada'
-import type { CofreCompleto } from './crypto'
+import { prefixoApp } from './config'
+import { criarPersistencia } from './persistencia'
+import { gravarCofre, lerCofre, lembrarDek, dekLembrada, gravarEstadoSync, lerEstadoSync } from '../cofre/vault'
+import { lembrarConta, contaLembrada, esquecerConta } from '../cofre/sessaoLembrada'
+import type { CofreCompleto } from '../cofre/crypto'
 
-const estado = { vals: { cdb: 1 }, ndep: 0, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 }
+// O núcleo não conhece o formato de estado de app nenhum — ver `persistencia.ts`.
+// Para este teste basta um objeto qualquer que atravesse a porta.
+interface Estado {
+  schemaVersion?: number
+  vals: Record<string, number>
+  ndep: number
+}
+const { saveState, saveScenarios, loadState } = criarPersistencia<Estado>({
+  versao: 1,
+  migrar: (b) => b as Estado,
+})
+const estado: Estado = { vals: { cdb: 1 }, ndep: 0 }
 const cofre: CofreCompleto = {
   schemaVersion: 1,
   vaultId: 'abc',
@@ -39,7 +50,7 @@ function gravarTudo() {
   gravarEstadoSync({ baseVersion: 3, sujo: true })
   lembrarConta('alguem@exemplo.com')
   // o token da conta é gravado pelo SDK do Supabase, sob a chave do app
-  armazenamentoLocal().setItem(`${PREFIXO}auth:v1`, '{"access_token":"tok"}')
+  armazenamentoLocal().setItem(`${prefixoApp()}auth:v1`, '{"access_token":"tok"}')
 }
 
 /** O que ficou no disco de verdade, nos dois storages nativos. */
@@ -48,7 +59,7 @@ function noDisco(): string[] {
   for (const st of [localStorage, sessionStorage]) {
     for (let i = 0; i < st.length; i++) {
       const k = st.key(i)
-      if (k && k.startsWith(PREFIXO)) fora.push(k)
+      if (k && k.startsWith(prefixoApp())) fora.push(k)
     }
   }
   return fora.sort()
@@ -78,19 +89,19 @@ describe('modo visita — a promessa, exercitada inteira', () => {
     expect(dekLembrada()).toEqual(new Uint8Array([1, 2, 3]))
     expect(lerEstadoSync()).toEqual({ baseVersion: 3, sujo: true })
     expect(contaLembrada()).toBe('alguem@exemplo.com')
-    expect(armazenamentoLocal().getItem(`${PREFIXO}auth:v1`)).toContain('tok')
+    expect(armazenamentoLocal().getItem(`${prefixoApp()}auth:v1`)).toContain('tok')
   })
 
   it('com ele DESLIGADO, os mesmos caminhos gravam — o teste acima não passa por vácuo', () => {
     gravarTudo()
     expect(noDisco()).toEqual([
-      'irpfm2027:auth:v1',
-      'irpfm2027:conta:v1',
-      'irpfm2027:dek:v1',
-      'irpfm2027:scenarios:v1',
-      'irpfm2027:state:v1',
-      'irpfm2027:sync:v1',
-      'irpfm2027:vault:v1',
+      `${prefixoApp()}auth:v1`,
+      `${prefixoApp()}conta:v1`,
+      `${prefixoApp()}dek:v1`,
+      `${prefixoApp()}scenarios:v1`,
+      `${prefixoApp()}state:v1`,
+      `${prefixoApp()}sync:v1`,
+      `${prefixoApp()}vault:v1`,
     ])
   })
 
@@ -113,16 +124,16 @@ describe('modo visita — a promessa, exercitada inteira', () => {
 describe('apagar deste aparelho', () => {
   it('leva o token da conta junto — ele agora nasce sob o prefixo do app', () => {
     gravarTudo()
-    expect(chavesGravadas()).toContain(`${PREFIXO}auth:v1`)
+    expect(chavesGravadas()).toContain(`${prefixoApp()}auth:v1`)
     apagarTudoDesteAparelho()
     expect(noDisco()).toEqual([])
   })
 
   it('varre também o que morre com a aba (a chave da sessão destravada)', () => {
     lembrarDek(new Uint8Array([9]))
-    expect(sessionStorage.getItem('irpfm2027:dek:v1')).toBeTruthy()
+    expect(sessionStorage.getItem(`${prefixoApp()}dek:v1`)).toBeTruthy()
     apagarTudoDesteAparelho()
-    expect(sessionStorage.getItem('irpfm2027:dek:v1')).toBeNull()
+    expect(sessionStorage.getItem(`${prefixoApp()}dek:v1`)).toBeNull()
   })
 
   it('não toca no que não é deste app', () => {

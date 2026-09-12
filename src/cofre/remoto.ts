@@ -7,8 +7,8 @@
 // O que sobe daqui é sempre opaco: texto cifrado e chaves embrulhadas.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { credenciaisSupabase } from './supabaseConfig'
-import { armazenamentoLocal, modoVisita, PREFIXO } from './armazenamento'
+import { credenciaisSupabase } from './config'
+import { armazenamentoLocal, chaveApp, modoVisita } from '../app/armazenamento'
 import type { Wrap } from './crypto'
 import { ConflitoDeVersao, type DocRemoto, type Remoto } from './sync'
 
@@ -18,13 +18,16 @@ import { ConflitoDeVersao, type DocRemoto, type Remoto } from './sync'
  * O padrão do SDK é `sb-<ref>-auth-token` no `localStorage`, e isso furava as
  * duas promessas do app de uma vez: o token — que inclui o refresh token, e é a
  * credencial que baixa o cofre — ficava gravado mesmo em modo visita, e escapava
- * de «Apagar deste aparelho», que varre só o prefixo `irpfm2027:`. Apagava-se o
- * cofre e deixava-se a chave que o traz de volta.
+ * de «Apagar deste aparelho», que varre só o prefixo do app. Apagava-se o cofre
+ * e deixava-se a chave que o traz de volta.
  *
  * Sob o prefixo do app, e passando por `armazenamentoLocal()`, o token entra nas
  * duas regras: some em modo visita e é varrido junto com o resto.
+ *
+ * É função, e não constante de módulo, porque o prefixo agora vem do app: uma
+ * constante seria avaliada no `import`, antes de `configurarApp()` rodar.
  */
-const CHAVE_AUTH = `${PREFIXO}auth:v1`
+const chaveAuth = () => chaveApp('auth:v1')
 
 /**
  * Traz para a chave nova a sessão que o SDK gravou na antiga.
@@ -42,7 +45,7 @@ function migrarChaveAntiga(st: ReturnType<typeof armazenamentoLocal>): void {
     }
     for (const k of antigas) {
       const v = st.getItem(k)
-      if (v && !st.getItem(CHAVE_AUTH)) st.setItem(CHAVE_AUTH, v)
+      if (v && !st.getItem(chaveAuth())) st.setItem(chaveAuth(), v)
       st.removeItem(k)
     }
   } catch {
@@ -59,7 +62,7 @@ function cli(): SupabaseClient {
     cliente = createClient(url, chave, {
       auth: {
         storage,
-        storageKey: CHAVE_AUTH,
+        storageKey: chaveAuth(),
         // Em modo visita o `storage` já é a memória, então persistir não grava
         // em disco. Desligar aqui também é a segunda tranca: a sessão morre com
         // a aba, sem depender de o `storage` certo ter sido escolhido.
@@ -101,6 +104,8 @@ export interface LinhaWrap {
   kdf_params: Record<string, number> | null
   salt: string
   wrapped_dek: string
+  /** Impressão da chave que este embrulho abre — ver `dekId` em `crypto.ts`. */
+  dek_id?: string | null
   criado_em: string
 }
 
@@ -124,6 +129,7 @@ export function wrapDaLinha(l: LinhaWrap): Wrap {
     kdfParams: l.kdf_params ?? undefined,
     salt: l.salt,
     wrappedDek: l.wrapped_dek,
+    dekId: l.dek_id ?? undefined,
     criadoEm: l.criado_em,
   }
 }
@@ -138,6 +144,7 @@ export function linhaDoWrap(w: Wrap, userId: string): LinhaWrap & { user_id: str
     kdf_params: w.kdfParams ?? null,
     salt: w.salt,
     wrapped_dek: w.wrappedDek,
+    dek_id: w.dekId ?? null,
     criado_em: w.criadoEm,
   }
 }
@@ -274,7 +281,7 @@ export function remotoSupabase(): Remoto {
     async lerWraps() {
       const { data, error } = await cli()
         .from('vault_wraps')
-        .select('wrap_id, metodo, rotulo, kdf, kdf_params, salt, wrapped_dek, criado_em')
+        .select('wrap_id, metodo, rotulo, kdf, kdf_params, salt, wrapped_dek, dek_id, criado_em')
       if (error) throw new Error(error.message)
       return (data as LinhaWrap[] | null)?.map(wrapDaLinha) ?? []
     },

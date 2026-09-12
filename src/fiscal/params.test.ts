@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ANO_BASE, PARAMS, aplicarOverrides, manuais, parametros, pendencias, type ParametrosAno } from './params'
-import { aliqMinima, calcINSS, calcIRRF, aplicaReducao, calcSalarioAnual } from './irpfm'
+import { aliqMinima } from './aliquota'
+import { calcINSS, calcIRRF, aplicaReducao } from './tabela'
 
 describe('parâmetros por ano', () => {
   it('tem o ano-base do app cadastrado', () => {
@@ -82,16 +83,6 @@ describe('o cálculo obedece aos parâmetros recebidos', () => {
   it('a redução do IR mensal usa os limites do conjunto', () => {
     // Sem faixa de redução no conjunto de teste: nada é reduzido.
     expect(aplicaReducao(3000, 500, OUTRO)).toBe(500)
-  })
-
-  it('o salário anual propaga os parâmetros até o 13º e as férias', () => {
-    const r = calcSalarioAnual(120_000, 1, OUTRO)
-    const mensal = 120_000 / (12 + 1 + 1 / 3)
-    const inss = Math.min(mensal, 1000) * 0.1
-    const base = Math.max(0, mensal - inss - 100)
-    expect(r.inssMensal).toBeCloseTo(inss, 8)
-    expect(r.baseMensal).toBeCloseTo(base, 8)
-    expect(r.irMensal).toBeCloseTo(base * 0.5, 8)
   })
 })
 

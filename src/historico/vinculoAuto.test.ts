@@ -10,7 +10,7 @@ import {
   LIMIAR,
 } from './vinculoAuto'
 import { montarDeclaracao, upsertDeclaracao, aplicarVinculos, serieDaPosicao, type Historico } from './historico'
-import type { DecResult, Posicao } from './decParser'
+import type { DecResult, Posicao } from '../dec/decParser'
 
 const pos = (
   descricao: string,

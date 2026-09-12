@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { C } from '../theme'
-import { anonimizar, amostra, type Nivel } from '../lib/anonimizar'
+import { C } from '../ui/theme'
+import { anonimizar, amostra, type Nivel } from './anonimizar'
 
 // Exporta um .DEC com os dados trocados, preservando posições e tamanhos — o
 // suficiente para depurar leiaute sem que valores, CPF ou CNPJ saiam de casa.

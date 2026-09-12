@@ -7,7 +7,7 @@ import {
   chavePagamento,
   type CategoriaDeducao,
 } from './deducoes'
-import type { Pagamento } from './decParser'
+import type { Pagamento } from '../dec/decParser'
 
 const pag = (over: Partial<Pagamento>): Pagamento => ({
   linha: 1,

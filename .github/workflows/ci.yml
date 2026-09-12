@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    name: Testes e build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22 e não 20: o jsdom dos testes exige Node >= 22.22 (no 20 ele quebra
+      # dentro do undici, com "markAsUncloneable is not a function"), e o SDK do
+      # Supabase já avisa que para de suportar o 20.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A matemática tributária é o produto: se um teste cai, o número que os
+      # apps mostram está errado e a decisão tomada com ele também.
+      - name: Testes
+        run: npm test
+
+      # O build é o que os apps consomem: se o `dist` não sai, nenhum dos três
+      # instala.
+      - name: Build
+        run: npm run build

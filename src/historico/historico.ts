@@ -5,9 +5,9 @@
 // cresceu, se a lei nova teria pegado os anos passados, e — o ponto do pedido —
 // QUANTO do patrimônio, se resgatado, joga rendimento na base do IRPFM.
 
-import type { DecResult, Lancamento, Pagamento } from './decParser'
-import { sugerirCategoria } from './deducoes'
-import { computeIrpfm } from '../calc/irpfm'
+import type { DecResult, Lancamento, Pagamento } from '../dec/decParser'
+import { sugerirCategoria } from '../fiscal/deducoes'
+import { FIELDS } from '../fiscal/fontes'
 
 /** O que acontece com a base do IRPFM quando este bem vira dinheiro. */
 export type Regime = 'inBase' | 'foraBase' | 'depende'
@@ -68,8 +68,20 @@ export interface Declaracao {
    * abrindo o app, com a lista vazia até reimportar o .DEC.
    */
   pagamentos?: Pagamento[]
-  base: number // base do IRPFM com a renda daquele ano
-  irpfm: number // o que teria sido devido sob a Lei 15.270
+  /** Soma das fontes que entram na base do imposto mínimo, naquele ano. */
+  base: number
+  /**
+   * O que teria sido devido sob a Lei 15.270 naquele ano.
+   *
+   * Opcional, e não preenchido aqui. O número exige o cálculo inteiro do IRPFM —
+   * deduções, redutor, imposto devido no ajuste — que é o assunto do app de
+   * estimativa, não do modelo do histórico. Quem tem o cálculo em mãos refaz de
+   * `vals` e `ndep`, que estão logo acima; quem não tem não precisa dele.
+   *
+   * Continua no tipo porque históricos gravados antes desta separação o têm, e
+   * jogar fora um número que já está em disco seria perder informação de graça.
+   */
+  irpfm?: number
   patrimonio: number
 }
 
@@ -353,14 +365,17 @@ export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
 
 /**
  * Converte o resultado do parser numa declaração do histórico, já com a base do
- * IRPFM e o imposto que teria sido devido naquele ano.
+ * imposto mínimo daquele ano.
+ *
+ * A base sai da lista de fontes (`FIELDS`): soma o que a lei manda somar. O
+ * imposto em si não sai daqui — ver `Declaracao.irpfm`.
  */
 export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string, exercicioManual?: number): Declaracao | null {
   const exercicio = exercicioManual ?? (dec.ano ? parseInt(dec.ano, 10) : NaN)
   if (!Number.isFinite(exercicio)) return null
 
   const vals = somaPorAlvo(dec.lancamentos)
-  const r = computeIrpfm({ vals, ndep: dec.ndep, cdbA: null, red: false, aliqEmp: 0, limR: 0.34 })
+  const base = FIELDS.filter((f) => f.base).reduce((s, f) => s + (vals[f.key] || 0), 0)
 
   const posicoes: PosicaoAno[] = dec.posicoes
     .filter((p) => p.saldoAtual > 0 || p.saldoAnterior > 0)
@@ -396,8 +411,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     vals,
     ndep: dec.ndep,
     posicoes,
-    base: r.base,
-    irpfm: r.liquido,
+    base,
     patrimonio: posicoes.reduce((s, p) => s + p.saldoAtual, 0),
   }
 }
@@ -487,19 +501,6 @@ export function pgblAportado(h: Historico): PontoPgbl[] {
       acumulado += noAno
       return { anoBase: d.anoBase, noAno, acumulado }
     })
-}
-
-export interface PontoBacktest {
-  anoBase: number
-  base: number
-  irpfm: number
-  cruzou: boolean
-}
-
-export function serieBacktest(h: Historico): PontoBacktest[] {
-  return Object.values(h)
-    .map((d) => ({ anoBase: d.anoBase, base: d.base, irpfm: d.irpfm, cruzou: d.base > 600_000 }))
-    .sort((a, b) => a.anoBase - b.anoBase)
 }
 
 /** Crescimento anual composto entre o primeiro e o último ano com patrimônio. */

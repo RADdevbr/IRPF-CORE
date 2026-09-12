@@ -1,14 +1,24 @@
-// Só a leitura das variáveis de ambiente — de propósito SEM importar o SDK do
-// Supabase, para que quem nunca abre a tela de conta não baixe ~200 kB à toa.
+// Se este app tem conta, e com que credenciais.
+//
+// Era uma leitura direta de `import.meta.env.VITE_SUPABASE_*`. Dentro de um
+// pacote compilado isso não funciona mais, e o modo de falha é traiçoeiro: o
+// Vite substitui essas variáveis no build de quem as escreve, então a leitura
+// feita AQUI sairia `undefined` no app que importa, e a tela de conta
+// simplesmente não apareceria — sem erro, sem aviso.
+//
+// Então as credenciais entram por `configurarApp()`, onde o app as lê do próprio
+// ambiente. O resto do desenho continua igual: o SDK do Supabase só é baixado
+// quando a tela de conta abre, e este módulo de propósito não o importa.
 
-const URL_SUPABASE = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const CHAVE_SUPABASE = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+import { supabaseDoApp } from '../app/config'
 
 export function supabaseConfigurado(): boolean {
-  return Boolean(URL_SUPABASE && CHAVE_SUPABASE)
+  const s = supabaseDoApp()
+  return Boolean(s?.url && s?.chave)
 }
 
 export function credenciaisSupabase(): { url: string; chave: string } {
-  if (!URL_SUPABASE || !CHAVE_SUPABASE) throw new Error('Sync não configurado neste ambiente.')
-  return { url: URL_SUPABASE, chave: CHAVE_SUPABASE }
+  const s = supabaseDoApp()
+  if (!s?.url || !s?.chave) throw new Error('Sync não configurado neste ambiente.')
+  return { url: s.url, chave: s.chave }
 }

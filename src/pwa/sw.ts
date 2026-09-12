@@ -11,11 +11,14 @@
 /**
  * @param aoAtualizar chamado quando há versão nova esperando; recebe a função
  *   que a aplica (troca o worker e recarrega a página).
+ * @param registrar `false` desliga o registro. Em dev o SW só atrapalharia:
+ *   serviria o bundle velho enquanto se edita. A checagem era
+ *   `import.meta.env.DEV` aqui dentro; num pacote compilado essa leitura não vale
+ *   — quem sabe se está em dev é o app, então quem responde é ele.
  */
-export function registrarSw(aoAtualizar: (aplicar: () => void) => void): void {
+export function registrarSw(aoAtualizar: (aplicar: () => void) => void, registrar = true): void {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
-  // Em dev o SW só atrapalharia: serviria o bundle velho enquanto se edita.
-  if (import.meta.env.DEV) return
+  if (!registrar) return
 
   let pedimosTroca = false
 

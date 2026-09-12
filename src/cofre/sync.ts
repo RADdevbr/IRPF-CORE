@@ -8,7 +8,7 @@
 // Supabase é `remoto.ts`, atrás de uma interface — o que deixa a decisão, que é
 // onde mora o risco de perder dado, coberta por testes sem servidor nenhum.
 
-import type { CofreCompleto, Wrap } from './crypto'
+import { mesmaChave, type CofreCompleto, type Wrap } from './crypto'
 
 export interface EstadoSync {
   /** Versão do servidor de onde saiu o conteúdo que está aqui. */
@@ -105,7 +105,30 @@ export interface Remoto {
   gravarWraps(wraps: Wrap[]): Promise<void>
 }
 
+/**
+ * Nome do documento do estado, quando o app não diz qual é.
+ *
+ * Cada app tem o seu (`docEstadoApp()`), porque uma conta guarda os três — a
+ * chave primária de `vaults` é (usuário, doc_id). Este padrão existe só para os
+ * testes e para quem chama `sincronizar` sem argumento.
+ */
 export const DOC_ESTADO = 'state'
+
+/**
+ * Os dois lados têm chaves diferentes, e juntar os embrulhos corromperia o
+ * acesso dos dois.
+ *
+ * Fail-closed de propósito: em vez de deixar `unirWraps` decidir caso a caso,
+ * qualquer tentativa de unir conjuntos de chaves comprovadamente distintas
+ * levanta isto. Quem chama traduz para a tela de conflito, onde a pessoa escolhe
+ * um dos lados — o que nunca dá é misturar.
+ */
+export class ChavesDiferentes extends Error {
+  constructor() {
+    super('Os métodos de desbloqueio dos dois lados abrem chaves diferentes.')
+    this.name = 'ChavesDiferentes'
+  }
+}
 
 /** Serializa o cofre local para o formato que vai ao servidor. */
 export function paraDoc(cofre: CofreCompleto, docId: string, version: number): Omit<DocRemoto, 'atualizadoEm'> {
@@ -123,6 +146,11 @@ export function deDoc(doc: DocRemoto, wraps: Wrap[]): CofreCompleto {
  * pior do sync: perder o método que só existia num dispositivo.
  */
 export function unirWraps(locais: Wrap[], remotos: Wrap[]): Wrap[] {
+  // «Wrap é aditivo por natureza» vale enquanto todos embrulham a MESMA chave —
+  // era verdade quando havia um app só. Com três apps dividindo uma conta, dois
+  // conjuntos podem embrulhar chaves diferentes, e aí unir produz um cofre cujos
+  // métodos abrem e cujo conteúdo não decifra. Antes de juntar, conferimos.
+  if (mesmaChave(locais, remotos) === false) throw new ChavesDiferentes()
   const porId = new Map<string, Wrap>()
   for (const w of remotos) porId.set(w.wrapId, w)
   for (const w of locais) porId.set(w.wrapId, w) // local vence em empate: é o mais recente que o usuário tocou

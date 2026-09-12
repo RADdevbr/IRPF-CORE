@@ -9,13 +9,16 @@
 // `armazenamento.ts` como todo o resto — em modo visita, o e-mail da conta é
 // exatamente o tipo de rastro que não deve ficar no computador de outra pessoa.
 
-import { armazenamentoLocal, type Armazenamento } from './armazenamento'
+import { armazenamentoLocal, chaveApp, type Armazenamento } from '../app/armazenamento'
 
-const CHAVE = 'irpfm2027:conta:v1'
+// Escrita à mão, esta chave escapava do prefixo do app: com três apps na mesma
+// família, o e-mail lembrado por um apareceria para os outros, e «apagar deste
+// aparelho» num deles não o levaria. `chaveApp` é a porta — ver `config.ts`.
+const CHAVE = () => chaveApp('conta:v1')
 
 export function lembrarConta(email: string, st: Armazenamento = armazenamentoLocal()): void {
   try {
-    st.setItem(CHAVE, email)
+    st.setItem(CHAVE(), email)
   } catch {
     /* navegador sem storage: só perde a memória do e-mail */
   }
@@ -23,7 +26,7 @@ export function lembrarConta(email: string, st: Armazenamento = armazenamentoLoc
 
 export function contaLembrada(st: Armazenamento = armazenamentoLocal()): string | null {
   try {
-    return st.getItem(CHAVE)
+    return st.getItem(CHAVE())
   } catch {
     return null
   }
@@ -31,7 +34,7 @@ export function contaLembrada(st: Armazenamento = armazenamentoLocal()): string 
 
 export function esquecerConta(st: Armazenamento = armazenamentoLocal()): void {
   try {
-    st.removeItem(CHAVE)
+    st.removeItem(CHAVE())
   } catch {
     /* idem */
   }

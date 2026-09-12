@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { C } from '../theme'
-import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado, lerCofre } from '../lib/vault'
-import { apagarTudoDesteAparelho } from '../lib/storage'
+import { C } from '../ui/theme'
+import { criarCofreLocal, destravarLocal, metodos, lembrarDek, suportePrfLembrado, lerCofre } from './vault'
+import { apagarTudoDesteAparelho } from '../app/persistencia'
+import { prefixoApp } from '../app/config'
 import { PasskeyDoctor } from './PasskeyDoctor'
-import { gerarCodigoRecuperacao, type Wrap } from '../lib/crypto'
-import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey, dominioDaPasskey } from '../lib/passkey'
-import { rotuloDispositivo, deOutroAparelho } from '../lib/dispositivo'
-import type { PersistedState } from '../lib/storage'
+import { gerarCodigoRecuperacao, type Wrap } from './crypto'
+import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey, dominioDaPasskey } from './passkey'
+import { rotuloDispositivo, deOutroAparelho } from './dispositivo'
 
 // Telas A1–A3 dos mocks: criar o cofre e destravá-lo. O caminho padrão é a
 // passkey (biometria); senha e chave de recuperação são as alternativas.
@@ -63,7 +63,15 @@ function Aviso({ texto, tom }: { texto: string; tom: 'erro' | 'info' | 'alerta' 
   )
 }
 
-export function VaultGate({
+/**
+ * Genérico no estado de propósito: esta tela nunca olha DENTRO do que cifra.
+ *
+ * Era tipada em `PersistedState` — o estado do app de IRPFM, com os campos do
+ * histórico e da B3 dentro. Isso obrigava qualquer app que quisesse o cofre a
+ * herdar o formato de estado de outro. O cofre só precisa de um valor
+ * serializável; quem sabe o que ele significa é quem o passou.
+ */
+export function VaultGate<T>({
   modo,
   estadoAtual,
   onPronto,
@@ -71,8 +79,8 @@ export function VaultGate({
   aviso,
 }: {
   modo: 'criar' | 'destravar'
-  estadoAtual: PersistedState
-  onPronto: (dek: Uint8Array, dados: PersistedState | null) => void
+  estadoAtual: T
+  onPronto: (dek: Uint8Array, dados: T | null) => void
   onCancelar?: () => void
   /** Recado que precisa ser visto ANTES de destravar — ex.: voltou do link do e-mail. */
   aviso?: string
@@ -91,7 +99,9 @@ export function VaultGate({
     const url = URL.createObjectURL(new Blob([JSON.stringify(cofre, null, 2)], { type: 'application/json' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = 'irpfm-cofre-cifrado-backup.json'
+    // O nome carrega o prefixo do app: quem usa os três da família e baixa
+    // cópia de cada um não fica com três arquivos de nome igual na pasta.
+    a.download = `${prefixoApp().replace(/:$/, '')}-cofre-cifrado-backup.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -203,7 +213,7 @@ export function VaultGate({
       }
       // Quem responde diz qual credencial usou — é por ela que se acha o wrap.
       const wrap = wrapsPasskey.find((w) => w.wrapId === wrapIdDaPasskey(credentialId)) ?? wrapPasskey
-      const { dek, dados } = await destravarLocal(wrap.wrapId, segredo)
+      const { dek, dados } = await destravarLocal<T>(wrap.wrapId, segredo)
       if (confiar) lembrarDek(dek)
       onPronto(dek, dados)
     })
@@ -211,7 +221,7 @@ export function VaultGate({
   const destravarPorTexto = () =>
     comOcupado(async () => {
       const wrapId = via === 'senha' ? 'senha' : 'recuperacao'
-      const { dek, dados } = await destravarLocal(wrapId, segredoDigitado)
+      const { dek, dados } = await destravarLocal<T>(wrapId, segredoDigitado)
       if (confiar) lembrarDek(dek)
       onPronto(dek, dados)
     })

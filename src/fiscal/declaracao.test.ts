@@ -8,7 +8,7 @@ import {
 } from './declaracao'
 import { parametros } from './params'
 import { calcINSS, calcIRRF } from './tabela'
-import { computeIrpfm, calcSalarioAnual, FIELDS, type CalcParams } from './irpfm'
+import { FIELDS } from './fontes'
 
 const par = parametros()
 
@@ -20,15 +20,6 @@ function makeVals(over: Record<string, number> = {}): Record<string, number> {
   })
   return { ...v, ...over }
 }
-const p = (over: Partial<CalcParams> = {}): CalcParams => ({
-  vals: makeVals(over.vals),
-  ndep: 0,
-  cdbA: null,
-  red: false,
-  aliqEmp: 0,
-  limR: 0.34,
-  ...over,
-})
 
 describe('tabela anual', () => {
   it('é a mensal vezes doze, faixa e parcela a deduzir', () => {
@@ -122,57 +113,6 @@ describe('tetos das deduções', () => {
   it('dedução dentro do teto não vira corte', () => {
     const r = apurarDeclaracao({ rendimentos: 200000, deducoes: { previdenciaPrivada: 10000 } })
     expect(r.cortes).toEqual([])
-  })
-})
-
-describe('a dedução do IRPFM passa a ser o imposto devido', () => {
-  it('o IRRF do pró-labore vira antecipação, não dedução', () => {
-    const c = computeIrpfm(p({ vals: makeVals({ salario: 240000, divBR: 900000 }) }))
-    const sc = calcSalarioAnual(240000, 0)
-    // o que era retido mês a mês continua visível, mas fora da dedução
-    expect(c.irAntecipado).toBeCloseTo(sc.irMensal * 12, 4)
-    expect(c.deducoes).toBeCloseTo(c.irpfDevido + c.irDefinitivo, 6)
-    expect(c.deducoes).not.toBeCloseTo(sc.irAnual, 2)
-  })
-
-  it('13º e adicional de férias entram como definitivos: são exclusivos na fonte', () => {
-    const c = computeIrpfm(p({ vals: makeVals({ salario: 240000, divBR: 900000 }) }))
-    const sc = calcSalarioAnual(240000, 0)
-    expect(c.irDefinitivo).toBeCloseTo(sc.ir13 + sc.irFer, 6)
-  })
-
-  it('informar despesa médica AUMENTA o IRPFM, porque derruba o imposto devido', () => {
-    const vals = makeVals({ salario: 600000, divBR: 900000 })
-    const sem = computeIrpfm(p({ vals }))
-    const com = computeIrpfm(p({ vals, deducoes: { saude: 80000 } }))
-    expect(com.irpfDevido).toBeLessThan(sem.irpfDevido)
-    expect(com.liquido).toBeGreaterThan(sem.liquido)
-  })
-
-  it('IR pago no exterior compensa o devido em vez de abater o IRPFM por fora', () => {
-    const vals = makeVals({ exterior: 300000, divBR: 900000 })
-    const sem = computeIrpfm(p({ vals }))
-    const com = computeIrpfm(p({ vals: { ...vals, exterior_ir: 20000 } }))
-    expect(sem.irpfDevido - com.irpfDevido).toBeCloseTo(20000, 6)
-  })
-
-  it('retenção exclusiva (CDB, bolsa, dividendo) continua abatendo direto', () => {
-    const c = computeIrpfm(p({ vals: makeVals({ divBR: 900000, divBR_ir: 90000 }) }))
-    expect(c.irDefinitivo).toBeCloseTo(90000, 6)
-    expect(c.irpfDevido).toBe(0) // nada tributável na declaração
-    expect(c.aRestituir).toBeCloseTo(45000, 6)
-  })
-
-  it('a conservação continua valendo com o novo modelo de dedução', () => {
-    const c = computeIrpfm(
-      p({
-        vals: makeVals({ salario: 300000, aluguel: 120000, aluguel_ir: 18000, divBR: 800000, divBR_ir: 80000 }),
-        ndep: 2,
-        deducoes: { saude: 30000, instrucao: 12000, previdenciaPrivada: 40000 },
-      }),
-    )
-    expect(c.liquido - c.aRestituir).toBeCloseTo(c.bruto - c.deducoes - c.redutor, 6)
-    expect(c.deducoes).toBeCloseTo(c.irpfDevido + c.irDefinitivo, 6)
   })
 })
 

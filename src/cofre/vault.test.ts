@@ -16,7 +16,14 @@ import {
   type Store,
 } from './vault'
 import { gerarCodigoRecuperacao } from './crypto'
-import type { PersistedState } from './storage'
+import { prefixoApp } from '../app/config'
+// O cofre é genérico no que guarda: um objeto serializável qualquer. Este é o
+// mínimo que serve para os testes — antes era o `PersistedState` do app de
+// IRPFM, o que fazia o núcleo depender do formato de estado de um dos apps.
+interface EstadoDeTeste {
+  vals: Record<string, number>
+  ndep: number
+}
 
 // Storage falso — o vault recebe o adaptador, então roda em Node sem DOM.
 function fakeStore(): Store & { dump: () => Record<string, string> } {
@@ -37,7 +44,7 @@ const ESTADO = {
   red: false,
   aliqEmp: 0,
   limR: 0.34,
-} as unknown as PersistedState
+} as unknown as EstadoDeTeste
 
 const passkey = () => new Uint8Array(32).fill(3)
 
@@ -66,7 +73,7 @@ describe('cofre local', () => {
   })
 
   it('não deixa rastro do estado em claro no armazenamento', async () => {
-    st.setItem('irpfm2027:state:v1', JSON.stringify(ESTADO))
+    st.setItem(`${prefixoApp()}state:v1`, JSON.stringify(ESTADO))
     await montar()
     const tudo = JSON.stringify(st.dump())
     expect(tudo).not.toContain('840000')
@@ -87,7 +94,7 @@ describe('cofre local', () => {
     const { dek } = await montar()
     const novo = { ...ESTADO, ndep: 5 }
     await salvarCifrado(dek, novo, st)
-    const { dados } = await destravarLocal('recuperacao', codigo, st)
+    const { dados } = await destravarLocal<EstadoDeTeste>('recuperacao', codigo, st)
     expect(dados.ndep).toBe(5)
     expect(metodos(st)).toHaveLength(2)
   })
@@ -101,7 +108,7 @@ describe('cofre local', () => {
   it('adiciona um terceiro método que abre o mesmo cofre', async () => {
     const { dek } = await montar()
     await adicionarMetodoLocal(dek, { wrapId: 'senha', metodo: 'senha', segredo: 'alternativa-77' }, AGORA, st)
-    const { dados } = await destravarLocal('senha', 'alternativa-77', st)
+    const { dados } = await destravarLocal<EstadoDeTeste>('senha', 'alternativa-77', st)
     expect(dados).toEqual(ESTADO)
     expect(metodos(st)).toHaveLength(3)
   })
@@ -124,7 +131,7 @@ describe('cofre local', () => {
     expect(motivoParaNaoRemover('senha', st)).toBeNull()
     removerMetodoLocal('senha', st)
     expect(metodos(st)).toHaveLength(2)
-    const { dados } = await destravarLocal('passkey:abc', passkey(), st)
+    const { dados } = await destravarLocal<EstadoDeTeste>('passkey:abc', passkey(), st)
     expect(dados).toEqual(ESTADO)
   })
 
@@ -180,14 +187,14 @@ describe('memória do suporte a PRF', () => {
   it('trata valor corrompido como desconhecido', async () => {
     const { suportePrfLembrado } = await import('./vault')
     const st = fakeStore()
-    st.setItem('irpfm2027:prf:v2', 'talvez')
+    st.setItem(`${prefixoApp()}prf:v2`, 'talvez')
     expect(suportePrfLembrado(st)).toBe('desconhecido')
   })
 
   it('ignora o veredito da v1, que vinha de um diagnóstico defeituoso', async () => {
     const { suportePrfLembrado } = await import('./vault')
     const st = fakeStore()
-    st.setItem('irpfm2027:prf:v1', 'nao')
+    st.setItem(`${prefixoApp()}prf:v1`, 'nao')
     expect(suportePrfLembrado(st)).toBe('desconhecido')
   })
 })

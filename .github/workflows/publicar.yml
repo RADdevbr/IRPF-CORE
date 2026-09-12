@@ -1,0 +1,38 @@
+name: Publicar no npm
+
+# Dispara ao criar uma release no GitHub. Enquanto o segredo NPM_TOKEN não
+# existir, este fluxo simplesmente não roda — e os apps continuam instalando pela
+# tag do git, que é o que fazem hoje. Ver o README.
+on:
+  release:
+    types: [published]
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      # A versão publicada é a da tag: sem isto dá para publicar por engano uma
+      # versão que ninguém marcou.
+      - name: A tag bate com a versão do package.json?
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          [ "$tag" = "$pkg" ] || { echo "tag $tag ≠ package.json $pkg"; exit 1; }
+
+      - run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -24,6 +24,22 @@ export interface Wrap {
   salt: string // base64
   wrappedDek: string // base64 — iv || ciphertext
   criadoEm: string // ISO
+  /**
+   * Qual CHAVE este embrulho abre — `impressaoDek()`, não a chave.
+   *
+   * Existe porque os embrulhos são um conjunto por CONTA e os cofres passaram a
+   * ser um por APP. Sem isto, um app que gerasse a própria DEK subiria embrulhos
+   * dela para a mesma conta, `unirWraps` juntaria os dois conjuntos, e o outro
+   * app destravaria com um método que devolve a chave errada: o embrulho abre, o
+   * conteúdo não. A pessoa veria "sua chave está certa mas o conteúdo não
+   * corresponde" sem ter feito nada de errado.
+   *
+   * Com a impressão declarada, misturar dá para detectar antes de gravar.
+   *
+   * Opcional: embrulhos criados antes deste campo não a têm, e ausência é
+   * "não sei", nunca "chave diferente".
+   */
+  dekId?: string
 }
 
 /** O cofre: os dados do usuário cifrados pela DEK. */
@@ -182,6 +198,7 @@ export async function embrulhar(
     kdfParams: meta.kdfParams,
     salt: paraB64(meta.salt),
     wrappedDek: paraB64(concat(iv, ct)),
+    dekId: await impressaoDek(dek),
     criadoEm: agora,
   }
 }
@@ -197,6 +214,49 @@ export async function desembrulhar(wrap: Wrap, kek: CryptoKey): Promise<Uint8Arr
   } catch {
     throw new Error('Não foi possível abrir o cofre com este método.')
   }
+}
+
+/**
+ * Impressão digital da DEK: SHA-256 truncado, em base64.
+ *
+ * Pode viajar junto do embrulho sem enfraquecer nada — a DEK são 32 bytes
+ * sorteados, e um hash dela não ajuda a adivinhá-la. O que ela permite é
+ * comparar duas chaves sem ter nenhuma das duas aberta.
+ */
+export async function impressaoDek(dek: Uint8Array): Promise<string> {
+  const h = await crypto.subtle.digest('SHA-256', dek as BufferSource)
+  return paraB64(new Uint8Array(h)).replace(/[+/=]/g, '').slice(0, 16)
+}
+
+/**
+ * Abre só a CHAVE, sem tocar em conteúdo nenhum.
+ *
+ * É a primeira metade de `destravar`, separada porque um app novo na mesma conta
+ * precisa exatamente disto: ele tem os embrulhos (vieram da conta) e ainda não
+ * tem documento cifrado nenhum para decifrar. Com a chave em mãos ele cria o
+ * próprio documento — cifrado com a MESMA chave dos outros apps, que é o que
+ * mantém os embrulhos da conta todos válidos.
+ */
+export async function abrirDek(wraps: Wrap[], wrapId: string, segredo: Uint8Array | string): Promise<Uint8Array> {
+  const wrap = wraps.find((w) => w.wrapId === wrapId)
+  if (!wrap) throw new Error('Método de desbloqueio não encontrado.')
+  return desembrulhar(wrap, await kekDoWrap(wrap, segredo))
+}
+
+/**
+ * Dois conjuntos de embrulhos abrem a mesma chave?
+ *
+ * `null` = não dá para afirmar (algum lado sem impressão declarada). Quem chama
+ * trata o `null` como "siga como antes": recusar por falta de informação
+ * quebraria o sync de quem cadastrou os métodos antes deste campo existir.
+ */
+export function mesmaChave(a: Wrap[], b: Wrap[]): boolean | null {
+  const ids = (ws: Wrap[]) => new Set(ws.map((w) => w.dekId).filter((x): x is string => Boolean(x)))
+  const ia = ids(a)
+  const ib = ids(b)
+  if (ia.size === 0 || ib.size === 0) return null
+  for (const x of ia) if (ib.has(x)) return true
+  return false
 }
 
 // ---------------------------------------------------------------- cofre

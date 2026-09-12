@@ -1,16 +1,21 @@
-// Projeção YTD (year-to-date): anualiza renda parcial por fonte e projeta a
-// base do IRPFM no fechamento do ano. Ver PLAN.md ("Mecânica: Projeção YTD").
+// Dividendos: a grade [mês × pagador] e a retenção do Art. 6º-A.
+//
+// Saiu de `calc/ytd.ts`, onde convivia com a projeção YTD da renda. As duas
+// coisas moravam juntas por terem nascido juntas, mas respondem a perguntas de
+// donos diferentes: a projeção é do app de estimativa do IRPFM ("com o que já
+// recebi, onde fecho o ano?"), e a grade é do MODELO — quem importa o extrato da
+// B3 precisa dela para reconstituir o dividendo bruto, e quem projeta o imposto
+// precisa dela para saber quanto foi retido.
+//
+// Duas decisões que mudam número, e que é por isso que isto é um só lugar:
+//
+//   · O gatilho dos R$ 50 mil é POR PAGADOR E POR MÊS. A grade não soma
+//     pagadores e não soma o ano: agregar inventaria uma retenção que ninguém
+//     sofreu, ou joga fora uma que aconteceu.
+//   · A retenção só existe a partir do ano-base de `DIV_ANO_RETENCAO`. Antes
+//     dele o valor creditado já é o bruto.
 
-export type Gran = 12 | 4 | 2
 export type Method = 'runrate' | 'last' | 'manual'
-
-export interface YtdConfig {
-  mode: 'anual' | 'ytd'
-  gran: Gran
-  method: Method
-  realized: number[] // valores dos períodos já fechados
-  manual: number[] // projeção manual dos períodos restantes (method='manual')
-}
 
 export interface DivPJ {
   nome: string
@@ -43,7 +48,9 @@ export interface DivGrid {
 
 // Dividendos: gatilho e alíquota do IRRF mensal (Art. 6º-A, Lei 15.270/2025).
 export const DIV_TRIGGER = 50000
+
 export const DIV_ALIQ = 0.1
+
 /**
  * Primeiro ano-base em que o dividendo pago à pessoa física sofre retenção na
  * fonte.
@@ -56,41 +63,6 @@ export const DIV_ALIQ = 0.1
 export const DIV_ANO_RETENCAO = 2026
 
 export const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-
-export function periodLabels(gran: Gran): string[] {
-  if (gran === 12) return MONTHS
-  if (gran === 4) return ['1º tri', '2º tri', '3º tri', '4º tri']
-  return ['1º sem', '2º sem']
-}
-
-// Períodos já fechados dada a granularidade e o mês de referência (1..12).
-export function completedPeriods(gran: Gran, mesRef: number): number {
-  const monthsPerPeriod = 12 / gran
-  return Math.max(0, Math.min(gran, Math.floor(mesRef / monthsPerPeriod)))
-}
-
-// Soma realizada até a data (períodos fechados).
-export function realizedToDate(cfg: YtdConfig, mesRef: number): number {
-  const k = completedPeriods(cfg.gran, mesRef)
-  return cfg.realized.slice(0, k).reduce((s, x) => s + (x || 0), 0)
-}
-
-// Projeção do valor anual conforme o método escolhido.
-export function projectAnnual(cfg: YtdConfig, mesRef: number): number {
-  const N = cfg.gran
-  const k = completedPeriods(cfg.gran, mesRef)
-  const realized = cfg.realized.slice(0, k)
-  const ytd = realized.reduce((s, x) => s + (x || 0), 0)
-  const remaining = N - k
-  if (remaining <= 0) return ytd
-  if (cfg.method === 'manual') {
-    return ytd + cfg.manual.slice(0, remaining).reduce((s, x) => s + (x || 0), 0)
-  }
-  if (k === 0) return 0 // nada realizado e sem manual → não dá pra projetar
-  if (cfg.method === 'runrate') return (ytd * N) / k
-  // 'last': repete o último período fechado
-  return ytd + (realized[k - 1] || 0) * remaining
-}
 
 export interface DivPjResult {
   nome: string
@@ -215,49 +187,6 @@ export function divProjection(grid: DivGrid, mesRef: number): DivResult {
     irrf: pjs.reduce((s, p) => s + p.irrf, 0),
     mesesComLancamento,
   }
-}
-
-export interface FaixaInfo {
-  falta600: number
-  falta12: number
-  runMensal: number
-  mesesAteCruzar600: number | null
-  crossMonth: number | null // mês (1..12) em que cruza 600k; >12 = não cruza este ano
-  jaCruzou600: boolean
-  jaCruzou12: boolean
-}
-
-// Distância até os degraus 600k / 1,2M e projeção de quando a base os cruza,
-// no ritmo do que já foi realizado.
-export function faixaInfo(baseRealizada: number, mesRef: number): FaixaInfo {
-  const falta600 = Math.max(0, 600000 - baseRealizada)
-  const falta12 = Math.max(0, 1200000 - baseRealizada)
-  const runMensal = mesRef > 0 ? baseRealizada / mesRef : 0
-  const jaCruzou600 = baseRealizada >= 600000
-  const jaCruzou12 = baseRealizada >= 1200000
-  let mesesAteCruzar600: number | null = null
-  let crossMonth: number | null = null
-  if (!jaCruzou600 && runMensal > 0) {
-    mesesAteCruzar600 = Math.ceil(falta600 / runMensal)
-    crossMonth = mesRef + mesesAteCruzar600
-  }
-  return { falta600, falta12, runMensal, mesesAteCruzar600, crossMonth, jaCruzou600, jaCruzou12 }
-}
-
-// ---- Fábricas de estado padrão ----
-
-export function defYtdConfig(): YtdConfig {
-  return { mode: 'anual', gran: 12, method: 'runrate', realized: [], manual: [] }
-}
-
-export const YTD_KEYS = ['salario', 'exterior', 'aluguel', 'cdb', 'outros'] as const
-
-export function defYtdMap(): Record<string, YtdConfig> {
-  const o: Record<string, YtdConfig> = {}
-  YTD_KEYS.forEach((k) => {
-    o[k] = defYtdConfig()
-  })
-  return o
 }
 
 export function defDivGrid(): DivGrid {

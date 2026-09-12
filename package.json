@@ -1,0 +1,60 @@
+{
+  "name": "@raddevbr/irpf-core",
+  "version": "0.1.0",
+  "description": "Núcleo comum da família IRPF: cofre cifrado, leitores de .DEC e .xlsx, histórico plurianual e tabelas fiscais",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "repository": { "type": "git", "url": "git+https://github.com/RADdevbr/IRPF-CORE.git" },
+  "engines": { "node": ">=22.22.2" },
+  "files": ["dist", "supabase", "README.md", "LICENSE"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./ui": { "types": "./dist/ui/index.d.ts", "default": "./dist/ui/index.js" },
+    "./app": { "types": "./dist/app/index.d.ts", "default": "./dist/app/index.js" },
+    "./cofre": { "types": "./dist/cofre/index.d.ts", "default": "./dist/cofre/index.js" },
+    "./cofre/conta": { "types": "./dist/cofre/conta.d.ts", "default": "./dist/cofre/conta.js" },
+    "./dec": { "types": "./dist/dec/index.d.ts", "default": "./dist/dec/index.js" },
+    "./xlsx": { "types": "./dist/xlsx/index.d.ts", "default": "./dist/xlsx/index.js" },
+    "./historico": { "types": "./dist/historico/index.d.ts", "default": "./dist/historico/index.js" },
+    "./fiscal": { "types": "./dist/fiscal/index.d.ts", "default": "./dist/fiscal/index.js" },
+    "./bolsa": { "types": "./dist/bolsa/index.d.ts", "default": "./dist/bolsa/index.js" },
+    "./patrimonio": { "types": "./dist/patrimonio/index.d.ts", "default": "./dist/patrimonio/index.js" },
+    "./pwa": { "types": "./dist/pwa/index.d.ts", "default": "./dist/pwa/index.js" },
+    "./ponte": { "types": "./dist/ponte/index.d.ts", "default": "./dist/ponte/index.js" },
+    "./supabase/schema.sql": "./supabase/schema.sql"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.12.0"
+  },
+  "peerDependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "peerDependenciesMeta": {
+    "@supabase/supabase-js": { "optional": true }
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^30.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

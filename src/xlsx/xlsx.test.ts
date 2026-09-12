@@ -7,8 +7,10 @@ import {
   desescapar,
   MAX_LINHAS,
   MAX_COLUNAS,
+  type Celula,
 } from './xlsx'
-import { xlsxExemplo } from './xlsxExemplo'
+import { montarXlsx } from './montar'
+import { xlsxExemplo } from './exemplo'
 
 describe('leitor de .xlsx', () => {
   it('lê as abas na ordem em que a planilha as declara', async () => {
@@ -213,5 +215,26 @@ describe('planilha hostil', () => {
     expect(desescapar('&#99999999999;')).toBe('&#99999999999;')
     // e a entidade válida continua funcionando
     expect(desescapar('&#65;&amp;&#x42;')).toBe('A&B')
+  })
+})
+
+// O construtor e o leitor têm de se fechar: o que um escreve, o outro lê. Sem
+// isto, `montarXlsx` podia gerar um zip que só o teste dele aceita — e a fixture
+// dos testes de import viraria ficção.
+describe('montarXlsx fecha com lerXlsx', () => {
+  it('o que o construtor escreve, o leitor lê de volta', async () => {
+    const bytes = montarXlsx([
+      { nome: 'Proventos', linhas: [['Produto', 'Valor'], ['PETR4', 1234.5], ['', '']] },
+      { nome: 'Vazia', linhas: [] },
+    ])
+    // `.buffer` de propósito: o construtor devolve bytes e o leitor recebe o
+    // ArrayBuffer que um `<input type=file>` entrega. É o contrato entre os dois.
+    const abas = await lerXlsx(bytes.buffer as ArrayBuffer)
+    expect(abas.map((a) => a.nome)).toEqual(['Proventos', 'Vazia'])
+    const texto = (l: (Celula | undefined)[]) => l.map((c) => c?.valor)
+    expect(texto(abas[0].linhas[0])).toEqual(['Produto', 'Valor'])
+    // O construtor escreve tudo como `inlineStr`, inclusive número: é o que o
+    // extrato da B3 faz, e é por isso que o leitor não pode depender do tipo.
+    expect(texto(abas[0].linhas[1])).toEqual(['PETR4', '1234.5'])
   })
 })

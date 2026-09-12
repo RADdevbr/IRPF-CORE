@@ -10,7 +10,7 @@ import {
   type Entradas,
 } from './consistencia'
 import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
-import type { DecResult, Lancamento, Pagamento, Posicao } from './decParser'
+import type { DecResult, Lancamento, Pagamento, Posicao } from '../dec/decParser'
 
 const pag = (codigo: string, beneficiario: string, valor: number): Pagamento => ({
   linha: 1,

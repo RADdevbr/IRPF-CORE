@@ -8,6 +8,7 @@
 // usuário pedir "confiar neste dispositivo" — e mesmo assim morre ao fechar a aba.
 
 import {
+  abrirDek,
   criarCofre,
   destravar,
   novoWrap,
@@ -21,18 +22,20 @@ import {
   type CofreCompleto,
   type Wrap,
 } from './crypto'
-import type { PersistedState } from './storage'
 import type { EstadoSync } from './sync'
-import { armazenamentoLocal, armazenamentoSessao } from './armazenamento'
+import { armazenamentoLocal, armazenamentoSessao, chaveApp } from '../app/armazenamento'
 
-const VAULT_KEY = 'irpfm2027:vault:v1'
-const LEGADO_KEY = 'irpfm2027:state:v1'
-const SESSAO_KEY = 'irpfm2027:dek:v1'
+// As chaves nascem do prefixo do app, e por isso são funções: uma constante de
+// módulo seria avaliada no `import`, antes de `configurarApp()` rodar. Ver
+// `app/config.ts` para o porquê de o prefixo não ser mais uma constante daqui.
+const VAULT_KEY = () => chaveApp('vault:v1')
+const LEGADO_KEY = () => chaveApp('state:v1')
+const SESSAO_KEY = () => chaveApp('dek:v1')
 // v2: o diagnóstico da v1 registrava credencial não-descobrível e dava falso
 // negativo no Android. Vereditos daquela versão não são comparáveis — trocar a
 // chave os descarta em vez de manter a biometria escondida de quem já testou.
-const PRF_KEY = 'irpfm2027:prf:v2'
-const SYNC_KEY = 'irpfm2027:sync:v1'
+const PRF_KEY = () => chaveApp('prf:v2')
+const SYNC_KEY = () => chaveApp('sync:v1')
 
 /** Só o que usamos de Storage — permite injetar um falso nos testes. */
 export type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -54,7 +57,7 @@ function sessao(ss?: Store): Store {
 export function lerCofre(st?: Store): CofreCompleto | null {
   const s = store(st)
   try {
-    const raw = s.getItem(VAULT_KEY)
+    const raw = s.getItem(VAULT_KEY())
     if (!raw) return null
     const c = JSON.parse(raw) as CofreCompleto
     if (!c || !Array.isArray(c.wraps) || !c.cofre) return null
@@ -63,7 +66,7 @@ export function lerCofre(st?: Store): CofreCompleto | null {
       // enquanto ainda não há com o que confundi-lo.
       const comId = { ...c, vaultId: gerarVaultId() }
       try {
-        s.setItem(VAULT_KEY, JSON.stringify(comId))
+        s.setItem(VAULT_KEY(), JSON.stringify(comId))
       } catch {
         /* só em memória, tudo bem */
       }
@@ -80,7 +83,7 @@ export function existeCofre(st?: Store): boolean {
 }
 
 export function gravarCofre(cofre: CofreCompleto, st?: Store): void {
-  store(st).setItem(VAULT_KEY, JSON.stringify(cofre))
+  store(st).setItem(VAULT_KEY(), JSON.stringify(cofre))
 }
 
 /** Métodos de desbloqueio cadastrados, para a tela de gerenciamento. */
@@ -91,11 +94,11 @@ export function metodos(st?: Store): Wrap[] {
 // ---------------------------------------------------------------- estado legado (em claro)
 
 /** O estado que o app guardava em claro antes do cofre — base da migração. */
-export function estadoLegado(st?: Store): PersistedState | null {
+export function estadoLegado<T>(st?: Store): T | null {
   const s = store(st)
   try {
-    const raw = s.getItem(LEGADO_KEY)
-    return raw ? (JSON.parse(raw) as PersistedState) : null
+    const raw = s.getItem(LEGADO_KEY())
+    return raw ? (JSON.parse(raw) as T) : null
   } catch {
     return null
   }
@@ -103,7 +106,7 @@ export function estadoLegado(st?: Store): PersistedState | null {
 
 /** Só depois de o cofre estar gravado: nada é apagado antes de existir substituto. */
 export function apagarEstadoLegado(st?: Store): void {
-  store(st).removeItem(LEGADO_KEY)
+  store(st).removeItem(LEGADO_KEY())
 }
 
 // ---------------------------------------------------------------- ciclo do cofre
@@ -120,8 +123,8 @@ export interface MetodoNovo {
  * primeiro segundo, não como aviso posterior. Migra o estado em claro e só então
  * o apaga.
  */
-export async function criarCofreLocal(
-  dados: PersistedState,
+export async function criarCofreLocal<T>(
+  dados: T,
   principal: MetodoNovo,
   recuperacao: MetodoNovo,
   agora: string,
@@ -136,24 +139,58 @@ export async function criarCofreLocal(
 }
 
 /** Lê o conteúdo do cofre com uma DEK já em mãos (sessão lembrada). */
-export async function lerDadosCifrados(dek: Uint8Array, st?: Store): Promise<PersistedState> {
+export async function lerDadosCifrados<T>(dek: Uint8Array, st?: Store): Promise<T> {
   const cofre = lerCofre(st)
   if (!cofre) throw new Error('Nenhum cofre neste navegador.')
-  return decifrarCofre<PersistedState>(dek, cofre.cofre)
+  return decifrarCofre<T>(dek, cofre.cofre)
 }
 
-export async function destravarLocal(
+export async function destravarLocal<T>(
   wrapId: string,
   segredo: Uint8Array | string,
   st?: Store,
-): Promise<{ dek: Uint8Array; dados: PersistedState }> {
+): Promise<{ dek: Uint8Array; dados: T }> {
   const cofre = lerCofre(st)
   if (!cofre) throw new Error('Nenhum cofre neste navegador.')
-  return destravar<PersistedState>(cofre, wrapId, segredo)
+  return destravar<T>(cofre, wrapId, segredo)
+}
+
+/**
+ * Adota a chave que a conta já tem, em vez de sortear uma nova.
+ *
+ * É o caminho do SEGUNDO app da família numa conta que já tem cofre. Os
+ * embrulhos são um conjunto por conta: um app que sorteasse chave própria subiria
+ * embrulhos dela para a mesma conta e, na próxima sincronização do outro app, um
+ * método legítimo passaria a devolver a chave errada. O conteúdo não abriria, e
+ * a mensagem seria "sua chave está certa, mas o conteúdo não corresponde" —
+ * assustadora e verdadeira.
+ *
+ * Então este app abre a chave da conta com um método dela, e cifra o SEU estado
+ * inicial com ela. Cofre separado, chave comum: um desbloqueio serve para todos.
+ */
+export async function adotarChaveDaConta<T>(
+  wraps: Wrap[],
+  wrapId: string,
+  segredo: Uint8Array | string,
+  dadosIniciais: T,
+  st?: Store,
+): Promise<{ cofre: CofreCompleto; dek: Uint8Array }> {
+  const dek = await abrirDek(wraps, wrapId, segredo)
+  const cofre: CofreCompleto = {
+    schemaVersion: 1,
+    // Identidade própria: este documento é comparado só consigo mesmo no sync
+    // (a chave primária é usuário + doc_id), e é este app o único que o grava.
+    vaultId: gerarVaultId(),
+    wraps,
+    cofre: await cifrarCofre(dek, dadosIniciais),
+  }
+  gravarCofre(cofre, st)
+  apagarEstadoLegado(st)
+  return { cofre, dek }
 }
 
 /** Re-cifra e grava. Chamado pelo autosave enquanto a sessão está destravada. */
-export async function salvarCifrado(dek: Uint8Array, dados: PersistedState, st?: Store): Promise<void> {
+export async function salvarCifrado<T>(dek: Uint8Array, dados: T, st?: Store): Promise<void> {
   const cofre = lerCofre(st)
   if (!cofre) throw new Error('Nenhum cofre neste navegador.')
   gravarCofre({ ...cofre, cofre: await cifrarCofre(dek, dados) }, st)
@@ -185,7 +222,7 @@ export function removerMetodoLocal(wrapId: string, st?: Store): CofreCompleto {
 
 /** "Esquecer neste dispositivo": apaga o cofre local. Exige confirmação na UI. */
 export function apagarCofre(st?: Store, ss?: Store): void {
-  store(st).removeItem(VAULT_KEY)
+  store(st).removeItem(VAULT_KEY())
   esquecerDek(ss)
 }
 
@@ -193,7 +230,7 @@ export function apagarCofre(st?: Store, ss?: Store): void {
 
 export function lembrarDek(dek: Uint8Array, ss?: Store): void {
   try {
-    sessao(ss).setItem(SESSAO_KEY, paraB64(dek))
+    sessao(ss).setItem(SESSAO_KEY(), paraB64(dek))
   } catch {
     /* sem sessionStorage — segue só em memória */
   }
@@ -201,7 +238,7 @@ export function lembrarDek(dek: Uint8Array, ss?: Store): void {
 
 export function dekLembrada(ss?: Store): Uint8Array | null {
   try {
-    const raw = sessao(ss).getItem(SESSAO_KEY)
+    const raw = sessao(ss).getItem(SESSAO_KEY())
     return raw ? deB64(raw) : null
   } catch {
     return null
@@ -210,7 +247,7 @@ export function dekLembrada(ss?: Store): Uint8Array | null {
 
 export function esquecerDek(ss?: Store): void {
   try {
-    sessao(ss).removeItem(SESSAO_KEY)
+    sessao(ss).removeItem(SESSAO_KEY())
   } catch {
     /* ignora */
   }
@@ -226,12 +263,12 @@ export type SuportePrf = 'ok' | 'nao' | 'desconhecido'
 
 export function lembrarSuportePrf(v: SuportePrf, st?: Store): void {
   const s = store(st)
-  if (v === 'desconhecido') s.removeItem(PRF_KEY)
-  else s.setItem(PRF_KEY, v)
+  if (v === 'desconhecido') s.removeItem(PRF_KEY())
+  else s.setItem(PRF_KEY(), v)
 }
 
 export function suportePrfLembrado(st?: Store): SuportePrf {
-  const v = store(st).getItem(PRF_KEY)
+  const v = store(st).getItem(PRF_KEY())
   return v === 'ok' || v === 'nao' ? v : 'desconhecido'
 }
 
@@ -242,7 +279,7 @@ const SYNC_ZERO: EstadoSync = { baseVersion: null, sujo: false }
 
 export function lerEstadoSync(st?: Store): EstadoSync {
   try {
-    const raw = store(st).getItem(SYNC_KEY)
+    const raw = store(st).getItem(SYNC_KEY())
     if (!raw) return SYNC_ZERO
     const e = JSON.parse(raw) as EstadoSync
     return typeof e?.sujo === 'boolean' ? e : SYNC_ZERO
@@ -253,7 +290,7 @@ export function lerEstadoSync(st?: Store): EstadoSync {
 
 export function gravarEstadoSync(e: EstadoSync, st?: Store): void {
   try {
-    store(st).setItem(SYNC_KEY, JSON.stringify(e))
+    store(st).setItem(SYNC_KEY(), JSON.stringify(e))
   } catch {
     /* ignora */
   }

@@ -29,12 +29,25 @@ create table if not exists public.vault_wraps (
   kdf_params  jsonb,
   salt        text        not null,         -- base64
   wrapped_dek text        not null,         -- base64 (iv || ciphertext)
+  dek_id      text,                         -- impressão da chave que este embrulho abre
   criado_em   timestamptz not null default now(),
   primary key (user_id, wrap_id)
 );
 
 -- Para quem rodou a versão anterior deste schema, antes de o sync existir:
 alter table public.vaults add column if not exists vault_id text;
+
+-- E para quem rodou antes de a família ter três apps.
+--
+-- Os embrulhos são um conjunto por CONTA; os cofres passaram a ser um por APP
+-- (`doc_id` = 'irpfm:state', 'irpfcalc:state', 'networth:state'). Um app que
+-- sorteasse chave própria subiria embrulhos dela para a mesma conta, e o outro
+-- app destravaria com um método que devolve a chave errada: o embrulho abre, o
+-- conteúdo não decifra. `dek_id` é a impressão (SHA-256 truncado) da chave que
+-- cada embrulho abre — não é segredo, e é o bastante para o cliente recusar a
+-- mistura antes de gravar. Nulo em embrulhos criados antes disto, e nulo
+-- significa «não sei», nunca «chave diferente».
+alter table public.vault_wraps add column if not exists dek_id text;
 
 -- A versão só anda para a frente.
 --

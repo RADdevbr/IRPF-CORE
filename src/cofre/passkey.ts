@@ -1,3 +1,4 @@
+import { rpIdDoApp } from '../app/config'
 // Ponte com o WebAuthn — ver PLAN-CONTA-E-HISTORICO.md §1.3.
 //
 // A extensão PRF ("pseudo-random function", hmac-secret no nível CTAP) faz o
@@ -23,12 +24,10 @@ const RP_NOME = 'Calculadora IRPFM 2027'
  * dizer "esta passkey é de outro APARELHO" (`dispositivo.ts`); faltava o caso
  * "de outro DOMÍNIO", que não tem como ser detectado depois.
  *
- * `VITE_RP_ID` fixa o domínio de produção. Sem ela, mantém-se o comportamento
- * anterior (host efetivo), que é o certo para quem roda em localhost ou abre o
- * arquivo direto.
+ * `rpId` em `configurarApp()` fixa o domínio de produção. Sem ele, mantém-se o
+ * comportamento anterior (host efetivo), que é o certo para quem roda em
+ * localhost ou abre o arquivo direto.
  */
-const RP_ID = (import.meta.env.VITE_RP_ID as string | undefined)?.trim() || undefined
-
 /**
  * O domínio atual serve para a passkey que este app cadastraria?
  *
@@ -40,12 +39,13 @@ export function dominioDaPasskey(host = typeof location === 'undefined' ? '' : l
   rpId?: string
   descartavel: boolean
 } {
-  if (!RP_ID) return { rpId: undefined, descartavel: false }
-  const vale = host === RP_ID || host.endsWith(`.${RP_ID}`)
+  const fixado = rpIdDoApp()
+  if (!fixado) return { rpId: undefined, descartavel: false }
+  const vale = host === fixado || host.endsWith(`.${fixado}`)
   // Fora do domínio fixado (um preview, por exemplo), não force o rp.id: o
   // navegador recusaria. A passkey nasce presa àquele host e some com ele — e é
   // por isso que a tela avisa.
-  return vale ? { rpId: RP_ID, descartavel: false } : { rpId: undefined, descartavel: true }
+  return vale ? { rpId: fixado, descartavel: false } : { rpId: undefined, descartavel: true }
 }
 
 export interface CredencialCriada {

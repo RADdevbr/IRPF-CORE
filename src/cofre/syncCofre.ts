@@ -2,12 +2,13 @@
 // Não conhece Supabase nem React: dá para exercitar o fluxo inteiro com um
 // servidor falso, que é como os testes cobrem conflito e cofres divergentes.
 
-import type { CofreCompleto } from './crypto'
+import type { CofreCompleto, Wrap } from './crypto'
 import {
   decidirSync,
   deDoc,
   paraDoc,
   unirWraps,
+  ChavesDiferentes,
   ConflitoDeVersao,
   DOC_ESTADO,
   type Decisao,
@@ -17,13 +18,38 @@ import {
 } from './sync'
 
 export interface ResultadoSync {
-  acao: Decisao['acao']
+  acao: Decisao['acao'] | 'adotar-chave'
   estado: EstadoSync
   /** Preenchido quando o conteúdo local deve ser substituído. */
   cofre?: CofreCompleto
   remoto?: ResumoRemoto
+  /**
+   * Preenchido em `adotar-chave`: os métodos que a conta já tem. A tela pede um
+   * deles, abre a chave com `abrirDek` e cria o cofre deste app com ELA — nunca
+   * com uma chave nova, que invalidaria os métodos dos outros apps da conta.
+   */
+  wraps?: Wrap[]
   mensagem: string
 }
+
+/**
+ * Traduz a recusa de misturar chaves para a tela que já existe.
+ *
+ * Qualquer união de embrulhos passa por aqui: é o que garante que nenhum caminho
+ * do sync consiga gravar um cofre com métodos de uma chave e conteúdo de outra.
+ */
+function unir(locais: Wrap[], remotos: Wrap[]): Wrap[] | 'chaves-diferentes' {
+  try {
+    return unirWraps(locais, remotos)
+  } catch (e) {
+    if (e instanceof ChavesDiferentes) return 'chaves-diferentes'
+    throw e
+  }
+}
+
+const COFRES_DIFERENTES =
+  'A conta tem um cofre diferente deste — criados separadamente, com chaves diferentes. Um dos dois ' +
+  'precisa ser escolhido; juntar não é possível, porque os métodos de um não abrem o conteúdo do outro.'
 
 const SEM_MUDANCA: EstadoSync = { baseVersion: null, sujo: false }
 
@@ -35,11 +61,26 @@ export async function sincronizar(
 ): Promise<ResultadoSync> {
   const doc = await r.lerDoc(docId)
 
-  // Nem aqui nem na conta. Quem chega por este caminho quase sempre é alguém no
-  // aparelho NOVO esperando os dados do outro: dizer só "nada para sincronizar"
-  // deixa a pessoa achando que perdeu tudo, quando o que falta é um passo no
-  // aparelho onde os dados estão.
   if (!local && !doc) {
+    // Os embrulhos são um conjunto por CONTA; os documentos, um por APP. Então
+    // "não tenho documento" tem dois significados diferentes, e tratá-los igual
+    // era o que travava o segundo app da conta.
+    const daConta = await r.lerWraps()
+    if (daConta.length > 0) {
+      return {
+        acao: 'adotar-chave',
+        estado: SEM_MUDANCA,
+        wraps: daConta,
+        mensagem:
+          'Sua conta já tem uma chave, de outro app da família. Destrave com um dos métodos dela e este ' +
+          'app passa a usar a MESMA chave — os seus dados aqui ficam num cofre separado, mas um ' +
+          'desbloqueio só serve para todos.',
+      }
+    }
+    // Nem aqui nem na conta. Quem chega por este caminho quase sempre é alguém no
+    // aparelho NOVO esperando os dados do outro: dizer só "nada para sincronizar"
+    // deixa a pessoa achando que perdeu tudo, quando o que falta é um passo no
+    // aparelho onde os dados estão.
     return {
       acao: 'nada',
       estado: SEM_MUDANCA,
@@ -70,7 +111,15 @@ export async function sincronizar(
       // Mesmo enviando, trazemos os métodos que só existem no servidor: eles
       // abrem a mesma chave, e perder o desbloqueio de outro aparelho é o pior
       // estrago que um sync pode fazer.
-      const wraps = unirWraps(cofreLocal.wraps, doc ? await r.lerWraps() : [])
+      //
+      // Os embrulhos da conta são lidos SEMPRE, inclusive na primeira subida
+      // deste documento. Antes eram lidos só quando o documento já existia — e
+      // com três apps numa conta é exatamente na primeira subida que o app
+      // encontraria as chaves dos outros pela frente.
+      const wraps = unir(cofreLocal.wraps, await r.lerWraps())
+      if (wraps === 'chaves-diferentes') {
+        return { acao: 'cofres-diferentes', estado, remoto: doc ?? undefined, mensagem: COFRES_DIFERENTES }
+      }
       const version = (doc?.version ?? 0) + 1
       const unido: CofreCompleto = { ...cofreLocal, wraps }
       await r.gravarWraps(wraps)
@@ -101,7 +150,10 @@ export async function sincronizar(
     }
 
     case 'baixar': {
-      const wraps = unirWraps(cofreLocal.wraps, await r.lerWraps())
+      const wraps = unir(cofreLocal.wraps, await r.lerWraps())
+      if (wraps === 'chaves-diferentes') {
+        return { acao: 'cofres-diferentes', estado, remoto: doc!, mensagem: COFRES_DIFERENTES }
+      }
       return {
         acao: 'baixar',
         estado: { baseVersion: doc!.version, sujo: false },
@@ -119,13 +171,7 @@ export async function sincronizar(
       }
 
     case 'cofres-diferentes':
-      return {
-        acao: 'cofres-diferentes',
-        estado,
-        remoto: doc!,
-        mensagem:
-          'A conta tem um cofre diferente deste — criados separadamente, com chaves diferentes. Um dos dois precisa ser escolhido; juntar não é possível.',
-      }
+      return { acao: 'cofres-diferentes', estado, remoto: doc!, mensagem: COFRES_DIFERENTES }
   }
 }
 
@@ -137,7 +183,10 @@ export async function resolverComLocal(
   unirMetodos = true,
 ): Promise<ResultadoSync> {
   const doc = await r.lerDoc(docId)
-  const wraps = unirMetodos ? unirWraps(local.wraps, doc ? await r.lerWraps() : []) : local.wraps
+  const juntos = unirMetodos ? unir(local.wraps, await r.lerWraps()) : local.wraps
+  // Resolver «minha versão vale» é escolha explícita: se as chaves divergem, o
+  // que a pessoa quer é o próprio conjunto, não uma mistura que não abre.
+  const wraps = juntos === 'chaves-diferentes' ? local.wraps : juntos
   const unido: CofreCompleto = { ...local, wraps }
   await r.gravarWraps(wraps)
   const gravado = await r.gravarDoc(paraDoc(unido, docId, (doc?.version ?? 0) + 1))
@@ -159,7 +208,11 @@ export async function resolverComRemoto(
   const doc = await r.lerDoc(docId)
   if (!doc) throw new Error('A conta não tem cofre para trazer.')
   const remotos = await r.lerWraps()
-  const wraps = unirMetodos && local ? unirWraps(local.wraps, remotos) : remotos
+  const juntos = unirMetodos && local ? unir(local.wraps, remotos) : remotos
+  // Simétrico ao de cima: escolher «a versão da conta vale» com chaves
+  // divergentes significa ficar com os métodos DA CONTA, que são os que abrem o
+  // conteúdo que está vindo.
+  const wraps = juntos === 'chaves-diferentes' ? remotos : juntos
   return {
     acao: 'baixar',
     estado: { baseVersion: doc.version, sujo: false },

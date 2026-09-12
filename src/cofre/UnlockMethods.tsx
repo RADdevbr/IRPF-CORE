@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { C } from '../theme'
-import { metodos, adicionarMetodoLocal, removerMetodoLocal, motivoParaNaoRemover, apagarCofre } from '../lib/vault'
-import { protecaoFraca, type Wrap } from '../lib/crypto'
-import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from '../lib/passkey'
-import { rotuloDispositivo } from '../lib/dispositivo'
+import { C } from '../ui/theme'
+import { metodos, adicionarMetodoLocal, removerMetodoLocal, motivoParaNaoRemover, apagarCofre } from './vault'
+import { protecaoFraca, type Wrap } from './crypto'
+import { criarPasskey, segredoDaPasskey, suportaPasskey, wrapIdDaPasskey } from './passkey'
+import { rotuloDispositivo } from './dispositivo'
 
 // Tela A4 dos mocks: os N embrulhos da mesma chave. Cada linha é um caminho de
 // volta independente — e o cofre nunca fica com menos de dois.

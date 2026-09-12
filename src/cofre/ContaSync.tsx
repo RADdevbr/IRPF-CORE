@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { C } from '../theme'
-import { remotoSupabase, clienteSupabase } from '../lib/remoto'
-import { admin } from '../lib/admin'
+import { C } from '../ui/theme'
+import { remotoSupabase, clienteSupabase } from './remoto'
+import { admin } from './admin'
 import { Admin } from './Admin'
-import { supabaseConfigurado } from '../lib/supabaseConfig'
-import { sincronizar, resolverComLocal, resolverComRemoto, type ResultadoSync } from '../lib/syncCofre'
-import { lerEstadoSync, gravarEstadoSync } from '../lib/vault'
-import { lembrarConta, esquecerConta } from '../lib/sessaoLembrada'
-import type { CofreCompleto } from '../lib/crypto'
+import { supabaseConfigurado } from './config'
+import { sincronizar, resolverComLocal, resolverComRemoto, type ResultadoSync } from './syncCofre'
+import { lerEstadoSync, gravarEstadoSync } from './vault'
+import { lembrarConta, esquecerConta } from './sessaoLembrada'
+import type { CofreCompleto } from './crypto'
 
 // Tela A5 dos mocks. O que sobe daqui é sempre o cofre CIFRADO — a chave fica
 // neste aparelho. Entrar na conta serve para dizer de quem é a linha do banco,

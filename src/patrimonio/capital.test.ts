@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { analiseCapital, retornoVsIndices, acumularRetorno, retornoPorClasse, retornoReal } from './capital'
 import { composicaoRenda } from './renda'
 import { taxaDoAno, taxaDoPeriodo, fatorAcumulado, anosSemTaxa, TABELA } from './benchmarks'
-import { montarDeclaracao, upsertDeclaracao, type Historico } from './historico'
-import type { DecResult, Lancamento, Posicao } from './decParser'
+import { montarDeclaracao, upsertDeclaracao, type Historico } from '../historico/historico'
+import type { DecResult, Lancamento, Posicao } from '../dec/decParser'
 
 const lanc = (alvo: string, valor: number): Lancamento => ({
   linha: 1,

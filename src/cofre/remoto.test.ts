@@ -64,6 +64,7 @@ describe('tradução das linhas do banco', () => {
       kdf_params: { m: 65536, t: 3, p: 1 },
       salt: 'c2FsdA==',
       wrapped_dek: 'ZW1icnVsaG8=',
+      dek_id: null,
       criado_em: '2026-08-23T19:30:00.000Z',
     })
     expect(wrapDaLinha(linha)).toEqual(w)
