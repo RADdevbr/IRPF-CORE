@@ -129,6 +129,14 @@ describe('a sugestão de origem', () => {
     expect(s[ITAUSA].motivo).toMatch(/corretora/)
   })
 
+  it('casa pelo NOME quando o extrato não traz CNPJ e o .DEC traz', () => {
+    // o extrato da corretora tem nome e não tem CNPJ; o .DEC tem os dois, e o id
+    // sai do CNPJ. Casar só por id nunca encontraria nada.
+    const comNome: RendaPorPagador[] = [{ alvo: 'divBR', pagador: { id: ITAUSA, nome: 'Itaúsa S.A.' }, valor: 120_000 }]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['ITAUSA S A'] })
+    expect(s[ITAUSA].origem).toBe('capital')
+  })
+
   it('ficha sem outra leitura responde sozinha', () => {
     const s = sugerirOrigens([pag('cdb', 'nome:BANCO X', 50_000), pag('isentos', 'nome:BANCO X', 5_000)])
     expect(s['nome:BANCO X'].origem).toBe('capital')

@@ -646,9 +646,21 @@ describe('identidade do pagador', () => {
   })
 
   it('sem CNPJ, o nome normalizado; sem nome nenhum, vazio', () => {
-    expect(idPagador('  Banco   Ômega S.A. ')).toBe('nome:BANCO MEGA S A')
+    expect(idPagador('  Banco   Ômega S.A. ')).toBe('nome:BANCO OMEGA S A')
     expect(idPagador('', '')).toBe('')
     expect(idPagador('   ', '000')).toBe('')
+  })
+
+  it('o acento é DOBRADO, não apagado — senão a mesma empresa vira dois pagadores', () => {
+    // o .DEC escreve com acento, o extrato da corretora sem
+    expect(idPagador('ITAÚSA S.A.')).toBe(idPagador('ITAUSA S A'))
+    expect(idPagador('São Paulo Participações')).toBe(idPagador('SAO PAULO PARTICIPACOES'))
+  })
+
+  it('a identidade do BEM continua com a receita antiga, e isso é de propósito', () => {
+    // `idPosicao` é chave de classeOverrides, vinculos e aportes já gravados:
+    // mudar a receita desgarraria em silêncio o trabalho manual em disco
+    expect(idPosicao('CDB BANCO ÔMEGA', 'cdb')).toBe('cdb:CDB BANCO MEGA')
   })
 })
 

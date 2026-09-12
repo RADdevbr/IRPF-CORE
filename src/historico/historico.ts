@@ -499,6 +499,30 @@ export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
 }
 
 /**
+ * O mesmo, DOBRANDO o acento em vez de apagá-lo: «ITAÚSA» e «ITAUSA» viram uma
+ * coisa só.
+ *
+ * `normalizar` troca a letra acentuada por espaço, porque ela cai fora de
+ * `[A-Z0-9 ]`. Para a identidade do BEM isso passa: as duas pontas vêm do mesmo
+ * arquivo e são estragadas igual. Para a do PAGADOR, não: o nome chega de duas
+ * fontes que escrevem diferente — o `.DEC` com acento, o extrato da corretora
+ * sem —, e ali «ITAÚSA» viraria `ITA SA` enquanto «ITAUSA» fica `ITAUSA`. Dois
+ * pagadores, duas perguntas, para a mesma empresa.
+ *
+ * Por que não corrigir `normalizar` para todo mundo: `idPosicao` é chave de
+ * `classeOverrides`, `vinculos` e `aportes` já gravados. Mudar a receita
+ * desgarraria em silêncio o trabalho manual que já está em disco de quem tem bem
+ * com acento no nome — que é o pior desfecho possível, porque some sem avisar.
+ */
+function normalizarNome(texto: string): string {
+  return normalizar(
+    texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, ''),
+  )
+}
+
+/**
  * Identidade estável do pagador. Vazio quando o registro não identifica ninguém.
  *
  * Zeros não são CNPJ: o campo vem preenchido com `00000000000000` em registro
@@ -510,7 +534,7 @@ export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
 export function idPagador(nome: string, cnpj?: string): string {
   const digitos = (cnpj ?? '').replace(/\D/g, '')
   if (digitos.length === 14 && !/^0+$/.test(digitos)) return `cnpj:${digitos}`
-  const norm = normalizar(nome ?? '')
+  const norm = normalizarNome(nome ?? '')
   return norm ? `nome:${norm}` : ''
 }
 

@@ -16,7 +16,7 @@
 // mesmo formato da classe corrigida à mão. O app sugere com o motivo à vista
 // (`sugerirOrigens`) e nunca afirma.
 
-import type { RendaPorPagador } from '../historico/historico.js'
+import { idPagador, type RendaPorPagador } from '../historico/historico.js'
 
 export type Origem = 'trabalho' | 'capital' | 'indefinido'
 
@@ -270,9 +270,22 @@ export interface Sugestao {
  */
 export function sugerirOrigens(
   porPagador: RendaPorPagador[],
-  opts: { pagadoresDaCorretora?: string[] } = {},
+  opts: {
+    /**
+     * Quem veio do extrato da corretora — por id de pagador OU pelo nome cru.
+     *
+     * Aceita os dois porque os dois lados existem: o extrato da corretora traz
+     * o NOME do pagador e não traz CNPJ, enquanto o `.DEC` traz os dois e o id
+     * sai do CNPJ. Casar só por id nunca encontraria nada, e este indício
+     * ficaria decorativo.
+     */
+    pagadoresDaCorretora?: string[]
+  } = {},
 ): Record<string, Sugestao> {
-  const daCorretora = new Set(opts.pagadoresDaCorretora ?? [])
+  const daCorretora = new Set(
+    (opts.pagadoresDaCorretora ?? []).map((x) => (x.startsWith('cnpj:') || x.startsWith('nome:') ? x : idPagador(x))),
+  )
+  const nomeDe = new Map(porPagador.map((p) => [p.pagador.id, p.pagador.nome]))
   const fichasDe = new Map<string, Set<string>>()
   for (const p of porPagador) {
     const atual = fichasDe.get(p.pagador.id)
@@ -286,7 +299,7 @@ export function sugerirOrigens(
       saida[id] = { origem: 'trabalho', motivo: 'também paga o seu salário ou pró-labore' }
       continue
     }
-    if (daCorretora.has(id)) {
+    if (daCorretora.has(id) || daCorretora.has(idPagador(nomeDe.get(id) ?? ''))) {
       saida[id] = { origem: 'capital', motivo: 'veio do extrato da corretora' }
       continue
     }
