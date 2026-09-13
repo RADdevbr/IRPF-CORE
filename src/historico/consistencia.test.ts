@@ -569,4 +569,29 @@ describe('o que falta a um ano lido por versão antiga', () => {
   it('toda versão até a atual tem o seu texto — senão o aviso sai mudo', () => {
     for (let v = 2; v <= LEITURA_ATUAL; v++) expect(GANHOS_DA_LEITURA[v]).toBeTruthy()
   })
+
+  it('a tabela não tem buraco: toda versão entre a primeira e a atual está lá', () => {
+    // buraco vira ano que a tela chama de atrasado e sobre o qual ela não tem
+    // frase nenhuma. Afirmar a forma da TABELA, e não repetir a expressão que
+    // calcula o carimbo — essa passaria com qualquer tabela.
+    const versoes = Object.keys(GANHOS_DA_LEITURA).map(Number).sort((a, b) => a - b)
+    expect(versoes).toEqual(Array.from({ length: LEITURA_ATUAL - 1 }, (_, i) => i + 2))
+  })
+
+  it('a tabela é congelada — o carimbo é lido uma vez, na carga do módulo', () => {
+    // sem isso, «a versão É a tabela» vale só até alguém escrever nela em
+    // tempo de execução: o carimbo já foi calculado e não acompanharia
+    expect(Object.isFrozen(GANHOS_DA_LEITURA)).toBe(true)
+  })
+
+  it('ano que a tela chama de desatualizado SEMPRE tem o que dizer', () => {
+    // é a promessa de que o aviso do `Consistencia` depende: ele renderiza «que
+    // não extraía …» para todo ano com `leituraAntiga`, e uma lista vazia ali
+    // vira a frase quebrada «que não extraía ; nem .»
+    const antigas = [undefined, ...Array.from({ length: LEITURA_ATUAL - 1 }, (_, i) => i + 1)]
+    antigas.forEach((v) => {
+      expect(oQueFaltaNaLeitura(v).length).toBeGreaterThan(0)
+      expect(oQueFaltaNaLeitura(v).every((t) => t !== '')).toBe(true)
+    })
+  })
 })

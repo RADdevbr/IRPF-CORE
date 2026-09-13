@@ -150,6 +150,124 @@ describe('a sugestão de origem', () => {
     expect(s[CLINICA].motivo).toMatch(/só você sabe/)
   })
 
+  it('casa por contenção quando a corretora e o .DEC escrevem a mesma companhia', () => {
+    // o caso real, e o que fazia este indício não encontrar NADA: a B3 escreve
+    // «PETROLEO BRASILEIRO SA» e o .DEC escreve «PETROLEO BRASILEIRO S.A.
+    // PETROBRAS». Os dois normalizam para strings diferentes, então a igualdade
+    // nunca dava e todo pagador da corretora caía em «a classificar».
+    const PETRO = 'cnpj:33000167000101'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A. PETROBRAS' }, valor: 9_000 },
+    ]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[PETRO].origem).toBe('capital')
+    // e o motivo diz QUAL nome casou: sugestão por contenção sem o porquê à
+    // vista não é confirmável por quem lê a tela
+    expect(s[PETRO].motivo).toMatch(/PETROLEO BRASILEIRO SA/)
+    // e vai marcada como parecença, para a tela não aceitá-la em bloco
+    expect(s[PETRO].aproximada).toBe(true)
+  })
+
+  it('nome IDÊNTICO casa, por mais curto que seja', () => {
+    // «VALE SA» e «VALE S.A.» viram a mesma string. Com o piso valendo também
+    // para a igualdade, elas não casavam — e junto com elas Vale, WEG, Gerdau,
+    // Ambev, Suzano: metade dos casos que este indício existe para pegar.
+    const VALE = 'cnpj:33592510000154'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: VALE, nome: 'VALE S.A.' }, valor: 15_000 },
+    ]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['VALE SA'] })
+    expect(s[VALE].origem).toBe('capital')
+    // nome idêntico é identidade, não parecença: entra no «aceitar tudo»
+    expect(s[VALE].aproximada).toBe(false)
+  })
+
+  it('a raiz do ticker não entra na contenção — ela casa só por igualdade', () => {
+    // "VALE" dentro de "VALE DO SOL COMERCIO LTDA" é contenção verdadeira e
+    // conclusão falsa. É o erro que este módulo inteiro existe para não
+    // cometer, e por isso quem chama diz o que é raiz e o que é nome.
+    const PJ = 'cnpj:11111111000111'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PJ, nome: 'VALE DO SOL COMERCIO LTDA' }, valor: 360_000 },
+    ]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['VALE'] })
+    expect(s[PJ].origem).toBe('indefinido')
+  })
+
+  it('nome curto demais não é contido em nome grande — degrada para «sem sugestão»', () => {
+    // «WEGSA» está dentro de «WEGSANTOSLTDA», e esse é o pedaço que o piso
+    // barra. Sem sugestão em vez de sugestão errada.
+    const PJ = 'cnpj:55555555000155'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PJ, nome: 'WEG SANTOS LTDA' }, valor: 80_000 },
+    ]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['WEG SA'] })
+    expect(s[PJ].origem).toBe('indefinido')
+  })
+
+  it('pagador sem nome não casa com ninguém', () => {
+    // string vazia está contida em toda string: sem a guarda, o pagador que o
+    // .DEC não nomeia viraria capital por acidente
+    const SEM = 'cnpj:99999999000199'
+    const comNome: RendaPorPagador[] = [{ alvo: 'divBR', pagador: { id: SEM, nome: '' }, valor: 1_000 }]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[SEM].origem).toBe('indefinido')
+  })
+
+  it('nem mesmo por IGUALDADE, quando o extrato traz um pagador que não nomeia ninguém', () => {
+    // «-» na coluna de produto vira id vazio, e um id vazio no conjunto casava
+    // com TODO pagador que o .DEC traz sem nome — capital para todos eles, de
+    // uma vez. A contenção já se defendia disso; a igualdade não.
+    const SEM = 'cnpj:99999999000199'
+    const comNome: RendaPorPagador[] = [{ alvo: 'divBR', pagador: { id: SEM, nome: '' }, valor: 500_000 }]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['-', '   '] })
+    expect(s[SEM].origem).toBe('indefinido')
+  })
+
+  it('a contenção vale numa direção só — o nome da corretora dentro do da declaração', () => {
+    // a direção contrária é a que o piso não filtra: «EMPREENDIMENTOS
+    // IMOBILIARIOS» tem 27 caracteres, passa folgado, e está dentro do nome de
+    // um FII. Seria a PJ de quem usa o app virando capital por um pedaço
+    // genérico do próprio nome.
+    const PJ = 'cnpj:77777777000177'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PJ, nome: 'EMPREENDIMENTOS IMOBILIARIOS' }, valor: 200_000 },
+    ]
+    const s = sugerirOrigens(comNome, {
+      nomesDaCorretora: ['RBR PROPERTIES FDO INV EMPREENDIMENTOS IMOBILIARIOS'],
+    })
+    expect(s[PJ].origem).toBe('indefinido')
+  })
+
+  it('nome idêntico ganha do contido, mesmo vindo depois na lista', () => {
+    // com um `find` só, o contido que vinha antes ganhava: a sugestão saía
+    // marcada como parecença e citava uma grafia que não era a que casava
+    const PETRO = 'cnpj:33000167000101'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A.' }, valor: 9_000 },
+    ]
+    const s = sugerirOrigens(comNome, {
+      nomesDaCorretora: ['PETROLEO BRASILEIRO S.A. PETROBRAS', 'PETROLEO BRASILEIRO SA'],
+    })
+    expect(s[PETRO].origem).toBe('capital')
+    expect(s[PETRO].aproximada).toBe(false)
+    expect(s[PETRO].motivo).toMatch(/«PETROLEO BRASILEIRO SA»/)
+  })
+
+  it('um registro sem nome não apaga o nome que os outros trazem', () => {
+    // o mesmo CNPJ aparece em fichas e anos diferentes, e o .DEC nem sempre
+    // nomeia a fonte em todos. Guardando o último, um registro mudo apagava o
+    // nome e o pagador deixava de casar — enquanto a tela continuava
+    // mostrando o nome dele, tirado da mesma lista.
+    const PETRO = 'cnpj:33000167000101'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A. PETROBRAS' }, valor: 9_000 },
+      { alvo: 'outros', pagador: { id: PETRO, nome: '' }, valor: 100 },
+    ]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[PETRO].origem).toBe('capital')
+  })
+
   it('o pró-labore vence a corretora quando os dois apontam para o mesmo pagador', () => {
     const s = sugerirOrigens([pag('salario', CLINICA, 100_000), pag('divBR', CLINICA, 360_000)], {
       pagadoresDaCorretora: [CLINICA],

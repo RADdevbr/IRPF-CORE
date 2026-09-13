@@ -35,6 +35,24 @@ export interface Diagnostico {
 }
 
 /**
+ * O que cada versão do leitor passou a extrair, em uma frase.
+ *
+ * Existe porque o aviso de «reimporte este ano» precisa dizer o QUE falta, e a
+ * resposta depende de quando o ano foi lido. Enquanto a lista estava escrita na
+ * tela, subir a versão fazia o aviso aparecer com o motivo errado — ele mandava
+ * procurar os rendimentos isentos num ano que já os tinha. Um motivo errado é
+ * pior do que nenhum: manda a pessoa atrás de um número que está lá.
+ *
+ * A versão 1 não está aqui, e é o certo: ela é «antes de tudo isto», e não tem
+ * ganho próprio para contar.
+ */
+export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze({
+  2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
+  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
+  4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
+})
+
+/**
  * Versão do leitor que produziu a declaração guardada.
  *
  * O .DEC é lido uma vez e o resultado fica no cofre; quando o leitor aprende a
@@ -47,31 +65,44 @@ export interface Diagnostico {
  * 2 — pagamentos efetuados
  * 3 — rendimentos isentos e não tributáveis somados como renda
  * 4 — renda por PAGADOR dentro de cada fonte (ver `porPagador`)
+ *
+ * SAI da tabela acima em vez de ser escrita ao lado dela. Duas fontes para o
+ * mesmo número desgarram: subir o carimbo sem escrever a frase fazia a tela
+ * dizer «foi lido por uma versão anterior, que não extraía .» — um aviso que
+ * manda reimportar e não diz o quê, que é pior do que aviso nenhum. Agora não
+ * dá: a versão É a tabela, e a frase vem junto ou a versão não sobe.
+ *
+ * Só chave INTEIRA conta, e o piso é 1. `Math.max()` de nada devolve
+ * `-Infinity`, e `Number('4a')` devolve `NaN`: qualquer um dos dois faria
+ * `versaoLeitura < LEITURA_ATUAL` ser falso para TODO ano guardado, e o app
+ * pararia de pedir reimportação sem dizer nada — a mesma falha silenciosa, um
+ * andar acima. Com o piso, o pior caso vira «ninguém está atrasado», que é o que
+ * uma tabela vazia de fato quer dizer.
  */
-export const LEITURA_ATUAL = 4
+export const LEITURA_ATUAL = Math.max(1, ...versoesDaLeitura())
 
 /**
- * O que cada versão do leitor passou a extrair, em uma frase.
+ * As versões da tabela, em ordem — a lista de onde TUDO que lê a tabela sai.
  *
- * Existe porque o aviso de «reimporte este ano» precisa dizer o QUE falta, e a
- * resposta depende de quando o ano foi lido. Enquanto a lista estava escrita na
- * tela, subir `LEITURA_ATUAL` fazia o aviso aparecer com o motivo errado — ele
- * mandava procurar os rendimentos isentos num ano que já os tinha. Um motivo
- * errado é pior do que nenhum: manda a pessoa atrás de um número que está lá.
+ * Uma leitura só porque duas divergem: enquanto o carimbo filtrava chave não
+ * inteira e o `oQueFaltaNaLeitura` não, uma chave «4.5» deixava o carimbo em 4
+ * (ano atual não está atrasado, diz o `Consistencia`) e ainda assim entrava na
+ * lista do que falta — e a tela do histórico pendurava o aviso laranja para
+ * sempre num ano que acabou de ser lido.
  */
-export const GANHOS_DA_LEITURA: Record<number, string> = {
-  2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
-  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
-  4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
+function versoesDaLeitura(): number[] {
+  return Object.keys(GANHOS_DA_LEITURA)
+    .map(Number)
+    .filter(Number.isInteger)
+    .sort((a, b) => a - b)
 }
 
 /** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
 export function oQueFaltaNaLeitura(versao: number | undefined): string[] {
   const lida = versao ?? 1
-  return Object.entries(GANHOS_DA_LEITURA)
-    .filter(([v]) => Number(v) > lida)
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([, texto]) => texto)
+  return versoesDaLeitura()
+    .filter((v) => v > lida)
+    .map((v) => GANHOS_DA_LEITURA[v])
 }
 
 /**
@@ -513,8 +544,12 @@ export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
  * `classeOverrides`, `vinculos` e `aportes` já gravados. Mudar a receita
  * desgarraria em silêncio o trabalho manual que já está em disco de quem tem bem
  * com acento no nome — que é o pior desfecho possível, porque some sem avisar.
+ *
+ * Exportada porque `idPagador` não é o único jeito de usar um nome de pagador:
+ * casar nomes de fontes diferentes (ver `sugerirOrigens`) precisa da MESMA
+ * receita, e uma segunda receita ali faria o casamento divergir da identidade.
  */
-function normalizarNome(texto: string): string {
+export function normalizarNome(texto: string): string {
   return normalizar(
     texto
       .normalize('NFD')
