@@ -46,11 +46,11 @@ export interface Diagnostico {
  * A versão 1 não está aqui, e é o certo: ela é «antes de tudo isto», e não tem
  * ganho próprio para contar.
  */
-export const GANHOS_DA_LEITURA: Record<number, string> = {
+export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze({
   2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
   3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
   4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
-}
+})
 
 /**
  * Versão do leitor que produziu a declaração guardada.
@@ -71,8 +71,16 @@ export const GANHOS_DA_LEITURA: Record<number, string> = {
  * dizer «foi lido por uma versão anterior, que não extraía .» — um aviso que
  * manda reimportar e não diz o quê, que é pior do que aviso nenhum. Agora não
  * dá: a versão É a tabela, e a frase vem junto ou a versão não sobe.
+ *
+ * Só chave INTEIRA conta, e o piso é 1. `Math.max()` de nada devolve
+ * `-Infinity`, e `Number('4a')` devolve `NaN`: qualquer um dos dois faria
+ * `versaoLeitura < LEITURA_ATUAL` ser falso para TODO ano guardado, e o app
+ * pararia de pedir reimportação sem dizer nada — a mesma falha silenciosa, um
+ * andar acima. Com o piso, o pior caso vira «ninguém está atrasado», que é o que
+ * uma tabela vazia de fato quer dizer.
  */
-export const LEITURA_ATUAL = Math.max(...Object.keys(GANHOS_DA_LEITURA).map(Number))
+const VERSOES_DA_LEITURA = Object.keys(GANHOS_DA_LEITURA).map(Number).filter(Number.isInteger)
+export const LEITURA_ATUAL = Math.max(1, ...VERSOES_DA_LEITURA)
 
 /** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
 export function oQueFaltaNaLeitura(versao: number | undefined): string[] {

@@ -159,17 +159,29 @@ describe('a sugestão de origem', () => {
     const comNome: RendaPorPagador[] = [
       { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A. PETROBRAS' }, valor: 9_000 },
     ]
-    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['PETROLEO BRASILEIRO SA'] })
     expect(s[PETRO].origem).toBe('capital')
     // e o motivo diz QUAL nome casou: sugestão por contenção sem o porquê à
     // vista não é confirmável por quem lê a tela
     expect(s[PETRO].motivo).toMatch(/PETROLEO BRASILEIRO SA/)
   })
 
-  it('a raiz do ticker sozinha NÃO casa — senão a PJ de quem usa o app viraria capital', () => {
+  it('nome IDÊNTICO casa, por mais curto que seja', () => {
+    // «VALE SA» e «VALE S.A.» viram a mesma string. Com o piso valendo também
+    // para a igualdade, elas não casavam — e junto com elas Vale, WEG, Gerdau,
+    // Ambev, Suzano: metade dos casos que este indício existe para pegar.
+    const VALE = 'cnpj:33592510000154'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: VALE, nome: 'VALE S.A.' }, valor: 15_000 },
+    ]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['VALE SA'] })
+    expect(s[VALE].origem).toBe('capital')
+  })
+
+  it('a raiz do ticker não entra na contenção — ela casa só por igualdade', () => {
     // "VALE" dentro de "VALE DO SOL COMERCIO LTDA" é contenção verdadeira e
-    // conclusão falsa. É o erro que este módulo inteiro existe para não cometer,
-    // e por isso a contenção tem piso.
+    // conclusão falsa. É o erro que este módulo inteiro existe para não
+    // cometer, e por isso quem chama diz o que é raiz e o que é nome.
     const PJ = 'cnpj:11111111000111'
     const comNome: RendaPorPagador[] = [
       { alvo: 'divBR', pagador: { id: PJ, nome: 'VALE DO SOL COMERCIO LTDA' }, valor: 360_000 },
@@ -178,15 +190,15 @@ describe('a sugestão de origem', () => {
     expect(s[PJ].origem).toBe('indefinido')
   })
 
-  it('nome curto demais degrada para «sem sugestão», nunca para sugestão errada', () => {
-    // é o que acontece com estado antigo, que guardava só a raiz do ticker:
-    // o indício some, e some em silêncio, mas não vira resposta errada
-    const ITAU = 'cnpj:60872504000123'
+  it('nome curto demais não é contido em nome grande — degrada para «sem sugestão»', () => {
+    // «WEGSA» está dentro de «WEGSANTOSLTDA», e esse é o pedaço que o piso
+    // barra. Sem sugestão em vez de sugestão errada.
+    const PJ = 'cnpj:55555555000155'
     const comNome: RendaPorPagador[] = [
-      { alvo: 'divBR', pagador: { id: ITAU, nome: 'ITAUSA INVESTIMENTOS ITAU S.A.' }, valor: 12_000 },
+      { alvo: 'divBR', pagador: { id: PJ, nome: 'WEG SANTOS LTDA' }, valor: 80_000 },
     ]
-    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['ITAU'] })
-    expect(s[ITAU].origem).toBe('indefinido')
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['WEG SA'] })
+    expect(s[PJ].origem).toBe('indefinido')
   })
 
   it('pagador sem nome não casa com ninguém', () => {
@@ -194,7 +206,17 @@ describe('a sugestão de origem', () => {
     // .DEC não nomeia viraria capital por acidente
     const SEM = 'cnpj:99999999000199'
     const comNome: RendaPorPagador[] = [{ alvo: 'divBR', pagador: { id: SEM, nome: '' }, valor: 1_000 }]
-    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[SEM].origem).toBe('indefinido')
+  })
+
+  it('nem mesmo por IGUALDADE, quando o extrato traz um pagador que não nomeia ninguém', () => {
+    // «-» na coluna de produto vira id vazio, e um id vazio no conjunto casava
+    // com TODO pagador que o .DEC traz sem nome — capital para todos eles, de
+    // uma vez. A contenção já se defendia disso; a igualdade não.
+    const SEM = 'cnpj:99999999000199'
+    const comNome: RendaPorPagador[] = [{ alvo: 'divBR', pagador: { id: SEM, nome: '' }, valor: 500_000 }]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['-', '   '] })
     expect(s[SEM].origem).toBe('indefinido')
   })
 
