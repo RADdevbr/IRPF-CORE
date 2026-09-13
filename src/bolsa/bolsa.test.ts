@@ -602,3 +602,35 @@ describe('apurarSerie — o razão atravessa os anos', () => {
     expect(serie[2].vendas[0].ano).toBe(2026)
   })
 })
+
+describe('o que a revisão do lote achou', () => {
+  it('mês fora de 1..12 sai CONTADO, e não derruba a apuração', () => {
+    // O fold do razão indexa `vendas[mes]`, que só tem 1..12: uma planilha com
+    // o mês ilegível estourava com TypeError e levava a apuração inteira junto.
+    const r = apurar({
+      operacoes: [
+        { ...compra(1, 'A', 100, 10), mes: 0 },
+        { ...venda(2, 'A', 100, 20), mes: 13 },
+        compra(3, 'B', 100, 10),
+        venda(4, 'B', 100, 20),
+      ],
+    })
+    expect(r.ignorados).toBe(2)
+    perto(r.meses[3].resultado.comum, 1000)
+    expect(r.vendas.map((v) => v.ticker)).toEqual(['B'])
+  })
+
+  it('dia com um dígito conta como data — não rebaixa o papel inteiro', () => {
+    // `3/05/2026` sai de planilha o tempo todo. Com a máscara estrita, uma
+    // linha assim mandava o papel inteiro de volta para a heurística de mês,
+    // mudando o custo médio das vendas dele sem avisar ninguém.
+    const r = apurar({
+      posicaoInicial: [{ ticker: 'A', quantidade: 100, custoMedio: 10 }],
+      operacoes: [
+        { ...venda(5, 'A', 100, 30), data: '3/05/2026' },
+        { ...compra(5, 'A', 100, 25), data: '20/5/2026' },
+      ],
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 10)
+  })
+})

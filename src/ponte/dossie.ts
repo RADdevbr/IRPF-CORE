@@ -48,7 +48,10 @@
 // resto desta base de código existe para evitar.
 
 import type { ApuracaoBolsa, Operacao, Posicao, VendaEvento } from '../bolsa/bolsa.js'
-import { REGIME, type ClassePatrimonio } from '../historico/historico.js'
+import { NOME_CLASSE, REGIME, type ClassePatrimonio } from '../historico/historico.js'
+import { NOME_MODALIDADE, type Modalidade } from '../bolsa/bolsa.js'
+import { NOME_TIPO_PROVENTO, TIPOS_PROVENTO } from '../bolsa/proventos.js'
+import { fmt, fmtPct } from '../ui/format.js'
 import { janelaDeMeses, yieldSobreCusto, type SerieProventos, type TipoProvento } from '../bolsa/proventos.js'
 
 /**
@@ -152,15 +155,16 @@ export interface Dossie {
   carteira: PapelNoDossie[]
   vendas: VendaNoDossie[]
   proventos: {
-    meses: { ano: number; mes: number; rendimento: number; porTipo: Record<string, number> }[]
-    porAno: { ano: number; rendimento: number; porTipo: Record<string, number> }[]
+    /** `null` = não há custo conhecido sobre o que render. Zero seria afirmação. */
+    meses: { ano: number; mes: number; rendimento: number | null; porTipo: Record<string, number | null> }[]
+    porAno: { ano: number; rendimento: number | null; porTipo: Record<string, number | null> }[]
     porTicker: { ticker: string; periodo: number | null; ultimos12m: number | null }[]
   }
   resumo: {
     papeis: number
     porClasse: { classe: string; proporcao: number }[]
     concentracao: { top1: number; top5: number; hhi: number }
-    resultadoPorAno: { ano: number; resultadoPct: number | null; giro: number }[]
+    resultadoPorAno: { ano: number; resultadoPct: number | null; giro: number | null }[]
     /** Papéis fora das contas por falta de custo. Listados, nunca chutados. */
     semCusto: string[]
   }
@@ -203,10 +207,33 @@ const PRECO = 4
 
 const mesTexto = (ano: number, mes: number) => `${ano}-${String(mes).padStart(2, '0')}`
 
-/** `dd/mm/aaaa` → `aaaa-mm-dd`; sem dia legível, cai no mês da operação. */
+/**
+ * `dd/mm/aaaa` → `aaaa-mm-dd`; sem dia legível, cai no mês da operação.
+ *
+ * Valida a faixa E confere contra o `ano`/`mes` da própria venda. Sem a
+ * validação, `31/13/2026` saía como `2026-13-31` — uma data impossível que o
+ * teste de forma do dossiê aceitava, porque ele só olha o formato. Sem a
+ * conferência, uma venda com `mes: 5` e `data: '03/06/2026'` aparecia em junho
+ * no razão e em maio em todo agregado do mesmo arquivo: o documento deixava de
+ * fechar consigo mesmo.
+ */
 const dataTexto = (v: VendaEvento): string => {
-  const m = v.data === undefined ? null : /^\s*(\d{2})\/(\d{2})\/(\d{4})\s*$/.exec(v.data)
-  return m === null ? mesTexto(v.ano, v.mes) : `${m[3]}-${m[2]}-${m[1]}`
+  const m = v.data === undefined ? null : /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(v.data)
+  if (m === null) return mesTexto(v.ano, v.mes)
+  const [dia, mes, ano] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const plausivel = dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12
+  // Discordar do agregado é pior que perder o dia: o mês manda.
+  if (!plausivel || ano !== v.ano || mes !== v.mes) return mesTexto(v.ano, v.mes)
+  return `${m[3]}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+}
+
+/** O nome de cada classe do dossiê no briefing — o JSON leva a chave. */
+const NOME_DA_CLASSE: Record<string, string> = {
+  acao: 'Ação',
+  fii: 'FII',
+  etf: 'ETF',
+  unit: 'Unit',
+  outro: 'Outro',
 }
 
 const classeDe = (bruto: string | undefined): ClasseNoDossie =>
@@ -239,11 +266,19 @@ function normalizarContexto(c: ContextoPatrimonial): ContextoPatrimonial {
     const k: ClassePatrimonio = catalogo.has(classe) ? classe : 'desconhecido'
     somas.set(k, (somas.get(k) ?? 0) + entre(proporcao, 0, 1))
   })
+  // Renormaliza: o campo promete «soma 1», e clamp por clamp não garante isso.
+  // Duas classes a 0,8 cada — uma posição contada duas vezes no histórico, ou
+  // percentuais que nunca foram normalizados — saíam somando 1,6, e a tabela do
+  // briefing imprimia 160% sob um cabeçalho que diz «soma 1».
+  const total = [...somas.values()].reduce((t, v) => t + v, 0)
   return {
     referencia: /^\d{4}-\d{2}-\d{2}$/.test(c.referencia) ? c.referencia : '',
-    porClasse: [...somas.entries()]
-      .map(([classe, proporcao]) => ({ classe, proporcao: arred(proporcao, PESO) }))
-      .sort((a, b) => b.proporcao - a.proporcao),
+    porClasse:
+      total > 0
+        ? [...somas.entries()]
+            .map(([classe, proporcao]) => ({ classe, proporcao: arred(proporcao / total, PESO) }))
+            .sort((a, b) => b.proporcao - a.proporcao)
+        : [],
     pesoDaBolsa: arred(entre(c.pesoDaBolsa, 0, 1), PESO),
   }
 }
@@ -281,8 +316,22 @@ export function montarDossie(e: EntradaDossie): Dossie {
     compras.set(o.ticker, lista)
   })
 
+  // Um passe só sobre o razão, em vez de um `filter` por ano e outro por papel
+  // dentro de cada `.map` — que era O(vendas × papéis) numa carteira de quinze
+  // anos com milhares de vendas.
+  const porAnoDeVenda = new Map<number, VendaEvento[]>()
+  const porTickerDeVenda = new Map<string, VendaEvento[]>()
+  vendas.forEach((v) => {
+    const doAno = porAnoDeVenda.get(v.ano)
+    if (doAno === undefined) porAnoDeVenda.set(v.ano, [v])
+    else doAno.push(v)
+    const doPapel = porTickerDeVenda.get(v.ticker)
+    if (doPapel === undefined) porTickerDeVenda.set(v.ticker, [v])
+    else doPapel.push(v)
+  })
+
   const realizadoDe = (ticker: string): number | null => {
-    const doPapel = vendas.filter((v) => v.ticker === ticker)
+    const doPapel = porTickerDeVenda.get(ticker) ?? []
     return razao(
       doPapel.reduce((s, v) => s + v.resultado, 0),
       doPapel.reduce((s, v) => s + v.custoBaixado, 0),
@@ -336,7 +385,7 @@ export function montarDossie(e: EntradaDossie): Dossie {
 
   const anos = [...new Set(e.apuracoes.map((a) => a.ano))].sort((a, b) => a - b)
   const resultadoPorAno = anos.map((ano) => {
-    const doAno = vendas.filter((v) => v.ano === ano)
+    const doAno = porAnoDeVenda.get(ano) ?? []
     return {
       ano,
       resultadoPct: razao(
@@ -345,16 +394,26 @@ export function montarDossie(e: EntradaDossie): Dossie {
         6,
       ),
       // Giro: quanto saiu no ano, contra o custo da carteira de hoje. Relativo,
-      // como tudo mais — diz se a carteira é girada ou parada.
-      giro: custoTotal > 0 ? arred(doAno.reduce((s, v) => s + v.valorVenda, 0) / custoTotal, PESO) : 0,
+      // como tudo mais — diz se a carteira é girada ou parada. `null` sem custo
+      // conhecido, pela mesma razão do rendimento.
+      giro: razao(doAno.reduce((s, v) => s + v.valorVenda, 0), custoTotal, PESO),
     }
   })
 
-  const rendimentoDoMes = (total: number) => (custoTotal > 0 ? arred(total / custoTotal, PESO) : 0)
+  /**
+   * `null` quando não há custo conhecido — e não 0.
+   *
+   * Zero é uma afirmação: «este mês rendeu nada». Sem denominador, a afirmação
+   * que cabe é «não sei». Quem vendeu a carteira inteira tinha `custoTotal` 0 e
+   * via R$ 500 de dividendo saírem como 0,0% — enquanto o `porTicker` do MESMO
+   * arquivo, que já usava `razao()`, dizia `null`. O documento se contradizia.
+   */
+  const rendimentoDoMes = (total: number) => razao(total, custoTotal, PESO)
+  /** Só as chaves do catálogo: `porTipo` vira chave de JSON no arquivo exportado. */
   const emRendimento = (porTipo: Record<TipoProvento, number>) =>
     Object.fromEntries(
-      Object.entries(porTipo).map(([tipo, v]) => [tipo, rendimentoDoMes(v)]),
-    ) as Record<string, number>
+      TIPOS_PROVENTO.map((tipo) => [tipo, rendimentoDoMes(porTipo[tipo] ?? 0)]),
+    ) as Record<string, number | null>
 
   const mesesDeOperacao = e.operacoes.map((o) => mesTexto(o.ano, o.mes))
   const mesesDeProvento = e.proventos.meses.map((m) => mesTexto(m.ano, m.mes))
@@ -454,11 +513,18 @@ export function montarDossie(e: EntradaDossie): Dossie {
 
 // ------------------------------------------------------------------ o briefing
 
+/**
+ * Percentual em pt-BR — vírgula decimal, como o resto do documento.
+ *
+ * `toFixed` escrevia `33.3%` ao lado de `R$ 30,00` na mesma linha de uma tabela
+ * em português, e `HHI 1.000` lia-se como mil. `fmt` é o formatador de moeda que
+ * o núcleo já exporta; este é o irmão dele com casas parametrizadas, porque
+ * `fmtPct` fixa duas.
+ */
 const pct = (v: number | null | undefined, casas = 1) =>
-  v === null || v === undefined ? '—' : `${(v * 100).toFixed(casas)}%`
+  v === null || v === undefined ? '—' : `${(v * 100).toFixed(casas).replace('.', ',')}%`
 
-const reais = (v: number) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })
+const numero = (v: number, casas: number) => v.toFixed(casas).replace('.', ',')
 
 const tabela = (cabecalho: string[], linhas: string[][]) =>
   [
@@ -514,7 +580,7 @@ export function dossieEmTexto(d: Dossie): string {
       '',
       tabela(
         ['Classe', 'Peso'],
-        d.contexto.porClasse.map((c) => [c.classe, pct(c.proporcao)]),
+        d.contexto.porClasse.map((c) => [NOME_CLASSE[c.classe as ClassePatrimonio] ?? c.classe, pct(c.proporcao)]),
       ),
       '',
     )
@@ -528,9 +594,9 @@ export function dossieEmTexto(d: Dossie): string {
       ['Papel', 'Classe', 'Peso', 'Preço médio', 'Desde', 'Últ. compra', 'Realizado', 'Rend. 12m', 'Rend. período'],
       naCarteira.map((p) => [
         p.ticker,
-        p.classe,
+        NOME_DA_CLASSE[p.classe] ?? p.classe,
         pct(p.proporcao),
-        reais(p.precoMedio),
+        fmt(p.precoMedio),
         p.primeiraCompra ?? '—',
         p.ultimaCompra ?? '—',
         pct(p.resultadoRealizado),
@@ -540,9 +606,9 @@ export function dossieEmTexto(d: Dossie): string {
     ),
     '',
     `**Concentração** — maior posição ${pct(d.resumo.concentracao.top1)}, ` +
-      `cinco maiores ${pct(d.resumo.concentracao.top5)}, HHI ${d.resumo.concentracao.hhi.toFixed(3)}.`,
+      `cinco maiores ${pct(d.resumo.concentracao.top5)}, HHI ${numero(d.resumo.concentracao.hhi, 3)}.`,
     '',
-    `**Por classe** — ${d.resumo.porClasse.map((c) => `${c.classe} ${pct(c.proporcao)}`).join(' · ')}`,
+    `**Por classe** — ${d.resumo.porClasse.map((c) => `${NOME_DA_CLASSE[c.classe] ?? c.classe} ${pct(c.proporcao)}`).join(' · ')}`,
     '',
   )
 
@@ -575,14 +641,11 @@ export function dossieEmTexto(d: Dossie): string {
       '## Proventos, em rendimento sobre o custo da carteira',
       '',
       tabela(
-        ['Ano', 'Rendimento', 'Dividendo', 'JCP', 'FII', 'Outro'],
+        ['Ano', 'Rendimento', ...TIPOS_PROVENTO.map((t) => NOME_TIPO_PROVENTO[t])],
         d.proventos.porAno.map((a) => [
           String(a.ano),
           pct(a.rendimento, 2),
-          pct(a.porTipo.dividendo ?? 0, 2),
-          pct(a.porTipo.jcp ?? 0, 2),
-          pct(a.porTipo.rendimento ?? 0, 2),
-          pct(a.porTipo.outro ?? 0, 2),
+          ...TIPOS_PROVENTO.map((t) => pct(a.porTipo[t], 2)),
         ]),
       ),
       '',
@@ -607,9 +670,9 @@ export function dossieEmTexto(d: Dossie): string {
         ultimas.map((v) => [
           v.data,
           v.ticker,
-          v.modalidade,
-          reais(v.precoVenda),
-          reais(v.precoMedioNaVenda),
+          NOME_MODALIDADE[v.modalidade as Modalidade] ?? v.modalidade,
+          fmt(v.precoVenda),
+          fmt(v.precoMedioNaVenda),
           pct(v.resultadoPct),
           pct(v.parteDaPosicao),
           v.isenta ? 'sim' : 'não',

@@ -226,6 +226,15 @@ export interface ApuracaoBolsa {
    * `vendasPorTicker` são somas DESTA lista, não contas paralelas.
    */
   vendas: VendaEvento[]
+  /**
+   * Lançamentos descartados por não terem mês de 1 a 12.
+   *
+   * Existia como CRASH: o fold do razão indexa `vendas[mes]`, que só tem as
+   * chaves 1..12, e uma planilha com o mês ilegível derrubava a apuração
+   * inteira com um TypeError. Sai contado, como o `ignorados` da série de
+   * proventos — um lançamento perdido é dinheiro que some, e some visível.
+   */
+  ignorados: number
 }
 
 export interface EntradaBolsa {
@@ -257,43 +266,48 @@ interface Carteira {
  * metade produz ganho errado em todas as outras vendas do mesmo papel.
  */
 function tickersSemCusto(e: EntradaBolsa): Set<string> {
-  const carteira = new Map<string, Carteira>()
-  e.posicaoInicial?.forEach((p) =>
-    carteira.set(p.ticker, { quantidade: p.quantidade, custoTotal: p.quantidade * p.custoMedio }),
-  )
+  // SÓ quantidade. Este passo decide uma coisa só — houve venda sem custo? — e
+  // ela é decidida por quantidade. A versão anterior mantinha um `custoTotal`
+  // que ninguém lia e que, desde que `apurarBolsa` passou a somar `custos` na
+  // compra, já divergia do custo de verdade: dois razões que deviam concordar,
+  // um deles calado e errado, esperando o próximo leitor confiar nele.
+  const quantidades = new Map<string, number>()
+  e.posicaoInicial?.forEach((p) => quantidades.set(p.ticker, p.quantidade))
   const sem = new Set<string>()
 
   ordenar(e).forEach((lanc) => {
+    const atual = quantidades.get(lanc.ticker) ?? 0
     if ('delta' in lanc) {
-      const c = carteira.get(lanc.ticker)
-      if (c) c.quantidade += lanc.delta
+      if (quantidades.has(lanc.ticker)) quantidades.set(lanc.ticker, atual + lanc.delta)
       return
     }
-    const c = carteira.get(lanc.ticker) ?? { quantidade: 0, custoTotal: 0 }
-    carteira.set(lanc.ticker, c)
     if (lanc.tipo === 'compra') {
-      c.quantidade += lanc.quantidade
-      c.custoTotal += lanc.quantidade * lanc.precoUnitario
+      quantidades.set(lanc.ticker, atual + lanc.quantidade)
       return
     }
     // Tolerância de 1e-9: fração de cota de FII vira dízima e não é venda a descoberto.
-    if (lanc.quantidade > c.quantidade + 1e-9) sem.add(lanc.ticker)
-    const baixa = Math.min(lanc.quantidade, c.quantidade)
-    const medio = c.quantidade > 0 ? c.custoTotal / c.quantidade : 0
-    c.quantidade -= baixa
-    c.custoTotal -= baixa * medio
+    if (lanc.quantidade > atual + 1e-9) sem.add(lanc.ticker)
+    quantidades.set(lanc.ticker, atual - Math.min(lanc.quantidade, atual))
   })
 
   return sem
 }
 
-/** Dia de uma data `dd/mm/aaaa`. `null` quando não há data, ou ela não é essa. */
+/**
+ * Dia de uma data `dd/mm/aaaa`. `null` quando não há data, ou ela não é essa.
+ *
+ * Aceita um dígito no dia e no mês (`3/5/2026`), que é como um CSV exportado de
+ * planilha costuma sair. A máscara estrita de dois dígitos rebaixava o papel
+ * INTEIRO para a heurística de mês por causa de uma linha — e sem dizer,
+ * porque a demoção não tinha contador.
+ */
 function diaDe(data: string | undefined): number | null {
   if (data === undefined) return null
-  const m = /^\s*(\d{2})\/(\d{2})\/(\d{4})\s*$/.exec(data)
+  const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(data)
   if (m === null) return null
   const dia = Number(m[1])
-  return dia >= 1 && dia <= 31 ? dia : null
+  const mes = Number(m[2])
+  return dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12 ? dia : null
 }
 
 /**
@@ -332,8 +346,11 @@ function tickersComDia(lancamentos: (Operacao | EventoQuantidade)[]): Set<string
  * de cada papel esteja certa — e é por isso que o dia 0 dos papéis fora do modo
  * cronológico não estraga os que estão dentro.
  */
+export const mesValido = (l: { mes: number }) => Number.isInteger(l.mes) && l.mes >= 1 && l.mes <= 12
+
 function ordenar(e: EntradaBolsa): (Operacao | EventoQuantidade)[] {
-  const doAno = <T extends { ano: number; mes: number }>(l: T[]) => l.filter((x) => x.ano === e.ano)
+  const doAno = <T extends { ano: number; mes: number }>(l: T[]) =>
+    l.filter((x) => x.ano === e.ano && mesValido(x))
   const todos = [...doAno(e.eventos ?? []), ...doAno(e.operacoes)]
   const comDia = tickersComDia(todos)
   const peso = (l: Operacao | EventoQuantidade) =>
@@ -351,6 +368,11 @@ function ordenar(e: EntradaBolsa): (Operacao | EventoQuantidade)[] {
  * É isso que faz a venda seguinte do mesmo papel continuar certa.
  */
 export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
+  const doAno = <T extends { ano: number; mes: number }>(l: readonly T[]) => l.filter((x) => x.ano === e.ano)
+  const ignorados =
+    doAno(e.operacoes).filter((o) => !mesValido(o)).length +
+    doAno(e.eventos ?? []).filter((v) => !mesValido(v)).length
+
   const semCusto = tickersSemCusto(e)
   const vale = (ticker: string) => !semCusto.has(ticker)
 
@@ -541,6 +563,7 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     posicaoFinal,
     vendasPorTicker,
     vendas: razao,
+    ignorados,
   }
 }
 

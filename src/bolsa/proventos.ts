@@ -114,8 +114,8 @@ export interface SerieProventos {
   de: MesAno | null
   ate: MesAno | null
   /**
-   * Créditos descartados por não terem mês de 1 a 12, ou por trazerem valor que
-   * não é número.
+   * Créditos descartados: mês fora de 1 a 12, ano fora de qualquer faixa
+   * plausível, tipo fora do catálogo, ou valor que não é número.
    *
    * Sai contado, e não em silêncio: uma linha perdida aqui é renda que some, e
    * a regra da casa é que quem olha a tela veja o buraco em vez de o imposto.
@@ -149,12 +149,33 @@ const somar = (alvo: { total: number; ir: number; porTipo: Record<TipoProvento, 
  * Um crédito entra nos três — são a mesma soma vista de ângulos diferentes, e é
  * por isso que ela é feita uma vez só, aqui, em vez de cada tela refazer a sua.
  */
+/**
+ * Faixa de ano que este app pode estar descrevendo.
+ *
+ * Não é paranoia de validação: a grade de meses é CONTÍNUA do primeiro ao
+ * último crédito, e cada papel guarda uma cópia dela. Um ano de 1900 num
+ * arquivo — ou um `20260` digitado — faz a grade saltar de dezenas para
+ * centenas de milhares de meses, multiplicados por papel. Um crédito ilegível
+ * derrubava a aba por exaustão de memória, e `ignorados` dizia zero.
+ */
+const ANO_MINIMO = 1990
+const ANO_MAXIMO = 2100
+
 export function serieProventos(recebidos: readonly ProventoRecebido[]): SerieProventos {
   const legivel = (p: ProventoRecebido) =>
     Number.isInteger(p.mes) &&
     p.mes >= 1 &&
     p.mes <= 12 &&
     Number.isInteger(p.ano) &&
+    p.ano >= ANO_MINIMO &&
+    p.ano <= ANO_MAXIMO &&
+    // O TIPO também, e este é o que mais importa: ele vira CHAVE de objeto em
+    // `porTipo`, e `montarDossie` copia as chaves que encontra. Um rótulo vindo
+    // do texto cru da B3 — «JCP · conta 1234567-8 FULANO» — atravessava daqui
+    // até o dossiê exportado, furando justamente o invariante que o arquivo
+    // inteiro existe para garantir. Quem traduz o texto para o catálogo é o app;
+    // o que não estiver no catálogo não passa.
+    TIPOS_PROVENTO.includes(p.tipo) &&
     Number.isFinite(p.valor) &&
     Number.isFinite(p.ir)
 

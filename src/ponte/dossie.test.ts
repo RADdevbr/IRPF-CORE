@@ -286,8 +286,8 @@ describe('proventos', () => {
   it('vêm em rendimento sobre o custo da carteira, nunca em reais', () => {
     const d = dossie({}, undefined, recebidos)
     // custo total 6.300; março teve 240
-    perto(d.proventos.meses.find((m) => m.mes === 3)!.rendimento, 240 / 6300)
-    perto(d.proventos.porAno[0].porTipo.jcp, 90 / 6300)
+    perto(d.proventos.meses.find((m) => m.mes === 3)!.rendimento!, 240 / 6300)
+    perto(d.proventos.porAno[0].porTipo.jcp!, 90 / 6300)
   })
 
   it('por papel, em 12 meses e no período', () => {
@@ -381,5 +381,71 @@ describe('o briefing em texto', () => {
     // Nenhum valor em reais chega ao texto sem ser preço por unidade: não há
     // total de carteira, de ganho nem de provento para somar de volta.
     expect(impressos.filter((v) => !precos.has(v.replace(/\s/, '\u00a0')))).toEqual([])
+  })
+})
+
+// ------------------------------------------- o que a revisão do lote achou
+
+describe('o que não pode vazar nem afirmar', () => {
+  it('tipo de provento fora do catálogo NÃO vira chave do arquivo', () => {
+    // Era o furo mais grave: `porTipo` usa o tipo como chave de objeto, e
+    // `montarDossie` copiava as chaves que achasse. Um rótulo vindo do texto
+    // cru da B3 atravessava a série inteira até o dossiê exportado — o mesmo
+    // arquivo cujo módulo diz que o contexto é «a única porta por onde chegaria
+    // um rótulo de fora».
+    const sujo = {
+      ano: 2026, mes: 3, ticker: 'PETR4', pagador: 'PETR',
+      tipo: 'JCP · conta 1234567-8 FULANO', valor: 100, ir: 0,
+    } as unknown as ProventoRecebido
+    const d = dossie({}, undefined, [sujo, prov(2026, 4, 'PETR4', 50)])
+    const texto = JSON.stringify(d)
+    expect(texto).not.toContain('FULANO')
+    expect(texto).not.toContain('1234567-8')
+    expect(Object.keys(d.proventos.porAno[0].porTipo).sort()).toEqual([...TIPOS_PROVENTO].sort())
+  })
+
+  it('sem custo conhecido, o rendimento é null e não 0 — zero é afirmação', () => {
+    // Vendeu a carteira inteira: `custoTotal` é 0, e R$ 500 de dividendo saíam
+    // como 0,0% — enquanto o `porTicker` do mesmo arquivo dizia `null`.
+    const d = dossie({}, [compra(2025, 1, 'A', 100, 10), venda(2026, 2, 'A', 100, 45)], [prov(2026, 3, 'A', 500)])
+    expect(d.carteira).toEqual([])
+    expect(d.proventos.porAno[0].rendimento).toBeNull()
+    expect(d.resumo.resultadoPorAno.find((a) => a.ano === 2026)!.giro).toBeNull()
+  })
+
+  it('data impossível cai para o mês, em vez de sair como está', () => {
+    const ops = [compra(2026, 1, 'A', 100, 10), { ...venda(2026, 5, 'A', 50, 20), data: '31/13/2026' }]
+    expect(dossie({}, ops).vendas[0].data).toBe('2026-05')
+  })
+
+  it('data que discorda do mês da venda também cai para o mês', () => {
+    // Senão o razão diz junho e todo agregado do mesmo arquivo diz maio.
+    const ops = [compra(2026, 1, 'A', 100, 10), { ...venda(2026, 5, 'A', 50, 20), data: '03/06/2026' }]
+    expect(dossie({}, ops).vendas[0].data).toBe('2026-05')
+  })
+
+  it('o peso por classe do contexto é renormalizado, não só aparado', () => {
+    const d = dossie({
+      contexto: {
+        referencia: '2025-12-31',
+        porClasse: [{ classe: 'tesouro', proporcao: 0.8 }, { classe: 'acoes', proporcao: 0.8 }],
+        pesoDaBolsa: 0.5,
+      },
+    })
+    perto(d.contexto!.porClasse.reduce((s, c) => s + c.proporcao, 0), 1)
+  })
+
+  it('o briefing escreve número em pt-BR, sem misturar ponto e vírgula', () => {
+    const t = dossieEmTexto(dossie({}, undefined, [prov(2026, 3, 'PETR4', 150)]))
+    // nenhum percentual com ponto decimal numa linha de tabela
+    expect(t).not.toMatch(/\d+\.\d+%/)
+    expect(t).toMatch(/HHI \d+,\d{3}/)
+  })
+
+  it('o briefing usa o nome das coisas, não o código', () => {
+    const t = dossieEmTexto(dossie({}, undefined, [prov(2026, 3, 'PETR4', 150, 'jcp')]))
+    expect(t).toContain('Juros sobre capital próprio')
+    expect(t).toContain('Ação')
+    expect(t).not.toMatch(/\| acao \|/)
   })
 })

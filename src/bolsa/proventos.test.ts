@@ -180,3 +180,22 @@ describe('rendimento sobre custo', () => {
     perto(r.find((x) => x.ticker === 'PETR4')!.provento, 30)
   })
 })
+
+describe('o que a revisão do lote achou', () => {
+  it('tipo fora do catálogo sai CONTADO, e não vira chave nova', () => {
+    const sujo = { ...rec(2026, 1, 'A', 100), tipo: 'JCP · FULANO' } as unknown as ProventoRecebido
+    const s = serieProventos([sujo, rec(2026, 1, 'A', 50)])
+    expect(s.ignorados).toBe(1)
+    perto(s.total, 50)
+    expect(Object.keys(s.porAno[0].porTipo).sort()).toEqual([...TIPOS_PROVENTO].sort())
+    expect(JSON.stringify(s)).not.toContain('FULANO')
+  })
+
+  it('ano implausível sai contado, em vez de estourar a grade de meses', () => {
+    // Um 1900 solto abria 1.513 meses, e cada papel ganhava a sua cópia da
+    // grade. Com dois papéis e um ano digitado errado, a aba travava.
+    const s = serieProventos([rec(1900, 1, 'A', 10), rec(20260, 1, 'A', 10), rec(2026, 1, 'A', 10)])
+    expect(s.ignorados).toBe(2)
+    expect(s.meses).toHaveLength(1)
+  })
+})
