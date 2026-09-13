@@ -279,12 +279,16 @@ export function yieldSobreCusto(
     janela === undefined || (ordem(m) >= ordem(janela.de) && ordem(m) <= ordem(janela.ate))
 
   const custoDe = new Map(posicao.map((p) => [p.ticker, p.quantidade * p.custoMedio]))
-  const tickers = new Set([...serie.porTicker.map((t) => t.ticker), ...custoDe.keys()])
+  // Mapa, e não `find` por papel dentro do `map`: `montarDossie` chama esta
+  // função duas vezes (período e doze meses), e o `find` a tornava quadrática
+  // no número de papéis em cada uma.
+  const doPapel = new Map(serie.porTicker.map((t) => [t.ticker, t]))
+  const tickers = new Set([...doPapel.keys(), ...custoDe.keys()])
 
   return [...tickers]
     .sort((a, b) => a.localeCompare(b))
     .map((ticker) => {
-      const t = serie.porTicker.find((x) => x.ticker === ticker)
+      const t = doPapel.get(ticker)
       const provento = (t?.meses ?? []).filter(dentro).reduce((s, m) => s + m.total, 0)
       const custo = custoDe.get(ticker) ?? null
       return {
