@@ -150,6 +150,54 @@ describe('a sugestão de origem', () => {
     expect(s[CLINICA].motivo).toMatch(/só você sabe/)
   })
 
+  it('casa por contenção quando a corretora e o .DEC escrevem a mesma companhia', () => {
+    // o caso real, e o que fazia este indício não encontrar NADA: a B3 escreve
+    // «PETROLEO BRASILEIRO SA» e o .DEC escreve «PETROLEO BRASILEIRO S.A.
+    // PETROBRAS». Os dois normalizam para strings diferentes, então a igualdade
+    // nunca dava e todo pagador da corretora caía em «a classificar».
+    const PETRO = 'cnpj:33000167000101'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A. PETROBRAS' }, valor: 9_000 },
+    ]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[PETRO].origem).toBe('capital')
+    // e o motivo diz QUAL nome casou: sugestão por contenção sem o porquê à
+    // vista não é confirmável por quem lê a tela
+    expect(s[PETRO].motivo).toMatch(/PETROLEO BRASILEIRO SA/)
+  })
+
+  it('a raiz do ticker sozinha NÃO casa — senão a PJ de quem usa o app viraria capital', () => {
+    // "VALE" dentro de "VALE DO SOL COMERCIO LTDA" é contenção verdadeira e
+    // conclusão falsa. É o erro que este módulo inteiro existe para não cometer,
+    // e por isso a contenção tem piso.
+    const PJ = 'cnpj:11111111000111'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PJ, nome: 'VALE DO SOL COMERCIO LTDA' }, valor: 360_000 },
+    ]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['VALE'] })
+    expect(s[PJ].origem).toBe('indefinido')
+  })
+
+  it('nome curto demais degrada para «sem sugestão», nunca para sugestão errada', () => {
+    // é o que acontece com estado antigo, que guardava só a raiz do ticker:
+    // o indício some, e some em silêncio, mas não vira resposta errada
+    const ITAU = 'cnpj:60872504000123'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: ITAU, nome: 'ITAUSA INVESTIMENTOS ITAU S.A.' }, valor: 12_000 },
+    ]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['ITAU'] })
+    expect(s[ITAU].origem).toBe('indefinido')
+  })
+
+  it('pagador sem nome não casa com ninguém', () => {
+    // string vazia está contida em toda string: sem a guarda, o pagador que o
+    // .DEC não nomeia viraria capital por acidente
+    const SEM = 'cnpj:99999999000199'
+    const comNome: RendaPorPagador[] = [{ alvo: 'divBR', pagador: { id: SEM, nome: '' }, valor: 1_000 }]
+    const s = sugerirOrigens(comNome, { pagadoresDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[SEM].origem).toBe('indefinido')
+  })
+
   it('o pró-labore vence a corretora quando os dois apontam para o mesmo pagador', () => {
     const s = sugerirOrigens([pag('salario', CLINICA, 100_000), pag('divBR', CLINICA, 360_000)], {
       pagadoresDaCorretora: [CLINICA],

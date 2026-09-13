@@ -16,7 +16,7 @@
 // mesmo formato da classe corrigida à mão. O app sugere com o motivo à vista
 // (`sugerirOrigens`) e nunca afirma.
 
-import { idPagador, type RendaPorPagador } from '../historico/historico.js'
+import { idPagador, normalizarNome, type RendaPorPagador } from '../historico/historico.js'
 
 export type Origem = 'trabalho' | 'capital' | 'indefinido'
 
@@ -268,6 +268,40 @@ export interface Sugestao {
  * que distribui lucro sem pagar pró-labore é exatamente esse caso, e chutá-la
  * para um lado erraria metade das pessoas em silêncio.
  */
+/**
+ * Nome preparado para CASAR — não para identificar.
+ *
+ * Sem espaço, porque «S.A.» e «SA» são a mesma companhia e `normalizarNome`
+ * preserva a separação. `idPagador` continua usando a forma com espaço: ali a
+ * string é identidade, e afrouxá-la juntaria pagadores diferentes.
+ */
+const paraCasar = (nome: string) => normalizarNome(nome).replace(/ /g, '')
+
+/**
+ * O menor nome que pode casar por contenção.
+ *
+ * Contenção é frouxa de propósito — «PETROLEOBRASILEIROSA» dentro de
+ * «PETROLEOBRASILEIROSAPETROBRAS» é o caso que precisa passar. Mas frouxa sem
+ * piso é perigosa: uma raiz de ticker como «VALE» casaria com «VALE DO SOL
+ * COMERCIO LTDA», que pode ser justamente a PJ de quem está usando o app — e
+ * marcar a PJ dela como capital é o erro que este módulo inteiro existe para
+ * não cometer.
+ *
+ * Doze caracteres deixam passar nome de companhia e barram raiz de ticker. É o
+ * que também faz o estado antigo, que guardava só a raiz, degradar para «sem
+ * sugestão» em vez de degradar para sugestão errada.
+ */
+const MINIMO_PARA_CASAR = 12
+
+/** Um contém o outro, e o menor é longo o bastante para a contenção significar algo. */
+function casaPorNome(a: string, b: string): boolean {
+  const [x, y] = [paraCasar(a), paraCasar(b)]
+  if (x === '' || y === '') return false
+  const menor = x.length <= y.length ? x : y
+  const maior = menor === x ? y : x
+  return menor.length >= MINIMO_PARA_CASAR && maior.includes(menor)
+}
+
 export function sugerirOrigens(
   porPagador: RendaPorPagador[],
   opts: {
@@ -278,10 +312,19 @@ export function sugerirOrigens(
      * o NOME do pagador e não traz CNPJ, enquanto o `.DEC` traz os dois e o id
      * sai do CNPJ. Casar só por id nunca encontraria nada, e este indício
      * ficaria decorativo.
+     *
+     * E casar por id EXATO também não encontrava, que era o estado de fato:
+     * a B3 escreve «PETR4 - PETROLEO BRASILEIRO SA» e o `.DEC` escreve
+     * «PETROLEO BRASILEIRO S.A. PETROBRAS». Os dois normalizam para strings
+     * diferentes, então a igualdade nunca dava, e todo pagador da corretora caía
+     * em `indefinido` — o app perguntava o que já sabia. Ver `casaPorNome`.
      */
     pagadoresDaCorretora?: string[]
   } = {},
 ): Record<string, Sugestao> {
+  const nomesDaCorretora = (opts.pagadoresDaCorretora ?? []).filter(
+    (x) => !x.startsWith('cnpj:') && !x.startsWith('nome:'),
+  )
   const daCorretora = new Set(
     (opts.pagadoresDaCorretora ?? []).map((x) => (x.startsWith('cnpj:') || x.startsWith('nome:') ? x : idPagador(x))),
   )
@@ -299,8 +342,17 @@ export function sugerirOrigens(
       saida[id] = { origem: 'trabalho', motivo: 'também paga o seu salário ou pró-labore' }
       continue
     }
-    if (daCorretora.has(id) || daCorretora.has(idPagador(nomeDe.get(id) ?? ''))) {
+    const nome = nomeDe.get(id) ?? ''
+    if (daCorretora.has(id) || daCorretora.has(idPagador(nome))) {
       saida[id] = { origem: 'capital', motivo: 'veio do extrato da corretora' }
+      continue
+    }
+    // Quando a igualdade não dá, a contenção ainda pode: a corretora e a
+    // declaração escrevem a mesma companhia de dois jeitos. O motivo diz QUAL
+    // nome casou, porque uma sugestão sem o porquê à vista não é confirmável.
+    const casou = nomesDaCorretora.find((n) => casaPorNome(n, nome))
+    if (casou !== undefined) {
+      saida[id] = { origem: 'capital', motivo: `veio do extrato da corretora, como «${casou}»` }
       continue
     }
     const definidas = [...fichas]

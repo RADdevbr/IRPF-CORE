@@ -513,8 +513,12 @@ export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
  * `classeOverrides`, `vinculos` e `aportes` já gravados. Mudar a receita
  * desgarraria em silêncio o trabalho manual que já está em disco de quem tem bem
  * com acento no nome — que é o pior desfecho possível, porque some sem avisar.
+ *
+ * Exportada porque `idPagador` não é o único jeito de usar um nome de pagador:
+ * casar nomes de fontes diferentes (ver `sugerirOrigens`) precisa da MESMA
+ * receita, e uma segunda receita ali faria o casamento divergir da identidade.
  */
-function normalizarNome(texto: string): string {
+export function normalizarNome(texto: string): string {
   return normalizar(
     texto
       .normalize('NFD')
