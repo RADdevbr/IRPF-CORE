@@ -53,6 +53,29 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
 })
 
 /**
+ * As versões da tabela, em ordem — a lista de onde TUDO que lê a tabela sai.
+ *
+ * Uma leitura só porque duas divergem: enquanto o carimbo filtrava chave não
+ * inteira e o `oQueFaltaNaLeitura` não, uma chave «4.5» deixava o carimbo em 4
+ * (ano atual não está atrasado, diz o `Consistencia`) e ainda assim entrava na
+ * lista do que falta — e a tela do histórico pendurava o aviso laranja para
+ * sempre num ano que acabou de ser lido.
+ *
+ * Constante, e acima de quem a usa: a tabela é congelada, então a lista não
+ * muda depois da carga, e calculá-la de novo a cada chamada custava um
+ * `Object.keys` por linha de declaração desenhada na tela. Ficar ACIMA também
+ * não é estilo: `LEITURA_ATUAL` a lê para existir, e uma função aqui só
+ * funcionava por içamento — trocá-la por arrow, como é o padrão da casa para
+ * ajudante pequeno, derrubava o módulo inteiro na importação.
+ */
+const VERSOES_DA_LEITURA: readonly number[] = Object.freeze(
+  Object.keys(GANHOS_DA_LEITURA)
+    .map(Number)
+    .filter(Number.isInteger)
+    .sort((a, b) => a - b),
+)
+
+/**
  * Versão do leitor que produziu a declaração guardada.
  *
  * O .DEC é lido uma vez e o resultado fica no cofre; quando o leitor aprende a
@@ -79,30 +102,12 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
  * andar acima. Com o piso, o pior caso vira «ninguém está atrasado», que é o que
  * uma tabela vazia de fato quer dizer.
  */
-export const LEITURA_ATUAL = Math.max(1, ...versoesDaLeitura())
-
-/**
- * As versões da tabela, em ordem — a lista de onde TUDO que lê a tabela sai.
- *
- * Uma leitura só porque duas divergem: enquanto o carimbo filtrava chave não
- * inteira e o `oQueFaltaNaLeitura` não, uma chave «4.5» deixava o carimbo em 4
- * (ano atual não está atrasado, diz o `Consistencia`) e ainda assim entrava na
- * lista do que falta — e a tela do histórico pendurava o aviso laranja para
- * sempre num ano que acabou de ser lido.
- */
-function versoesDaLeitura(): number[] {
-  return Object.keys(GANHOS_DA_LEITURA)
-    .map(Number)
-    .filter(Number.isInteger)
-    .sort((a, b) => a - b)
-}
+export const LEITURA_ATUAL = Math.max(1, ...VERSOES_DA_LEITURA)
 
 /** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
 export function oQueFaltaNaLeitura(versao: number | undefined): string[] {
   const lida = versao ?? 1
-  return versoesDaLeitura()
-    .filter((v) => v > lida)
-    .map((v) => GANHOS_DA_LEITURA[v])
+  return VERSOES_DA_LEITURA.filter((v) => v > lida).map((v) => GANHOS_DA_LEITURA[v])
 }
 
 /**
@@ -449,20 +454,34 @@ export function somaPorAlvo(lancamentos: Lancamento[]): Record<string, number> {
 }
 
 /**
- * Texto virando chave: maiúsculas, só letras e dígitos, espaço único, 60 chars.
+ * Texto virando chave: maiúsculas, só letras e dígitos, espaço único.
  *
  * Um lugar só porque duas identidades dependem dela — a do bem e a do pagador —
  * e receitas que divergem quebram o casamento entre anos justamente onde ele
  * mais importa: o produto que o banco renomeou.
+ *
+ * Sem corte: o corte é orçamento de CHAVE, e quem faz chave é `normalizar`
+ * logo abaixo. Quem só quer casar texto não tem por que pagá-lo — ver
+ * `nomeParaCasar`.
  */
-function normalizar(texto: string): string {
+function arrumar(texto: string): string {
   return texto
     .toUpperCase()
     .replace(/[^A-Z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 60)
 }
+
+/** O orçamento de uma chave. Mudá-lo desgarra tudo que já está gravado em disco. */
+const LIMITE_DA_CHAVE = 60
+
+/** O mesmo, cortado no orçamento da chave. */
+function normalizar(texto: string): string {
+  return arrumar(texto).slice(0, LIMITE_DA_CHAVE)
+}
+
+/** Acento dobrado em vez de apagado — ver `normalizarNome`. */
+const semAcento = (texto: string) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
 export interface PagadorConsolidado {
   pagador: Pagador
@@ -550,11 +569,29 @@ export function idPosicao(descricao: string, classe: ClassePatrimonio): string {
  * receita, e uma segunda receita ali faria o casamento divergir da identidade.
  */
 export function normalizarNome(texto: string): string {
-  return normalizar(
-    texto
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, ''),
-  )
+  return normalizar(semAcento(texto))
+}
+
+/**
+ * O mesmo nome, preparado para CASAR — não para identificar.
+ *
+ * Duas diferenças, e as duas porque a pergunta é outra:
+ *
+ *   · Sem espaço. «S.A.» e «SA» são a mesma companhia, e `normalizarNome`
+ *     preserva a separação porque ali a string é identidade — afrouxá-la
+ *     juntaria pagadores diferentes.
+ *   · Sem corte. Os 60 caracteres são o orçamento de uma CHAVE, e casar não
+ *     faz chave. Razão social de FII passa dos 60 com facilidade — «KINEA
+ *     RENDIMENTOS IMOBILIARIOS FUNDO DE INVESTIMENTO IMOBILIARIO II» tem 67 —,
+ *     e cortar ali jogava fora, em silêncio, justamente o que distinguia o
+ *     fundo do fundo ao lado.
+ *
+ * Mora aqui, junto de `normalizarNome`, porque é a MESMA receita com outro
+ * orçamento. Escrita lá no `sugerirOrigens`, ela viraria a segunda receita — e
+ * a segunda receita é o que este bloco inteiro existe para não haver.
+ */
+export function nomeParaCasar(texto: string): string {
+  return arrumar(semAcento(texto)).replace(/ /g, '')
 }
 
 /**

@@ -268,6 +268,32 @@ describe('a sugestão de origem', () => {
     expect(s[PETRO].origem).toBe('capital')
   })
 
+  it('o motivo do casamento por ID também diz de onde veio', () => {
+    // é a ÚNICA sugestão que a tela aceita em bloco, então é a que mais precisa
+    // dizer contra o que conferir
+    const s = sugerirOrigens([pag('divBR', ITAUSA, 120_000)], { pagadoresDaCorretora: [ITAUSA] })
+    expect(s[ITAUSA].motivo).toMatch(/«cnpj:22222222000122»/)
+    expect(s[ITAUSA].aproximada).toBeUndefined()
+  })
+
+  it('razão social longa não é cortada — o corte é orçamento de chave, não de casamento', () => {
+    // dois fundos DIFERENTES que só divergem depois do caractere 60. Cortando
+    // ali, os dois viravam a mesma string e casavam por IGUALDADE: capital,
+    // sem marca de parecença, dentro do «aceitar tudo».
+    const OUTRO = 'cnpj:88888888000188'
+    const comNome: RendaPorPagador[] = [
+      {
+        alvo: 'divBR',
+        pagador: { id: OUTRO, nome: 'FUNDO DE INVESTIMENTO IMOBILIARIO COMERCIAL PROGRESSIVO GRANDE BETA' },
+        valor: 30_000,
+      },
+    ]
+    const s = sugerirOrigens(comNome, {
+      nomesDaCorretora: ['FUNDO DE INVESTIMENTO IMOBILIARIO COMERCIAL PROGRESSIVO GRANDE ALFA'],
+    })
+    expect(s[OUTRO].origem).toBe('indefinido')
+  })
+
   it('o pró-labore vence a corretora quando os dois apontam para o mesmo pagador', () => {
     const s = sugerirOrigens([pag('salario', CLINICA, 100_000), pag('divBR', CLINICA, 360_000)], {
       pagadoresDaCorretora: [CLINICA],
