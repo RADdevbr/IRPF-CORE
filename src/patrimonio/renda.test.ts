@@ -164,6 +164,8 @@ describe('a sugestão de origem', () => {
     // e o motivo diz QUAL nome casou: sugestão por contenção sem o porquê à
     // vista não é confirmável por quem lê a tela
     expect(s[PETRO].motivo).toMatch(/PETROLEO BRASILEIRO SA/)
+    // e vai marcada como parecença, para a tela não aceitá-la em bloco
+    expect(s[PETRO].aproximada).toBe(true)
   })
 
   it('nome IDÊNTICO casa, por mais curto que seja', () => {
@@ -176,6 +178,8 @@ describe('a sugestão de origem', () => {
     ]
     const s = sugerirOrigens(comNome, { nomesDaCorretora: ['VALE SA'] })
     expect(s[VALE].origem).toBe('capital')
+    // nome idêntico é identidade, não parecença: entra no «aceitar tudo»
+    expect(s[VALE].aproximada).toBe(false)
   })
 
   it('a raiz do ticker não entra na contenção — ela casa só por igualdade', () => {

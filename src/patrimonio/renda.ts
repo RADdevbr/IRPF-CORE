@@ -248,6 +248,20 @@ export interface Sugestao {
   origem: Origem
   /** Por que o app sugeriu isso — vai para a tela, ao lado da sugestão. */
   motivo: string
+  /**
+   * A sugestão veio de nomes PARECIDOS, e não de identidade.
+   *
+   * Existe porque a tela oferece «aceitar tudo», e aceitar em bloco é aceitar
+   * sem ler o motivo. Contenção é frouxa de propósito — é ela que faz o indício
+   * encontrar alguém —, e a companhia listada cujo nome inteiro está dentro do
+   * nome da PJ de quem usa o app é o caso em que ela erra. Errar ali marcando a
+   * PJ como capital é o único desfecho que este módulo não pode ter.
+   *
+   * Então quem casou por identidade entra no bloco, e quem casou por parecença
+   * fica para a pessoa olhar uma vez. A sugestão continua na tela, com o nome
+   * que casou escrito no motivo.
+   */
+  aproximada?: boolean
 }
 
 /**
@@ -380,7 +394,11 @@ export function sugerirOrigens(
     const chave = paraCasar(nome)
     const casou = nomesDaCorretora.find((n) => casaPorNome(n.chave, chave))
     if (casou !== undefined) {
-      saida[id] = { origem: 'capital', motivo: `veio do extrato da corretora, como «${casou.cru}»` }
+      saida[id] = {
+        origem: 'capital',
+        motivo: `veio do extrato da corretora, como «${casou.cru}»`,
+        aproximada: casou.chave !== chave,
+      }
       continue
     }
     const definidas = [...fichas]
