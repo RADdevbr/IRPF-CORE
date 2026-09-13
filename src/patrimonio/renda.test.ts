@@ -224,6 +224,50 @@ describe('a sugestão de origem', () => {
     expect(s[SEM].origem).toBe('indefinido')
   })
 
+  it('a contenção vale numa direção só — o nome da corretora dentro do da declaração', () => {
+    // a direção contrária é a que o piso não filtra: «EMPREENDIMENTOS
+    // IMOBILIARIOS» tem 27 caracteres, passa folgado, e está dentro do nome de
+    // um FII. Seria a PJ de quem usa o app virando capital por um pedaço
+    // genérico do próprio nome.
+    const PJ = 'cnpj:77777777000177'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PJ, nome: 'EMPREENDIMENTOS IMOBILIARIOS' }, valor: 200_000 },
+    ]
+    const s = sugerirOrigens(comNome, {
+      nomesDaCorretora: ['RBR PROPERTIES FDO INV EMPREENDIMENTOS IMOBILIARIOS'],
+    })
+    expect(s[PJ].origem).toBe('indefinido')
+  })
+
+  it('nome idêntico ganha do contido, mesmo vindo depois na lista', () => {
+    // com um `find` só, o contido que vinha antes ganhava: a sugestão saía
+    // marcada como parecença e citava uma grafia que não era a que casava
+    const PETRO = 'cnpj:33000167000101'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A.' }, valor: 9_000 },
+    ]
+    const s = sugerirOrigens(comNome, {
+      nomesDaCorretora: ['PETROLEO BRASILEIRO S.A. PETROBRAS', 'PETROLEO BRASILEIRO SA'],
+    })
+    expect(s[PETRO].origem).toBe('capital')
+    expect(s[PETRO].aproximada).toBe(false)
+    expect(s[PETRO].motivo).toMatch(/«PETROLEO BRASILEIRO SA»/)
+  })
+
+  it('um registro sem nome não apaga o nome que os outros trazem', () => {
+    // o mesmo CNPJ aparece em fichas e anos diferentes, e o .DEC nem sempre
+    // nomeia a fonte em todos. Guardando o último, um registro mudo apagava o
+    // nome e o pagador deixava de casar — enquanto a tela continuava
+    // mostrando o nome dele, tirado da mesma lista.
+    const PETRO = 'cnpj:33000167000101'
+    const comNome: RendaPorPagador[] = [
+      { alvo: 'divBR', pagador: { id: PETRO, nome: 'PETROLEO BRASILEIRO S.A. PETROBRAS' }, valor: 9_000 },
+      { alvo: 'outros', pagador: { id: PETRO, nome: '' }, valor: 100 },
+    ]
+    const s = sugerirOrigens(comNome, { nomesDaCorretora: ['PETROLEO BRASILEIRO SA'] })
+    expect(s[PETRO].origem).toBe('capital')
+  })
+
   it('o pró-labore vence a corretora quando os dois apontam para o mesmo pagador', () => {
     const s = sugerirOrigens([pag('salario', CLINICA, 100_000), pag('divBR', CLINICA, 360_000)], {
       pagadoresDaCorretora: [CLINICA],

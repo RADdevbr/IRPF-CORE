@@ -79,16 +79,30 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
  * andar acima. Com o piso, o pior caso vira «ninguém está atrasado», que é o que
  * uma tabela vazia de fato quer dizer.
  */
-const VERSOES_DA_LEITURA = Object.keys(GANHOS_DA_LEITURA).map(Number).filter(Number.isInteger)
-export const LEITURA_ATUAL = Math.max(1, ...VERSOES_DA_LEITURA)
+export const LEITURA_ATUAL = Math.max(1, ...versoesDaLeitura())
+
+/**
+ * As versões da tabela, em ordem — a lista de onde TUDO que lê a tabela sai.
+ *
+ * Uma leitura só porque duas divergem: enquanto o carimbo filtrava chave não
+ * inteira e o `oQueFaltaNaLeitura` não, uma chave «4.5» deixava o carimbo em 4
+ * (ano atual não está atrasado, diz o `Consistencia`) e ainda assim entrava na
+ * lista do que falta — e a tela do histórico pendurava o aviso laranja para
+ * sempre num ano que acabou de ser lido.
+ */
+function versoesDaLeitura(): number[] {
+  return Object.keys(GANHOS_DA_LEITURA)
+    .map(Number)
+    .filter(Number.isInteger)
+    .sort((a, b) => a - b)
+}
 
 /** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
 export function oQueFaltaNaLeitura(versao: number | undefined): string[] {
   const lida = versao ?? 1
-  return Object.entries(GANHOS_DA_LEITURA)
-    .filter(([v]) => Number(v) > lida)
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([, texto]) => texto)
+  return versoesDaLeitura()
+    .filter((v) => v > lida)
+    .map((v) => GANHOS_DA_LEITURA[v])
 }
 
 /**
