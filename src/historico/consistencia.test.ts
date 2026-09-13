@@ -569,4 +569,21 @@ describe('o que falta a um ano lido por versão antiga', () => {
   it('toda versão até a atual tem o seu texto — senão o aviso sai mudo', () => {
     for (let v = 2; v <= LEITURA_ATUAL; v++) expect(GANHOS_DA_LEITURA[v]).toBeTruthy()
   })
+
+  it('o carimbo atual É a última linha da tabela, e não um número ao lado dela', () => {
+    // duas fontes para o mesmo número desgarram, e desgarrar aqui tem um
+    // desfecho concreto: a tela manda reimportar sem dizer o quê
+    expect(LEITURA_ATUAL).toBe(Math.max(...Object.keys(GANHOS_DA_LEITURA).map(Number)))
+  })
+
+  it('ano que a tela chama de desatualizado SEMPRE tem o que dizer', () => {
+    // é a promessa de que o aviso do `Consistencia` depende: ele renderiza «que
+    // não extraía …» para todo ano com `leituraAntiga`, e uma lista vazia ali
+    // vira a frase quebrada «que não extraía ; nem .»
+    const antigas = [undefined, ...Array.from({ length: LEITURA_ATUAL - 1 }, (_, i) => i + 1)]
+    antigas.forEach((v) => {
+      expect(oQueFaltaNaLeitura(v).length).toBeGreaterThan(0)
+      expect(oQueFaltaNaLeitura(v).every((t) => t !== '')).toBe(true)
+    })
+  })
 })

@@ -35,6 +35,24 @@ export interface Diagnostico {
 }
 
 /**
+ * O que cada versão do leitor passou a extrair, em uma frase.
+ *
+ * Existe porque o aviso de «reimporte este ano» precisa dizer o QUE falta, e a
+ * resposta depende de quando o ano foi lido. Enquanto a lista estava escrita na
+ * tela, subir a versão fazia o aviso aparecer com o motivo errado — ele mandava
+ * procurar os rendimentos isentos num ano que já os tinha. Um motivo errado é
+ * pior do que nenhum: manda a pessoa atrás de um número que está lá.
+ *
+ * A versão 1 não está aqui, e é o certo: ela é «antes de tudo isto», e não tem
+ * ganho próprio para contar.
+ */
+export const GANHOS_DA_LEITURA: Record<number, string> = {
+  2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
+  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
+  4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
+}
+
+/**
  * Versão do leitor que produziu a declaração guardada.
  *
  * O .DEC é lido uma vez e o resultado fica no cofre; quando o leitor aprende a
@@ -47,23 +65,14 @@ export interface Diagnostico {
  * 2 — pagamentos efetuados
  * 3 — rendimentos isentos e não tributáveis somados como renda
  * 4 — renda por PAGADOR dentro de cada fonte (ver `porPagador`)
- */
-export const LEITURA_ATUAL = 4
-
-/**
- * O que cada versão do leitor passou a extrair, em uma frase.
  *
- * Existe porque o aviso de «reimporte este ano» precisa dizer o QUE falta, e a
- * resposta depende de quando o ano foi lido. Enquanto a lista estava escrita na
- * tela, subir `LEITURA_ATUAL` fazia o aviso aparecer com o motivo errado — ele
- * mandava procurar os rendimentos isentos num ano que já os tinha. Um motivo
- * errado é pior do que nenhum: manda a pessoa atrás de um número que está lá.
+ * SAI da tabela acima em vez de ser escrita ao lado dela. Duas fontes para o
+ * mesmo número desgarram: subir o carimbo sem escrever a frase fazia a tela
+ * dizer «foi lido por uma versão anterior, que não extraía .» — um aviso que
+ * manda reimportar e não diz o quê, que é pior do que aviso nenhum. Agora não
+ * dá: a versão É a tabela, e a frase vem junto ou a versão não sobe.
  */
-export const GANHOS_DA_LEITURA: Record<number, string> = {
-  2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
-  3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
-  4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
-}
+export const LEITURA_ATUAL = Math.max(...Object.keys(GANHOS_DA_LEITURA).map(Number))
 
 /** O que falta a um ano lido pela versão `versao`, da mais antiga para a atual. */
 export function oQueFaltaNaLeitura(versao: number | undefined): string[] {
