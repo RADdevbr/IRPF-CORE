@@ -73,10 +73,27 @@ export interface Operacao {
   ano: number
   /** 1 a 12. */
   mes: number
+  /**
+   * `dd/mm/aaaa`. Ausente = a fonte não trouxe dia (Consolidado Anual, extrato
+   * antigo, lançamento digitado à mão).
+   *
+   * É o que permite a ordem cronológica de verdade dentro do mês — ver
+   * `ordenar`, que só a usa onde ela existe para o papel inteiro.
+   */
+  data?: string
   ticker: string
   tipo: 'compra' | 'venda'
   quantidade: number
   precoUnitario: number
+  /**
+   * Corretagem, emolumentos e taxa de liquidação desta ordem, quando a fonte
+   * traz (o ReVar traz; o Extrato de Movimentação não).
+   *
+   * Na compra entram no custo de aquisição; na venda saem do resultado — e
+   * NÃO do valor de alienação, que é o que a isenção mensal olha. Ver o
+   * comentário do razão em `apurarBolsa`.
+   */
+  custos?: number
   /** Ausente = `comum`. FII e day trade têm pote e alíquota próprios. */
   modalidade?: Modalidade
 }
@@ -89,6 +106,8 @@ export interface Operacao {
 export interface EventoQuantidade {
   ano: number
   mes: number
+  /** `dd/mm/aaaa`, mesmo contrato de `Operacao.data`. */
+  data?: string
   ticker: string
   /** Positivo no desdobro e na bonificação; negativo no grupamento. */
   delta: number
@@ -116,6 +135,59 @@ export interface VendaTicker {
   /** Custo médio de aquisição do que foi vendido — não da posição restante. */
   custoMedioNaVenda: number
   resultado: number
+}
+
+/**
+ * Uma venda, como ela aconteceu. O razão por trás de `MesApurado`.
+ *
+ * Existe porque o agregado por mês × pote não é conferível: a pessoa lê «março
+ * deu R$ 4.212 de ganho» e não tem como saber quais vendas somam isso, com que
+ * custo médio cada uma saiu, e qual delas caiu na isenção. Um número de imposto
+ * que não dá para abrir é um número que ninguém consegue contestar — nem quando
+ * está errado.
+ *
+ * É também a entrada do dossiê da carteira, que descreve resultado em percentual
+ * sobre o custo baixado.
+ */
+export interface VendaEvento {
+  /** `dd/mm/aaaa` quando a fonte trouxe o dia. */
+  data?: string
+  ano: number
+  mes: number
+  ticker: string
+  modalidade: Modalidade
+  quantidade: number
+  /** Preço unitário da venda, BRUTO — os custos não entram aqui. */
+  precoVenda: number
+  /** Custo médio do papel NO MOMENTO desta venda, não o da posição que sobrou. */
+  custoMedioNaVenda: number
+  /**
+   * Fração da posição do papel que saiu nesta venda, 0..1, medida ANTES da
+   * baixa. Vender tudo dá 1.
+   */
+  parteDaPosicao: number
+  /** `quantidade × precoVenda`. É o valor de alienação, que a isenção olha. */
+  valorVenda: number
+  /** `quantidade × custoMedioNaVenda`. */
+  custoBaixado: number
+  /** Corretagem e emolumentos desta ordem. 0 quando a fonte não traz. */
+  custos: number
+  /** `valorVenda − custoBaixado − custos`. */
+  resultado: number
+  /**
+   * `resultado ÷ custoBaixado`. `null` quando o custo baixado é zero — papel
+   * que entrou na carteira a custo nenhum não tem percentual, e devolver 0 ali
+   * esconderia um ganho inteiro.
+   */
+  resultadoPct: number | null
+  /**
+   * Esta venda caiu na isenção mensal dos R$ 20 mil.
+   *
+   * Só o pote `comum`: FII e ETF não têm a isenção, e day trade também não.
+   * Por isso o campo é da VENDA e não do mês — num mês isento com venda de FII
+   * ao lado, marcar as duas seria afirmar uma isenção que uma delas não tem.
+   */
+  isenta: boolean
 }
 
 export interface MesApurado {
@@ -149,6 +221,20 @@ export interface ApuracaoBolsa {
   posicaoFinal: Posicao[]
   /** Uma linha por papel vendido no ano, com preço médio de venda e de custo. */
   vendasPorTicker: VendaTicker[]
+  /**
+   * O razão: uma linha por venda, na ordem em que aconteceram. `meses` e
+   * `vendasPorTicker` são somas DESTA lista, não contas paralelas.
+   */
+  vendas: VendaEvento[]
+  /**
+   * Lançamentos descartados por não terem mês de 1 a 12.
+   *
+   * Existia como CRASH: o fold do razão indexa `vendas[mes]`, que só tem as
+   * chaves 1..12, e uma planilha com o mês ilegível derrubava a apuração
+   * inteira com um TypeError. Sai contado, como o `ignorados` da série de
+   * proventos — um lançamento perdido é dinheiro que some, e some visível.
+   */
+  ignorados: number
 }
 
 export interface EntradaBolsa {
@@ -179,45 +265,106 @@ interface Carteira {
  * para o papel inteiro sair da apuração, porque um custo médio construído pela
  * metade produz ganho errado em todas as outras vendas do mesmo papel.
  */
-function tickersSemCusto(e: EntradaBolsa): Set<string> {
-  const carteira = new Map<string, Carteira>()
-  e.posicaoInicial?.forEach((p) =>
-    carteira.set(p.ticker, { quantidade: p.quantidade, custoTotal: p.quantidade * p.custoMedio }),
-  )
+function tickersSemCusto(e: EntradaBolsa, ordenados: (Operacao | EventoQuantidade)[]): Set<string> {
+  // SÓ quantidade. Este passo decide uma coisa só — houve venda sem custo? — e
+  // ela é decidida por quantidade. A versão anterior mantinha um `custoTotal`
+  // que ninguém lia e que, desde que `apurarBolsa` passou a somar `custos` na
+  // compra, já divergia do custo de verdade: dois razões que deviam concordar,
+  // um deles calado e errado, esperando o próximo leitor confiar nele.
+  const quantidades = new Map<string, number>()
+  e.posicaoInicial?.forEach((p) => quantidades.set(p.ticker, p.quantidade))
   const sem = new Set<string>()
 
-  ordenar(e).forEach((lanc) => {
+  ordenados.forEach((lanc) => {
+    const atual = quantidades.get(lanc.ticker) ?? 0
     if ('delta' in lanc) {
-      const c = carteira.get(lanc.ticker)
-      if (c) c.quantidade += lanc.delta
+      if (quantidades.has(lanc.ticker)) quantidades.set(lanc.ticker, atual + lanc.delta)
       return
     }
-    const c = carteira.get(lanc.ticker) ?? { quantidade: 0, custoTotal: 0 }
-    carteira.set(lanc.ticker, c)
     if (lanc.tipo === 'compra') {
-      c.quantidade += lanc.quantidade
-      c.custoTotal += lanc.quantidade * lanc.precoUnitario
+      quantidades.set(lanc.ticker, atual + lanc.quantidade)
       return
     }
     // Tolerância de 1e-9: fração de cota de FII vira dízima e não é venda a descoberto.
-    if (lanc.quantidade > c.quantidade + 1e-9) sem.add(lanc.ticker)
-    const baixa = Math.min(lanc.quantidade, c.quantidade)
-    const medio = c.quantidade > 0 ? c.custoTotal / c.quantidade : 0
-    c.quantidade -= baixa
-    c.custoTotal -= baixa * medio
+    if (lanc.quantidade > atual + 1e-9) sem.add(lanc.ticker)
+    quantidades.set(lanc.ticker, atual - Math.min(lanc.quantidade, atual))
   })
 
   return sem
 }
 
-/** Lançamentos do ano em ordem de mês, com compra antes de venda no mesmo mês. */
+/**
+ * Dia de uma data `dd/mm/aaaa`. `null` quando não há data, ou ela não é essa.
+ *
+ * Aceita um dígito no dia e no mês (`3/5/2026`), que é como um CSV exportado de
+ * planilha costuma sair. A máscara estrita de dois dígitos rebaixava o papel
+ * INTEIRO para a heurística de mês por causa de uma linha — e sem dizer,
+ * porque a demoção não tinha contador.
+ */
+function diaDe(data: string | undefined): number | null {
+  if (data === undefined) return null
+  const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(data)
+  if (m === null) return null
+  const dia = Number(m[1])
+  const mes = Number(m[2])
+  return dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12 ? dia : null
+}
+
+/**
+ * Papéis cujos lançamentos do ano TODOS trazem dia legível.
+ *
+ * A ordem cronológica é a certa — o custo médio de uma venda é o da data dela,
+ * e não o de depois de uma compra que ainda não aconteceu. Mas ela só pode
+ * valer onde o dia existe para o papel inteiro: com metade dos lançamentos
+ * datados, a outra metade ordenaria no dia 0 e uma compra do dia 20 passaria a
+ * vir antes de uma venda do dia 3 — pior que a heurística que ela substitui.
+ *
+ * Por PAPEL, e não por arquivo, porque cada papel tem a sua carteira: um
+ * extrato velho sem data para PETR4 não tem por que rebaixar VALE3.
+ *
+ * É esta função que faz estado gravado antes da data abrir com o mesmo número.
+ */
+function tickersComDia(lancamentos: (Operacao | EventoQuantidade)[]): Set<string> {
+  const sem = new Set<string>()
+  lancamentos.forEach((l) => {
+    if (diaDe(l.data) === null) sem.add(l.ticker)
+  })
+  return new Set(lancamentos.map((l) => l.ticker).filter((t) => !sem.has(t)))
+}
+
+/**
+ * Lançamentos do ano em ordem: mês, depois dia (onde há), depois evento antes
+ * de compra e compra antes de venda.
+ *
+ * O peso desempata o mesmo dia e é a ordem INTEIRA onde não há dia — que é a
+ * heurística antiga, preservada de propósito. Ela erra para o lado seguro:
+ * adiantar a compra garante custo disponível, e inventar prejuízo é pior que
+ * adiar ganho.
+ *
+ * A ordem ENTRE papéis diferentes não muda conta nenhuma: cada papel tem a sua
+ * carteira, e o total do mês soma na ordem que vier. Basta que a ordem DENTRO
+ * de cada papel esteja certa — e é por isso que o dia 0 dos papéis fora do modo
+ * cronológico não estraga os que estão dentro.
+ */
+export const mesValido = (l: { mes: number }) => Number.isInteger(l.mes) && l.mes >= 1 && l.mes <= 12
+
 function ordenar(e: EntradaBolsa): (Operacao | EventoQuantidade)[] {
-  const doAno = <T extends { ano: number; mes: number }>(l: T[]) => l.filter((x) => x.ano === e.ano)
-  const peso = (l: Operacao | EventoQuantidade) =>
-    'delta' in l ? 0 : l.tipo === 'compra' ? 1 : 2
-  return [...doAno(e.eventos ?? []), ...doAno(e.operacoes)].sort(
-    (a, b) => a.mes - b.mes || peso(a) - peso(b),
-  )
+  const doAno = <T extends { ano: number; mes: number }>(l: T[]) =>
+    l.filter((x) => x.ano === e.ano && mesValido(x))
+  const todos = [...doAno(e.eventos ?? []), ...doAno(e.operacoes)]
+  const comDia = tickersComDia(todos)
+  // Decorar-ordenar-desdecorar: o dia de cada lançamento sai de uma passagem
+  // linear, e não de uma regex executada dentro do comparador — que a `sort`
+  // chama O(n log n) vezes. Com vinte mil operações datadas a diferença era de
+  // 42 ms para 187 ms, e a apuração plurianual repete isso por ano.
+  return todos
+    .map((l) => ({
+      l,
+      dia: comDia.has(l.ticker) ? (diaDe(l.data) ?? 0) : 0,
+      peso: 'delta' in l ? 0 : l.tipo === 'compra' ? 1 : 2,
+    }))
+    .sort((a, b) => a.l.mes - b.l.mes || a.dia - b.dia || a.peso - b.peso)
+    .map((x) => x.l)
 }
 
 /**
@@ -228,7 +375,16 @@ function ordenar(e: EntradaBolsa): (Operacao | EventoQuantidade)[] {
  * É isso que faz a venda seguinte do mesmo papel continuar certa.
  */
 export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
-  const semCusto = tickersSemCusto(e)
+  const doAno = <T extends { ano: number; mes: number }>(l: readonly T[]) => l.filter((x) => x.ano === e.ano)
+  const ignorados =
+    doAno(e.operacoes).filter((o) => !mesValido(o)).length +
+    doAno(e.eventos ?? []).filter((v) => !mesValido(v)).length
+
+  // Uma ordenação só, compartilhada: `tickersSemCusto` fazia a sua e
+  // `apurarBolsa` refazia a mesma logo abaixo — o filtro, o mapa e a `sort`
+  // inteiros, duas vezes por ano, sobre a lista plurianual completa.
+  const ordenados = ordenar(e)
+  const semCusto = tickersSemCusto(e, ordenados)
   const vale = (ticker: string) => !semCusto.has(ticker)
 
   const carteira = new Map<string, Carteira>()
@@ -238,19 +394,18 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
       carteira.set(p.ticker, { quantidade: p.quantidade, custoTotal: p.quantidade * p.custoMedio }),
     )
 
-  const vendas: Record<number, Record<Modalidade, number>> = {}
-  const resultado: Record<number, Record<Modalidade, number>> = {}
-  for (let m = 1; m <= 12; m++) {
-    vendas[m] = zeros()
-    resultado[m] = zeros()
-  }
+  /**
+   * O razão, montado enquanto a carteira anda. Tudo o mais desta função é soma
+   * dele: `vendas[mês][pote]`, `resultado[mês][pote]` e `vendasPorTicker`.
+   *
+   * Eram três contas em paralelo dentro deste mesmo laço, e nada impedia que
+   * divergissem — a mais fina, que é a única conferível, nem existia. Com o
+   * razão como fonte, o invariante «o mês é a soma das suas vendas» deixa de
+   * ser algo a testar e passa a ser algo que não tem como ser falso.
+   */
+  const razao: VendaEvento[] = []
 
-  // Mesma venda que alimenta `resultado` (mês×pote), somada agora por ticker:
-  // é o que dá o preço médio de venda e o custo médio do lote vendido, que a
-  // agregação por mês×pote perde ao misturar papéis diferentes no mesmo pote.
-  const porTicker = new Map<string, { quantidade: number; valorVenda: number; custoVenda: number }>()
-
-  ordenar(e).forEach((lanc) => {
+  ordenados.forEach((lanc) => {
     if (!vale(lanc.ticker)) return
 
     if ('delta' in lanc) {
@@ -264,23 +419,54 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
 
     if (lanc.tipo === 'compra') {
       c.quantidade += lanc.quantidade
-      c.custoTotal += lanc.quantidade * lanc.precoUnitario
+      // Corretagem e emolumentos da compra entram no custo de aquisição, que é
+      // onde a lei os põe — e é o que faz o ganho da venda seguinte sair certo.
+      c.custoTotal += lanc.quantidade * lanc.precoUnitario + (lanc.custos ?? 0)
       return
     }
 
-    const p = pote(lanc)
     const medio = c.quantidade > 0 ? c.custoTotal / c.quantidade : 0
-    const bruto = lanc.quantidade * lanc.precoUnitario
-    vendas[lanc.mes][p] += bruto
-    resultado[lanc.mes][p] += bruto - lanc.quantidade * medio
-    c.quantidade -= lanc.quantidade
-    c.custoTotal -= lanc.quantidade * medio
+    // BRUTO, e de propósito: é o valor de alienação, e é ele que a isenção dos
+    // R$ 20 mil olha. Descontar os custos aqui empurraria para dentro da
+    // isenção uma venda que a lei deixa de fora — mover a fronteira dos 20 mil
+    // por causa de corretagem é inventar isenção.
+    const valorVenda = lanc.quantidade * lanc.precoUnitario
+    const custoBaixado = lanc.quantidade * medio
+    const custos = lanc.custos ?? 0
+    const resultadoDaVenda = valorVenda - custoBaixado - custos
 
-    const t = porTicker.get(lanc.ticker) ?? { quantidade: 0, valorVenda: 0, custoVenda: 0 }
-    t.quantidade += lanc.quantidade
-    t.valorVenda += bruto
-    t.custoVenda += lanc.quantidade * medio
-    porTicker.set(lanc.ticker, t)
+    razao.push({
+      data: lanc.data,
+      ano: lanc.ano,
+      mes: lanc.mes,
+      ticker: lanc.ticker,
+      modalidade: pote(lanc),
+      quantidade: lanc.quantidade,
+      precoVenda: lanc.precoUnitario,
+      custoMedioNaVenda: medio,
+      parteDaPosicao: c.quantidade > 0 ? Math.min(1, lanc.quantidade / c.quantidade) : 0,
+      valorVenda,
+      custoBaixado,
+      custos,
+      resultado: resultadoDaVenda,
+      resultadoPct: custoBaixado > 0 ? resultadoDaVenda / custoBaixado : null,
+      // O mês ainda não fechou; quem decide isto é o laço da isenção, abaixo.
+      isenta: false,
+    })
+
+    c.quantidade -= lanc.quantidade
+    c.custoTotal -= custoBaixado
+  })
+
+  const vendas: Record<number, Record<Modalidade, number>> = {}
+  const resultado: Record<number, Record<Modalidade, number>> = {}
+  for (let m = 1; m <= 12; m++) {
+    vendas[m] = zeros()
+    resultado[m] = zeros()
+  }
+  razao.forEach((v) => {
+    vendas[v.mes][v.modalidade] += v.valorVenda
+    resultado[v.mes][v.modalidade] += v.resultado
   })
 
   const prejuizo: Record<Modalidade, number> = {
@@ -302,6 +488,13 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     // ele uma isenção que a lei não dá, e ainda faria uma venda de ETF empurrar
     // a venda de ações para fora da isenção que ela tem.
     const isentoNoMes = vendas[m].comum > 0 && vendas[m].comum <= ISENCAO_MENSAL
+    // Só o pote comum: é dele a isenção, e marcar a venda de FII do mesmo mês
+    // afirmaria uma isenção que ela não tem.
+    if (isentoNoMes) {
+      razao.forEach((v) => {
+        if (v.mes === m && v.modalidade === 'comum') v.isenta = true
+      })
+    }
     const tributavel = zeros()
     let irDoMes = 0
     let isentoDoMes = 0
@@ -347,13 +540,26 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     }))
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 
+  // A mesma venda do razão, somada por papel: é o que dá o preço médio de
+  // venda e o custo médio do lote vendido, que a agregação por mês × pote perde
+  // ao misturar papéis diferentes dentro do mesmo pote.
+  const porTicker = new Map<string, { quantidade: number; valorVenda: number; custoVenda: number; custos: number }>()
+  razao.forEach((v) => {
+    const t = porTicker.get(v.ticker) ?? { quantidade: 0, valorVenda: 0, custoVenda: 0, custos: 0 }
+    t.quantidade += v.quantidade
+    t.valorVenda += v.valorVenda
+    t.custoVenda += v.custoBaixado
+    t.custos += v.custos
+    porTicker.set(v.ticker, t)
+  })
+
   const vendasPorTicker: VendaTicker[] = [...porTicker.entries()]
     .map(([ticker, v]) => ({
       ticker,
       quantidadeVendida: v.quantidade,
       precoMedioVenda: v.valorVenda / v.quantidade,
       custoMedioNaVenda: v.custoVenda / v.quantidade,
-      resultado: v.valorVenda - v.custoVenda,
+      resultado: v.valorVenda - v.custoVenda - v.custos,
     }))
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 
@@ -367,6 +573,8 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
     semCusto: [...semCusto].sort(),
     posicaoFinal,
     vendasPorTicker,
+    vendas: razao,
+    ignorados,
   }
 }
 

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { apurarBolsa, paraBase, ISENCAO_MENSAL, type Operacao, type EntradaBolsa, apurarSerie } from './bolsa.js'
+import {
+  apurarBolsa, paraBase, apurarSerie, ISENCAO_MENSAL, MODALIDADES,
+  type Operacao, type EntradaBolsa,
+} from './bolsa.js'
 
 const compra = (mes: number, ticker: string, quantidade: number, precoUnitario: number): Operacao => ({
   ano: 2026, mes, ticker, tipo: 'compra', quantidade, precoUnitario,
@@ -351,5 +354,283 @@ describe('apurarSerie — os anos se encadeiam', () => {
 
   it('sem operação nenhuma, série vazia — não um ano fantasma', () => {
     expect(apurarSerie({ operacoes: [] })).toEqual([])
+  })
+})
+
+// ------------------------------------------------------------- o razão de vendas
+
+/** `dd/mm/aaaa` do ano dos helpers, para não repetir a máscara em cada caso. */
+const em = (dia: number, mes: number) =>
+  `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/2026`
+
+const compraEm = (dia: number, mes: number, ticker: string, q: number, p: number): Operacao => ({
+  ...compra(mes, ticker, q, p), data: em(dia, mes),
+})
+const vendaEm = (
+  dia: number, mes: number, ticker: string, q: number, p: number,
+  modalidade?: Operacao['modalidade'],
+): Operacao => ({ ...venda(mes, ticker, q, p, modalidade), data: em(dia, mes) })
+
+describe('razão de vendas', () => {
+  it('uma linha por venda, com o custo médio do momento', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 100, 10), venda(2, 'A', 40, 25), venda(5, 'A', 60, 30)],
+    })
+    expect(r.vendas).toHaveLength(2)
+    expect(r.vendas.map((v) => [v.mes, v.quantidade, v.precoVenda, v.custoMedioNaVenda])).toEqual([
+      [2, 40, 25, 10],
+      [5, 60, 30, 10],
+    ])
+    perto(r.vendas[0].resultado, 600)
+    perto(r.vendas[0].resultadoPct!, 1.5)
+  })
+
+  it('parte da posição é medida ANTES da baixa', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 100, 10), venda(2, 'A', 40, 20), venda(3, 'A', 60, 20)],
+    })
+    // 40 de 100 = 0,4; depois 60 de 60 = 1 (vendeu tudo o que restava).
+    perto(r.vendas[0].parteDaPosicao, 0.4)
+    perto(r.vendas[1].parteDaPosicao, 1)
+  })
+
+  it('o mês é a soma das suas vendas, por pote — o invariante', () => {
+    const r = apurar({
+      operacoes: [
+        compra(1, 'A', 1000, 10), compra(1, 'F11', 100, 100),
+        venda(3, 'A', 400, 30), venda(3, 'A', 200, 25),
+        venda(3, 'F11', 50, 120, 'fii'),
+        venda(7, 'A', 400, 12),
+      ],
+    })
+    r.meses.forEach((m) => {
+      MODALIDADES.forEach((p) => {
+        const doMes = r.vendas.filter((v) => v.mes === m.mes && v.modalidade === p)
+        perto(m.vendas[p], doMes.reduce((s, v) => s + v.valorVenda, 0))
+        perto(m.resultado[p], doMes.reduce((s, v) => s + v.resultado, 0))
+      })
+    })
+  })
+
+  it('o invariante vale com prejuízo, day trade e evento de quantidade juntos', () => {
+    const r = apurar({
+      operacoes: [
+        compra(1, 'A', 100, 50), venda(2, 'A', 100, 20),
+        compra(4, 'B', 200, 10), venda(4, 'B', 200, 14, 'daytrade'),
+        compra(6, 'C', 100, 8), venda(9, 'C', 100, 11),
+      ],
+      eventos: [{ ano: 2026, mes: 7, ticker: 'C', delta: 100 }],
+    })
+    r.meses.forEach((m) => {
+      MODALIDADES.forEach((p) => {
+        const doMes = r.vendas.filter((v) => v.mes === m.mes && v.modalidade === p)
+        perto(m.resultado[p], doMes.reduce((s, v) => s + v.resultado, 0))
+      })
+    })
+  })
+
+  it('vendasPorTicker é a soma do razão daquele papel', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 200, 10), venda(2, 'A', 100, 20), venda(6, 'A', 100, 30)],
+    })
+    const doPapel = r.vendas.filter((v) => v.ticker === 'A')
+    const linha = r.vendasPorTicker[0]
+    perto(linha.quantidadeVendida, doPapel.reduce((s, v) => s + v.quantidade, 0))
+    perto(linha.resultado, doPapel.reduce((s, v) => s + v.resultado, 0))
+  })
+
+  it('desdobro entre duas vendas muda o custo médio da segunda', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 100, 10), venda(2, 'A', 50, 20), venda(6, 'A', 100, 20)],
+      eventos: [{ ano: 2026, mes: 4, ticker: 'A', delta: 50 }], // 50 → 100 cotas
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 10)
+    perto(r.vendas[1].custoMedioNaVenda, 5)
+  })
+
+  it('custo baixado zero não vira percentual', () => {
+    // Bonificação lançada como compra a preço zero: há quantidade e não há custo.
+    const r = apurar({ operacoes: [compra(1, 'A', 100, 0), venda(2, 'A', 100, 7)] })
+    expect(r.vendas[0].resultadoPct).toBeNull()
+    perto(r.vendas[0].resultado, 700)
+  })
+
+  it('isenta marca só o pote comum do mês isento', () => {
+    const r = apurar({
+      operacoes: [
+        compra(1, 'A', 1000, 10), compra(1, 'F11', 100, 100),
+        venda(3, 'A', 500, 30), // 15.000 — abaixo dos 20 mil
+        venda(3, 'F11', 50, 120, 'fii'), // FII não tem isenção
+      ],
+    })
+    expect(r.meses[2].isentoNoMes).toBe(true)
+    expect(r.vendas.find((v) => v.ticker === 'A')!.isenta).toBe(true)
+    expect(r.vendas.find((v) => v.ticker === 'F11')!.isenta).toBe(false)
+  })
+
+  it('mês acima do teto não marca venda nenhuma como isenta', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 1000, 10), venda(3, 'A', 1000, ISENCAO_MENSAL / 1000 + 1)],
+    })
+    expect(r.vendas.every((v) => !v.isenta)).toBe(true)
+  })
+})
+
+describe('ordem cronológica, onde o dia existe', () => {
+  it('venda antes de compra no mesmo mês não usa o custo da compra que veio depois', () => {
+    // Dia 3 vende o que veio do ano anterior; dia 20 compra mais caro.
+    const r = apurar({
+      posicaoInicial: [{ ticker: 'A', quantidade: 100, custoMedio: 10 }],
+      operacoes: [vendaEm(3, 5, 'A', 100, 30), compraEm(20, 5, 'A', 100, 25)],
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 10)
+    perto(r.meses[4].resultado.comum, 2000)
+    expect(r.posicaoFinal).toEqual([{ ticker: 'A', quantidade: 100, custoMedio: 25 }])
+  })
+
+  it('duas vendas no mesmo mês com uma compra entre elas saem com custos diferentes', () => {
+    const r = apurar({
+      operacoes: [
+        compraEm(2, 4, 'A', 100, 10),
+        vendaEm(10, 4, 'A', 50, 30),
+        compraEm(15, 4, 'A', 50, 20),
+        vendaEm(25, 4, 'A', 100, 30),
+      ],
+    })
+    // Dia 10: médio 10. Dia 15 entram 50 a 20 sobre os 50 que sobraram a 10 → 15.
+    perto(r.vendas[0].custoMedioNaVenda, 10)
+    perto(r.vendas[1].custoMedioNaVenda, 15)
+  })
+
+  it('um lançamento sem dia devolve o PAPEL INTEIRO à heurística de mês', () => {
+    // A mesma sequência do caso acima, com a compra do dia 20 sem data: a
+    // heurística antiga põe compra antes de venda, e o custo médio se mistura.
+    const r = apurar({
+      posicaoInicial: [{ ticker: 'A', quantidade: 100, custoMedio: 10 }],
+      operacoes: [vendaEm(3, 5, 'A', 100, 30), compra(5, 'A', 100, 25)],
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 17.5)
+  })
+
+  it('papel sem dia não rebaixa o papel que tem', () => {
+    const r = apurar({
+      posicaoInicial: [
+        { ticker: 'A', quantidade: 100, custoMedio: 10 },
+        { ticker: 'B', quantidade: 100, custoMedio: 10 },
+      ],
+      operacoes: [
+        vendaEm(3, 5, 'A', 100, 30), compraEm(20, 5, 'A', 100, 25),
+        venda(5, 'B', 100, 30), compra(5, 'B', 100, 25),
+      ],
+    })
+    perto(r.vendas.find((v) => v.ticker === 'A')!.custoMedioNaVenda, 10)
+    perto(r.vendas.find((v) => v.ticker === 'B')!.custoMedioNaVenda, 17.5)
+  })
+
+  it('data fora do formato conta como ausente, e não quebra a apuração', () => {
+    const r = apurar({
+      posicaoInicial: [{ ticker: 'A', quantidade: 100, custoMedio: 10 }],
+      operacoes: [
+        { ...venda(5, 'A', 100, 30), data: '2026-05-03' },
+        { ...compra(5, 'A', 100, 25), data: '20/05/2026' },
+      ],
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 17.5)
+  })
+
+  it('evento de quantidade datado entra no lugar certo do mês', () => {
+    const r = apurar({
+      operacoes: [compraEm(2, 3, 'A', 100, 10), vendaEm(25, 3, 'A', 200, 8)],
+      eventos: [{ ano: 2026, mes: 3, data: em(10, 3), ticker: 'A', delta: 100 }],
+    })
+    // Desdobro no dia 10: 100 → 200 cotas, custo médio 10 → 5. Vende 200 a 8.
+    perto(r.vendas[0].custoMedioNaVenda, 5)
+    perto(r.meses[2].resultado.comum, 600)
+  })
+})
+
+describe('corretagem e emolumentos', () => {
+  it('na compra entram no custo de aquisição', () => {
+    const r = apurar({
+      operacoes: [{ ...compra(1, 'A', 100, 10), custos: 50 }, venda(2, 'A', 100, 20)],
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 10.5)
+    perto(r.meses[1].resultado.comum, 950)
+  })
+
+  it('na venda saem do resultado', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 100, 10), { ...venda(2, 'A', 100, 20), custos: 40 }],
+    })
+    perto(r.vendas[0].resultado, 960)
+    perto(r.meses[1].resultado.comum, 960)
+  })
+
+  it('na venda NÃO saem do valor de alienação, que é o que a isenção olha', () => {
+    // Vende exatamente no teto: descontar os custos aqui traria a venda para
+    // dentro da isenção, que é uma isenção que a lei não dá.
+    const r = apurar({
+      operacoes: [
+        compra(1, 'A', 1000, 10),
+        { ...venda(2, 'A', 1000, ISENCAO_MENSAL / 1000 + 0.01), custos: 500 },
+      ],
+    })
+    expect(r.meses[1].isentoNoMes).toBe(false)
+    perto(r.meses[1].vendas.comum, ISENCAO_MENSAL + 10)
+  })
+
+  it('chegam somados a vendasPorTicker', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 100, 10), { ...venda(2, 'A', 100, 20), custos: 40 }],
+    })
+    perto(r.vendasPorTicker[0].resultado, 960)
+  })
+})
+
+describe('apurarSerie — o razão atravessa os anos', () => {
+  it('cada ano traz só as suas vendas, com o custo que veio de trás', () => {
+    const serie = apurarSerie({
+      operacoes: [
+        { ...compra(1, 'A', 100, 10), ano: 2024 },
+        { ...venda(6, 'A', 50, 30), ano: 2025 },
+        { ...venda(6, 'A', 50, 40), ano: 2026 },
+      ],
+    })
+    expect(serie.map((a) => [a.ano, a.vendas.length])).toEqual([[2024, 0], [2025, 1], [2026, 1]])
+    perto(serie[1].vendas[0].custoMedioNaVenda, 10)
+    perto(serie[2].vendas[0].custoMedioNaVenda, 10)
+    expect(serie[2].vendas[0].ano).toBe(2026)
+  })
+})
+
+describe('o que a revisão do lote achou', () => {
+  it('mês fora de 1..12 sai CONTADO, e não derruba a apuração', () => {
+    // O fold do razão indexa `vendas[mes]`, que só tem 1..12: uma planilha com
+    // o mês ilegível estourava com TypeError e levava a apuração inteira junto.
+    const r = apurar({
+      operacoes: [
+        { ...compra(1, 'A', 100, 10), mes: 0 },
+        { ...venda(2, 'A', 100, 20), mes: 13 },
+        compra(3, 'B', 100, 10),
+        venda(4, 'B', 100, 20),
+      ],
+    })
+    expect(r.ignorados).toBe(2)
+    perto(r.meses[3].resultado.comum, 1000)
+    expect(r.vendas.map((v) => v.ticker)).toEqual(['B'])
+  })
+
+  it('dia com um dígito conta como data — não rebaixa o papel inteiro', () => {
+    // `3/05/2026` sai de planilha o tempo todo. Com a máscara estrita, uma
+    // linha assim mandava o papel inteiro de volta para a heurística de mês,
+    // mudando o custo médio das vendas dele sem avisar ninguém.
+    const r = apurar({
+      posicaoInicial: [{ ticker: 'A', quantidade: 100, custoMedio: 10 }],
+      operacoes: [
+        { ...venda(5, 'A', 100, 30), data: '3/05/2026' },
+        { ...compra(5, 'A', 100, 25), data: '20/5/2026' },
+      ],
+    })
+    perto(r.vendas[0].custoMedioNaVenda, 10)
   })
 })
