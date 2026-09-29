@@ -18,6 +18,19 @@ describe('pacote de histórico', () => {
     expect(lido.geradoPor).toBe('IRPF-calc')
   })
 
+  it('leva onde está cada bem, e descarta na porta o que não tem forma', () => {
+    const pacote = novoPacoteHistorico('IRPF-calc', AGORA, {
+      historico: { '2025': { anoBase: 2025 } as never },
+      instituicaoPorBem: { 'cdb:CDB X': { instituicao: 'XP', emissor: 'Banco X' } },
+    })
+    const bruto = JSON.parse(JSON.stringify(pacote))
+    bruto.instituicaoPorBem['cdb:CDB Y'] = { instituicao: 7 }
+    const lido = lerPacote(bruto, 'historico')
+    expect(lido.instituicaoPorBem).toEqual({ 'cdb:CDB X': { instituicao: 'XP', emissor: 'Banco X' } })
+    // campo novo e opcional: o pacote antigo, sem ele, continua entrando
+    expect('instituicaoPorBem' in lerPacote(JSON.parse(JSON.stringify(p())), 'historico')).toBe(false)
+  })
+
   it('recusa pacote de uma versão mais nova, dizendo o porquê', () => {
     expect(() => lerPacote({ ...p(), versao: PACOTE_VERSAO + 1 }, 'historico')).toThrow(/versão mais nova/i)
   })

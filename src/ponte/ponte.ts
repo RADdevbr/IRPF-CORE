@@ -28,6 +28,7 @@
 
 import type { Historico, Overrides, Aportes, Vinculos } from '../historico/historico.js'
 import type { Entradas } from '../historico/consistencia.js'
+import { lerInstituicaoPorBem, type InstituicaoPorBem } from '../historico/instituicao.js'
 import type { OrigemPorPagador } from '../patrimonio/renda.js'
 
 /**
@@ -79,6 +80,15 @@ export interface PacoteHistorico extends Cabecalho {
    * novo — e é para isso que o pacote existe.
    */
   origemPagador?: OrigemPorPagador
+  /**
+   * Onde está cada bem e quem deve, por id canônico do bem.
+   *
+   * Outra resposta que só a pessoa tem: a descrição do bem é texto livre, e o
+   * CDB comprado pela XP está na XP e é dívida de outro banco. É o que deixa o
+   * painel de patrimônio ler a carteira por instituição, e somar o FGC por
+   * emissor entre corretoras.
+   */
+  instituicaoPorBem?: InstituicaoPorBem
 }
 
 /**
@@ -161,6 +171,11 @@ export function lerPacote<T extends Pacote['tipo']>(bruto: unknown, tipoEsperado
   }
   if (tipoEsperado === 'baseline' && (!o.vals || typeof o.vals !== 'object')) {
     throw new Error('Pacote de base sem o campo "vals" com os rendimentos por fonte.')
+  }
+  // Nomes são lidos como texto por quem recebe; o que não for texto sai aqui,
+  // na porta, e não no meio do painel de quem abriu o pacote.
+  if ('instituicaoPorBem' in o) {
+    return { ...o, instituicaoPorBem: lerInstituicaoPorBem(o.instituicaoPorBem) } as unknown as Extract<Pacote, { tipo: T }>
   }
   return o as unknown as Extract<Pacote, { tipo: T }>
 }
