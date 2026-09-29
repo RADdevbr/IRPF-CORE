@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDec, censo, censoDe, pareceTexto, leituraDe, LEITURA } from './decParser.js'
+import { parseDec, censo, censoDe, pareceTexto, leituraDe, LEITURA, cnpjValido } from './decParser.js'
 
 // Constrói uma linha de largura fixa por posição (1-indexado inclusivo).
 function put(base: string[], ini: number, s: string, len: number): void {
@@ -155,6 +155,72 @@ describe('parseDec — leitura posicional', () => {
     expect(p.descricao).toContain('URPR11')
     expect(p.saldoAnterior).toBeCloseTo(70661, 2)
     expect(p.saldoAtual).toBeCloseTo(74818.67, 2)
+  })
+
+  // O leiaute com grupo, montado nas posições conferidas num arquivo real da
+  // declaração 2024 (ver `Posicao`). CPF inventado; CNPJs públicos.
+  const CPF = '12345678909'
+  const linha27 = (o: { codigo: string; grupo: string; cnpj?: string; cpfDono?: string; descr?: string; exterior?: boolean }) => {
+    const l = Array<string>(1195).fill(' ')
+    const pos = (ini: number, txt: string) => {
+      for (let k = 0; k < txt.length; k++) l[ini - 1 + k] = txt[k]
+    }
+    pos(1, '27')
+    pos(3, CPF)
+    pos(14, o.codigo)
+    pos(16, o.exterior ? '1249' : '0105')
+    pos(20, o.descr ?? 'CONTA CORRENTE AG 1234')
+    pos(532, '0000012000000' + '0000015000000')
+    if (o.cnpj) pos(1042, o.cnpj)
+    pos(1089, 'T')
+    pos(1090, o.cpfDono ?? CPF)
+    pos(1101, o.grupo)
+    return l.join('')
+  }
+  const ler = (...linhas: string[]) => parseDec(['IRPF 2024', ...linhas].join('\r\n') + '\r\n').posicoes
+
+  it('leiaute com grupo: o grupo vem de 1101–1102, o código de 14–15 e o CNPJ de 1042–1055', () => {
+    const [p] = ler(linha27({ codigo: '01', grupo: '06', cnpj: '00000000000191' }))
+    expect(p.codigo).toBe('06') // grupo: depósito
+    expect(p.subcodigo).toBe('01') // código dentro do grupo
+    expect(p.cnpj).toBe('00000000000191')
+    expect(p.saldoAtual).toBeCloseTo(150000, 2)
+  })
+
+  it('o indicador de exterior e o país não viram código', () => {
+    // Era o que acontecia: 16–17 lido como código dava «12» para todo bem no exterior.
+    const [p] = ler(linha27({ codigo: '01', grupo: '06', exterior: true }))
+    expect(p.codigo).toBe('06')
+    expect(p.subcodigo).toBe('01')
+  })
+
+  it('CNPJ com verificador errado não é lido — melhor nada que um banco inventado', () => {
+    const [p] = ler(linha27({ codigo: '02', grupo: '04', cnpj: '00000000000192' }))
+    expect(p.cnpj).toBeUndefined()
+    expect(p.codigo).toBe('04')
+  })
+
+  it('sem a marca do leiaute novo, a linha fica com o código de 2 dígitos e sem grupo', () => {
+    // Dígitos quaisquer em 1101–1102 não bastam: sem o CPF do dono repetido
+    // antes deles, o arquivo é tratado como do leiaute antigo.
+    const [p] = ler(linha27({ codigo: '61', grupo: '04', cnpj: '00000000000191', cpfDono: '           ' }))
+    expect(p.codigo).toBe('61')
+    expect(p.subcodigo).toBe('')
+    expect(p.cnpj).toBeUndefined()
+  })
+
+  it('no arquivo do leiaute novo, a linha sem grupo válido fica sem grupo, e não com o código no lugar dele', () => {
+    const [, p] = ler(linha27({ codigo: '01', grupo: '06' }), linha27({ codigo: '02', grupo: '  ', cpfDono: '           ' }))
+    expect(p.codigo).toBe('')
+    expect(p.subcodigo).toBe('02')
+  })
+
+  it('cnpjValido confere os dois dígitos verificadores', () => {
+    expect(cnpjValido('00000000000191')).toBe('00000000000191')
+    expect(cnpjValido('34.508.872/0001-87')).toBe('34508872000187')
+    expect(cnpjValido('34508872000188')).toBeUndefined()
+    expect(cnpjValido('00000000000000')).toBeUndefined()
+    expect(cnpjValido('123')).toBeUndefined()
   })
 
   it('ignora campos zerados (não gera lançamento)', () => {

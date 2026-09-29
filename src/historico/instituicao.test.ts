@@ -9,6 +9,7 @@ import {
   respostaCompleta,
   idInstituicao,
   estaEmInstituicao,
+  nomesPorCnpj,
 } from './instituicao.js'
 import { REGIME, type ClassePatrimonio, type Declaracao, type Historico, type PosicaoAno } from './historico.js'
 
@@ -201,5 +202,98 @@ describe('nomes e respostas', () => {
     expect(respostaCompleta('cdb', { instituicao: 'XP', emissor: 'Banco X' })).toBe(true)
     expect(respostaCompleta('tesouro', { instituicao: 'XP' })).toBe(true)
     expect(respostaCompleta('tesouro', undefined)).toBe(false)
+  })
+})
+
+describe('sugestão pelo CNPJ da linha do bem', () => {
+  // Nomes como vêm nos registros de rendimento: razão social, em maiúsculas.
+  const BB = '00000000000191'
+  const DTVM = '34508872000187' // qualquer CNPJ válido serve: o nome é que diz o que ele é
+  const IP = '12345678000195'
+  const nomePorCnpj = {
+    [BB]: 'BANCO DO BRASIL S.A.',
+    [DTVM]: 'INTER DISTRIB DE TIT E VAL MOB LTDA',
+    [IP]: 'EXEMPLO PAY INSTITUICAO DE PAGAMENTO S.A.',
+  }
+
+  it('na conta, o banco do CNPJ é onde está e quem deve', () => {
+    const s = sugerirInstituicao('CONTA CORRENTE AG 1234', 'contaCorrente', { cnpj: BB, grupo: '06', nomePorCnpj })
+    expect(s).toMatchObject({ instituicao: 'Banco do Brasil', emissor: 'Banco do Brasil' })
+    expect(s?.aproximada).toBeUndefined()
+    expect(s?.motivo).toMatch(/BANCO DO BRASIL S\.A\./)
+  })
+
+  it('conta em quem não é banco sugere «sem FGC» — e não entra em bloco', () => {
+    // Há conta de pagamento cujo saldo é aplicado sozinho num papel de banco, e
+    // aí tem FGC: só a pessoa sabe.
+    const s = sugerirInstituicao('SALDO EM CONTA', 'contaCorrente', { cnpj: IP, grupo: '06', nomePorCnpj })
+    expect(s).toMatchObject({ instituicao: 'EXEMPLO PAY INSTITUICAO DE PAGAMENTO S.A.', semFgc: true, aproximada: true })
+    expect(s?.emissor).toBeUndefined()
+  })
+
+  it('na renda fixa guardada no banco, sem outro banco na descrição, o banco é quem deve', () => {
+    const s = sugerirInstituicao('LCA 2026', 'lci', { cnpj: BB, grupo: '04', nomePorCnpj })
+    expect(s).toMatchObject({ instituicao: 'Banco do Brasil', emissor: 'Banco do Brasil' })
+    expect(s?.aproximada).toBeUndefined()
+  })
+
+  it('na renda fixa guardada numa distribuidora, onde está é ela, e quem deve fica sem palpite', () => {
+    // Distribuidora não emite CDB: tomá-la por emissor erraria o FGC.
+    const s = sugerirInstituicao('CDB 2027', 'cdb', { cnpj: DTVM, grupo: '04', nomePorCnpj })
+    expect(s?.instituicao).toBe('Banco Inter') // o nome conhecido, para juntar com a conta do mesmo lugar
+    expect(s?.emissor).toBeUndefined()
+    expect(s?.motivo).toMatch(/distribuidora não emite/)
+  })
+
+  it('a descrição ainda diz quem deve, quando cita alguém', () => {
+    const s = sugerirInstituicao('CDB BANCO AURORA 2028', 'cdb', { cnpj: DTVM, grupo: '04', nomePorCnpj })
+    expect(s).toMatchObject({ instituicao: 'Banco Inter', emissor: 'BANCO AURORA', aproximada: true })
+  })
+
+  it('no fundo o CNPJ é o próprio fundo, e não diz onde ele está', () => {
+    const s = sugerirInstituicao('FUNDO QUALQUER XP', 'fundo', { cnpj: BB, grupo: '07', nomePorCnpj })
+    expect(s?.instituicao).toBe('XP Investimentos') // veio da descrição, não do CNPJ
+  })
+
+  it('CNPJ sem nome nos rendimentos não vira nome de banco, mas fica no motivo', () => {
+    const s = sugerirInstituicao('CDB BTG PACTUAL 2027', 'cdb', { cnpj: '11222333000181', grupo: '04', nomePorCnpj })
+    expect(s?.instituicao).toBe('BTG Pactual')
+    expect(s?.motivo).toMatch(/11\.222\.333\/0001-81, sem nome/)
+  })
+})
+
+describe('sem FGC', () => {
+  it('a conta sem FGC está respondida sem quem deve', () => {
+    expect(respostaCompleta('contaCorrente', { instituicao: 'Exemplo Pay', semFgc: true })).toBe(true)
+    expect(respostaCompleta('cdb', { instituicao: 'Exemplo Pay', semFgc: true })).toBe(false)
+  })
+
+  it('atravessa a porta só se for verdadeiro, e acompanha o vínculo', () => {
+    expect(lerInstituicaoPorBem({ a: { instituicao: 'X', semFgc: true }, b: { instituicao: 'Y', semFgc: 'sim' } })).toEqual({
+      a: { instituicao: 'X', semFgc: true },
+      b: { instituicao: 'Y' },
+    })
+    expect(respostasCanonicas({ velho: { semFgc: true }, novo: { instituicao: 'X' } }, { velho: 'novo' })).toEqual({
+      novo: { instituicao: 'X', semFgc: true },
+    })
+  })
+})
+
+describe('o CNPJ na lista de bens e o nome dos rendimentos', () => {
+  it('o bem leva o CNPJ e o grupo do ano mais recente que os traz', () => {
+    const h = hist(
+      ano(2023, [{ ...p('lci:L', 'LCA 2026', 'lci', 10_000), codigo: '04', subcodigo: '03', cnpj: '00000000000191' }]),
+      ano(2024, [{ ...p('lci:L', 'LCA 2026', 'lci', 12_000, 10_000), codigo: '04', subcodigo: '03' }]),
+    )
+    expect(bensEmInstituicao(h)[0]).toMatchObject({ cnpj: '00000000000191', grupo: '04' })
+  })
+
+  it('o nome de cada CNPJ sai dos pagadores das declarações', () => {
+    const d = ano(2024, [])
+    d.porPagador = [
+      { alvo: 'cdb', pagador: { id: 'cnpj:00000000000191', nome: '', cnpj: '00000000000191' }, valor: 1 },
+      { alvo: 'isentos', pagador: { id: 'cnpj:00000000000191', nome: 'BANCO DO BRASIL S.A.', cnpj: '00000000000191' }, valor: 1 },
+    ]
+    expect(nomesPorCnpj(hist(d))).toEqual({ '00000000000191': 'BANCO DO BRASIL S.A.' })
   })
 })

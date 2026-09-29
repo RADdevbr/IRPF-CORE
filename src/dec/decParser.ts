@@ -25,22 +25,48 @@ export interface DecRegistro {
 }
 
 // Posição de Bens e Direitos (Registro 27) — o "patrimônio" de investimentos.
+//
+// O começo da linha é o mesmo nos dois leiautes que já passaram por aqui:
+//
+//   27 | CPF (3–13) | código do bem (14–15) | exterior (16) | país (17–19)
+//      | discriminação (20–531) | saldo anterior (532–544) | saldo atual (545–557)
+//
+// O leiaute COM GRUPO acrescenta campos no fim da linha, que passa a ter 1195
+// posições. Conferido posição a posição num arquivo real da declaração 2024
+// (ano-base 2023) — não em documentação:
+//
+//   agência (1023–1026) | CNPJ (1042–1055) | banco (1086–1088)
+//   | titular ou dependente (1089) | CPF do dono (1090–1100) | GRUPO (1101–1102)
+//   | conta (1103–) | código de negociação (1145–1164)
+//
+// A prova de que o grupo mora ali, e não nas posições 14–15: código de banco,
+// agência e conta só aparecem nas linhas em que 1101–1102 vale 06 (depósito) ou
+// 04 com código 01 (poupança); ticker terminado em 3 só com 03 (participações);
+// ticker terminado em 11 só com 07 (fundos). E o país nas posições 17–19 é 105
+// nas linhas do Brasil e outro nas do exterior. Até esta versão o leitor lia o
+// grupo em 14–15 e o código em 16–17 — o código no lugar do grupo, e o indicador
+// de exterior colado ao primeiro dígito do país no lugar do código.
 export interface Posicao {
   linha: number
   cdBem: string
   /**
-   * Código do bem — posições 14–15, logo depois do CPF (posições 3–13).
-   *
-   * O SIGNIFICADO muda com o ano, confirmado contra três arquivos reais:
-   * · até 2018 é o código antigo de 2 dígitos (21 veículo, 31 ações, 32 quotas,
-   *   41 poupança, 45 renda fixa, 61 conta corrente, 71/73/79 fundos);
-   * · de 2019 em diante é o GRUPO (01…10, 99) e o código vem em `subcodigo`.
-   * Os dois conjuntos não se sobrepõem, então dá para tratar os dois sem
-   * perguntar o ano.
+   * O GRUPO do bem (01…10, 99) no leiaute com grupo; no antigo, que não tem
+   * grupo, o código de 2 dígitos das posições 14–15 (21 veículo, 31 ações, 32
+   * quotas, 41 poupança, 45 renda fixa, 61 conta corrente, 71/73/79 fundos).
    */
   codigo: string
-  /** Posições 16–17: o código dentro do grupo (2019+); "01" nos arquivos antigos. */
+  /** O código dentro do grupo (posições 14–15) no leiaute com grupo; vazio no antigo. */
   subcodigo: string
+  /**
+   * O CNPJ que a declaração traz na linha do bem — só no leiaute com grupo, e só
+   * se os dígitos verificadores conferem.
+   *
+   * O que ele É depende do grupo, e não é o que parece: na conta e na poupança é
+   * o banco da conta; na renda fixa (grupo 04) é onde o papel está guardado —
+   * que pode ser uma distribuidora, que não emite nada —; no fundo é o próprio
+   * fundo; na ação e na quota, a empresa. Quem lê precisa saber qual é qual.
+   */
+  cnpj?: string
   /** A linha do arquivo, como veio — permite conferir a leitura sem reimportar. */
   bruta: string
   descricao: string
@@ -227,6 +253,50 @@ const ANCHOR = /(\d{14})([A-Za-zÀ-ÿ][^\d]{0,59}?)\s*(\d{13})/g
 function slice1(line: string, ini: number, fim: number): string {
   return line.slice(ini - 1, fim)
 }
+
+/**
+ * O CNPJ, se os 14 dígitos são um CNPJ de verdade; `undefined` se não.
+ *
+ * É a guarda contra ler o campo no lugar errado. As posições do CNPJ foram
+ * conferidas num ano só, e um leiaute de outro ano que as tenha deslocado
+ * poria ali qualquer sequência de dígitos: com os verificadores conferidos, o
+ * leitor lê nada em vez de ler lixo — e lixo aqui viraria o nome de um banco
+ * sugerido para o seu dinheiro.
+ */
+export function cnpjValido(bruto: string): string | undefined {
+  const d = bruto.replace(/\D/g, '')
+  if (d.length !== 14 || /^(\d)\1+$/.test(d)) return undefined
+  const dv = (base: string) => {
+    const pesos = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    const soma = [...base].reduce((s, c, i) => s + Number(c) * pesos[i], 0)
+    const r = soma % 11
+    return r < 2 ? 0 : 11 - r
+  }
+  const d1 = dv(d.slice(0, 12))
+  const d2 = dv(d.slice(0, 12) + d1)
+  return d.endsWith(`${d1}${d2}`) ? d : undefined
+}
+
+/** Grupos de Bens e Direitos que existem. */
+const GRUPOS: ReadonlySet<string> = new Set(['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '99'])
+
+/**
+ * O arquivo é do leiaute com grupo?
+ *
+ * Decidido pelo arquivo, e não linha a linha, e por uma marca que um leiaute
+ * antigo não reproduz por acaso: o CPF do dono do bem (1090–1100) igual ao do
+ * declarante (3–13), com um grupo que existe logo depois. Dois dígitos soltos
+ * que calhassem de ser «04» na posição 1101 de um arquivo antigo não bastam.
+ */
+function leiauteComGrupo(linhas: readonly string[]): boolean {
+  return linhas.some(
+    (l) =>
+      l.startsWith('27') &&
+      l.length >= 1102 &&
+      slice1(l, 1090, 1100) === slice1(l, 3, 13) &&
+      GRUPOS.has(slice1(l, 1101, 1102)),
+  )
+}
 function num(line: string, ini: number, fim: number): number {
   const d = slice1(line, ini, fim).replace(/\D/g, '')
   return d ? parseInt(d, 10) / 100 : 0
@@ -243,6 +313,7 @@ export function parseDec(text: string): DecResult {
   const posicoes: Posicao[] = []
   const pagamentos: Pagamento[] = []
   let ndep = 0
+  const comGrupo = leiauteComGrupo(linhas)
 
   linhas.forEach((l, i) => {
     const tipo = l.slice(0, 2)
@@ -265,9 +336,27 @@ export function parseDec(text: string): DecResult {
         const saldoAtual = parseInt(m[2], 10) / 100
         const descricao = l.slice(19, m.index).replace(/\s+/g, ' ').trim()
         if (descricao || saldoAtual > 0) {
-          const codigo = slice1(l, 14, 15)
-          const subcodigo = slice1(l, 16, 17)
-          posicoes.push({ linha: i + 1, cdBem: slice1(l, 14, 15), codigo, subcodigo, bruta: l, descricao, saldoAnterior, saldoAtual, tipoCarteira: classifica(descricao) })
+          const cdBem = slice1(l, 14, 15)
+          const grupo = comGrupo ? slice1(l, 1101, 1102) : ''
+          // No leiaute com grupo, a linha que não traz um grupo válido fica sem
+          // ele — e não com o código fingindo ser grupo, que é o erro que isto
+          // conserta.
+          const codigo = comGrupo ? (GRUPOS.has(grupo) ? grupo : '') : cdBem
+          const subcodigo = comGrupo ? cdBem : ''
+          const campoCnpj = slice1(l, 1042, 1055)
+          const cnpj = comGrupo && /^\d{14}$/.test(campoCnpj) ? cnpjValido(campoCnpj) : undefined
+          posicoes.push({
+            linha: i + 1,
+            cdBem,
+            codigo,
+            subcodigo,
+            ...(cnpj ? { cnpj } : {}),
+            bruta: l,
+            descricao,
+            saldoAnterior,
+            saldoAtual,
+            tipoCarteira: classifica(descricao),
+          })
         }
       }
       return
