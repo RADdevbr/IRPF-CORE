@@ -7,6 +7,7 @@ import {
   idPosicao,
   idPagador,
   rendaPorPagador,
+  rendimentoDeAplicacao,
   pagadoresDoHistorico,
   rendaPorPagadorDoHistorico,
   LEITURA_ATUAL,
@@ -802,5 +803,48 @@ describe('os pagadores do histórico', () => {
   it('a soma dos pagadores bate com a soma dos lançamentos do histórico', () => {
     const total = rendaPorPagadorDoHistorico(h).reduce((t, r) => t + r.valor, 0)
     expect(pagadoresDoHistorico(h).reduce((t, p) => t + p.total, 0)).toBe(total)
+  })
+})
+
+describe('o juro de aplicação financeira por CNPJ', () => {
+  const l = (tipo: string, codigo: string | undefined, valor: number, cnpj: string, fonte = 'BANCO X'): Lancamento => ({
+    linha: 1,
+    tipo,
+    tipoLabel: 'x',
+    fonte,
+    cnpj,
+    rotulo: 'Rendimento',
+    valor,
+    alvo: tipo === '88' ? 'cdb' : 'isentos',
+    ...(codigo ? { codigo } : {}),
+  })
+  const BANCO = '33333333000133'
+
+  it('junta o 06 da tributação exclusiva e o 12 dos isentos, e deixa JCP e dividendo de fora', () => {
+    const r = rendimentoDeAplicacao([
+      l('88', '06', 1_000, BANCO),
+      l('88', '06', 500, BANCO),
+      l('84', '12', 300, BANCO),
+      l('88', '10', 9_000, '44444444000144', 'PETROLEO'),
+      l('84', '09', 7_000, '44444444000144', 'PETROLEO'),
+      l('84', '26', 400, '55555555000155', 'FII QUALQUER'),
+    ])
+    expect(r).toEqual([
+      { cnpj: BANCO, nome: 'BANCO X', valor: 1_500, isento: false },
+      { cnpj: BANCO, nome: 'BANCO X', valor: 300, isento: true },
+    ])
+  })
+
+  it('sem CNPJ não entra: não há a quem ligar o juro', () => {
+    expect(rendimentoDeAplicacao([l('88', '06', 1_000, '')])).toEqual([])
+  })
+
+  it('a declaração montada traz o juro por CNPJ', () => {
+    const d = montarDeclaracao(
+      { ano: '2025', registros: [], lancamentos: [l('88', '06', 1_000, BANCO)], posicoes: [], pagamentos: [], ndep: 0, linhas: [], totalLinhas: 0 },
+      'x.DEC',
+      'agora',
+    )!
+    expect(d.rendimentoDeAplicacao).toEqual([{ cnpj: BANCO, nome: 'BANCO X', valor: 1_000, isento: false }])
   })
 })

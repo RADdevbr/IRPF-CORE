@@ -101,6 +101,19 @@ describe('parseDec — leitura posicional', () => {
     '84' + '00000000000' + 'T' + '00000000000' + cod.padStart(4, '0') + '00000000000191' +
     nome.padEnd(60, ' ') + String(cents).padStart(13, '0') + '000000000000000'
 
+  it('guarda o código da linha nos Registros 84 e 88: é ele que separa juro de aplicação de JCP e dividendo', () => {
+    // 88 com código 06 (aplicação) e 10 (JCP), mesmo leiaute do 84
+    const reg88 = (cod: string, cents: number) =>
+      '88' + '00000000000' + 'T' + '00000000000' + cod.padStart(4, '0') + '00000000000191' +
+      'BANCO EXEMPLO S.A.'.padEnd(60, ' ') + String(cents).padStart(13, '0') + '000000000000000'
+    const r = parseDec(['IRPF 2026', reg88('6', 10_000), reg88('10', 2_000), reg84('12', 'BANCO EXEMPLO S.A.', 3_000)].join('\r\n') + '\r\n')
+    expect(r.lancamentos.map((l) => [l.tipo, l.codigo, l.valor])).toEqual([
+      ['88', '06', 100],
+      ['88', '10', 20],
+      ['84', '12', 30],
+    ])
+  })
+
   it('Registro 84 linha 09 (lucros e dividendos) → Dividendos (base)', () => {
     const r = parseDec('IRPF 2026\r\n' + reg84('9', 'BCO BRASIL S.A.', 6800) + '\r\n') // R$ 68,00
     const lanc = r.lancamentos.find((l) => l.tipo === '84')

@@ -16,6 +16,14 @@ export interface Lancamento {
   rotulo: string // ex.: 'Rendimento', 'IR retido', 'Dividendo'
   valor: number // já em reais (÷100)
   alvo: string // campo sugerido do baseline (key/ir key)
+  /**
+   * O código da linha dentro da ficha, com dois dígitos — só nos Registros 84 e
+   * 88, onde a mesma ficha junta coisas diferentes: na tributação exclusiva, o
+   * 06 é aplicação financeira e o 10 é JCP; nos isentos, o 09 é dividendo e o 12
+   * é LCI, LCA, poupança, CRI e CRA. O `alvo` sozinho não separa (todo 88 vai
+   * para `cdb`), e é o código que diz qual rendimento é juro de aplicação.
+   */
+  codigo?: string
 }
 
 export interface DecRegistro {
@@ -395,7 +403,7 @@ export function parseDec(text: string): DecResult {
           // permite reconhecer a linha sem inventar um rótulo errado
           rotulo = `Isento (cód. ${String(cod).padStart(2, '0')})`
         }
-        lancamentos.push({ linha: i + 1, tipo, tipoLabel, fonte, cnpj, rotulo, valor, alvo })
+        lancamentos.push({ linha: i + 1, tipo, tipoLabel, fonte, cnpj, rotulo, valor, alvo, codigo: String(cod).padStart(2, '0') })
       }
       return
     }
