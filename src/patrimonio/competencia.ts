@@ -27,6 +27,14 @@
 //
 // No valor atualizado, o saldo já diz o juro — quando não houve aplicação nem
 // resgate no ano. Aí ele é medido; nos anos com movimento, a mesma taxa estima.
+//
+// O extrato da B3, quando existe, dá o que a declaração não tem: a DATA de cada
+// aplicação e de cada resgate (ver `MovimentoDatado`). Com ela o lote entra no
+// dia em que entrou, e não no meio do ano; o lote que a primeira declaração já
+// encontra ganha a data em que foi aplicado, anos antes — e o resgate dele passa
+// a medir a taxa, em vez de ficar de fora por não se saber há quanto tempo o
+// dinheiro estava lá. No valor atualizado, o ano com movimento deixa de ser
+// estimado: saldo final − inicial − o que entrou e saiu é o juro.
 
 import { cnpjValido } from '../dec/decParser.js'
 import type { ClassePatrimonio, Historico } from '../historico/historico.js'
@@ -50,6 +58,23 @@ export type ComoDeclaraPorCnpj = Record<string, ComoDeclara>
  */
 export type OrigemDaTaxa = 'resgates' | 'saldo' | 'pagamentos' | 'cdi' | 'nenhuma'
 
+/**
+ * Dinheiro que entrou (+) ou saiu (−) de um bem, na data. É o que o extrato da B3
+ * dá, bem a bem (ver `movimentosDosBens`, em `b3`).
+ *
+ * O resgate vem BRUTO — o que saiu, com o juro dentro. No valor aplicado, quem
+ * diz quanto disso era principal é a declaração: a data e o peso de cada resgate
+ * vêm daqui, o total de principal vem da queda do saldo.
+ */
+export interface MovimentoDatado {
+  /** aaaa-mm-dd. */
+  data: string
+  valor: number
+}
+
+/** Os movimentos datados, por bem (id do histórico já preparado). */
+export type MovimentosPorBem = Record<string, readonly MovimentoDatado[]>
+
 export interface CompetenciaAno {
   anoBase: number
   /** Juro do ano que já foi pago, espalhado de volta pelos anos em que rendeu. */
@@ -60,6 +85,8 @@ export interface CompetenciaAno {
   fluxo: number
   saldoInicial: number
   saldoFinal: number
+  /** O dinheiro do ano entrou e saiu nas datas do extrato, e não no meio do ano. */
+  peloExtrato?: true
 }
 
 export interface PoteDeRendimento {
@@ -80,6 +107,8 @@ export interface PoteDeRendimento {
   taxaNoLimite: boolean
   /** Juro pago no ano, por ano-base. `null` = ano lido antes de o leitor separar o juro. */
   pago: Record<number, number | null>
+  /** Algum bem do pote teve as datas do extrato da B3 — ver `MovimentoDatado`. */
+  comExtrato: boolean
 }
 
 export interface RendimentoPorCompetencia {
@@ -284,6 +313,58 @@ function tirar(lotes: Lote[], valor: number): Lote[] {
   return saem
 }
 
+/** Tira `valor` de lotes pelo que VALEM (principal e juro), do mais antigo — o resgate bruto. */
+function tirarPorValor(lotes: Lote[], valor: number) {
+  let falta = valor
+  while (falta > EPS && lotes.length > 0) {
+    const l = lotes[0]
+    const vale = l.principal + l.juros
+    if (vale <= falta + EPS) {
+      lotes.shift()
+      falta -= vale
+    } else {
+      const f = 1 - falta / vale
+      l.principal *= f
+      l.juros *= f
+      l.porAno = escalar(l.porAno, f)
+      falta = 0
+    }
+  }
+}
+
+/** A data como fração de ano: 2 de julho de 2024 ≈ 2024,5. `null` se não for data. */
+function quando(data: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data)
+  if (!m) return null
+  const ano = Number(m[1])
+  const dia = Date.UTC(ano, Number(m[2]) - 1, Number(m[3]))
+  const inicio = Date.UTC(ano, 0, 1)
+  return ano + (dia - inicio) / (Date.UTC(ano + 1, 0, 1) - inicio)
+}
+
+/** Rende de `de` até `ate`, cada trecho com o CDI do seu ano. */
+function acumularEntre(lotes: Lote[], k: number, de: number, ate: number, informados: BenchmarksInformados) {
+  let t = de
+  while (t < ate - 1e-9) {
+    const ano = Math.floor(t)
+    const fim = Math.min(ate, ano + 1)
+    const cdi = taxaDoAno('cdi', ano, informados)
+    acumular(lotes, cdi === null ? null : k * cdi, fim - t, ano)
+    t = fim
+  }
+}
+
+interface Evento {
+  t: number
+  valor: number
+}
+
+const eventos = (lista: readonly MovimentoDatado[] | undefined): Evento[] =>
+  (lista ?? [])
+    .map((m) => ({ t: quando(m.data), valor: m.valor }))
+    .filter((e): e is Evento => e.t !== null && Math.abs(e.valor) > EPS)
+    .sort((a, b) => a.t - b.t)
+
 interface Simulacao {
   saidas: Saida[]
   /** Lotes que continuam aplicados no fim, por bem. */
@@ -297,10 +378,45 @@ interface Simulacao {
  * rende meio ano, o que saiu rendeu meio ano antes de sair. O saldo do começo
  * do ano que não bate com os lotes (primeiro ano, ano faltando no meio) vira
  * lote sem data — ou saída sem data, que não entra na calibração.
+ *
+ * Com o extrato, o bem troca o meio do ano pelas datas dele:
+ *
+ *   · o que entrou ANTES da primeira declaração vira lote com data, e rende
+ *     desde lá — os resgates de antes saem pelo valor bruto, que é o que o
+ *     extrato diz. O que a primeira declaração encontra além disso é dinheiro
+ *     mais velho que o extrato, e vai para a frente da fila;
+ *   · no ano, cada aplicação entra no dia dela. O principal que sai é o da
+ *     declaração (aplicado − variação do saldo), repartido entre os resgates do
+ *     ano pelo valor bruto de cada um. O que a declaração mostra e o extrato não
+ *     — aplicação por fora, resgate sem linha — continua no meio do ano.
  */
-function simular(h: Historico, anos: readonly number[], bens: readonly string[], k: number, informados: BenchmarksInformados): Simulacao {
+function simular(
+  h: Historico,
+  anos: readonly number[],
+  bens: readonly string[],
+  k: number,
+  informados: BenchmarksInformados,
+  movimentos: MovimentosPorBem = {},
+): Simulacao {
   const lotes = new Map<string, Lote[]>(bens.map((b) => [b, []]))
   const saidas: Saida[] = []
+  const primeiro = anos[0]
+  const doBem = new Map(bens.map((b) => [b, eventos(movimentos[b])]))
+
+  for (const bem of bens) {
+    const antes = (doBem.get(bem) as Evento[]).filter((e) => e.t < primeiro)
+    if (antes.length === 0) continue
+    const ls = lotes.get(bem) as Lote[]
+    let t = antes[0].t
+    for (const e of antes) {
+      acumularEntre(ls, k, t, e.t, informados)
+      t = e.t
+      if (e.valor > 0) ls.push({ principal: e.valor, juros: 0, entrada: e.t, porAno: new Map() })
+      else tirarPorValor(ls, -e.valor)
+    }
+    acumularEntre(ls, k, t, primeiro, informados)
+  }
+
   for (const ano of anos) {
     const cdi = taxaDoAno('cdi', ano, informados)
     const taxaAno = cdi === null ? null : k * cdi
@@ -309,18 +425,49 @@ function simular(h: Historico, anos: readonly number[], bens: readonly string[],
       const s = saldosDoAno(h, ano, bem) ?? { s0: 0, s1: 0 }
       const principal = ls.reduce((t, l) => t + l.principal, 0)
       if (s.s0 > principal + EPS) {
-        ls.push({ principal: s.s0 - principal, juros: 0, entrada: null, porAno: new Map() })
+        const velho: Lote = { principal: s.s0 - principal, juros: 0, entrada: null, porAno: new Map() }
+        // No primeiro ano, o que o extrato não explica é anterior a ele.
+        if (ano === primeiro) ls.unshift(velho)
+        else ls.push(velho)
       } else if (s.s0 < principal - EPS) {
         for (const l of tirar(ls, principal - s.s0)) saidas.push({ bem, ano, juros: l.juros, datada: false, porAno: l.porAno })
       }
-      acumular(ls, taxaAno, 0.5, ano)
-      const delta = s.s1 - s.s0
-      if (delta < -EPS) {
-        for (const l of tirar(ls, -delta)) saidas.push({ bem, ano, juros: l.juros, datada: l.entrada !== null, porAno: l.porAno })
-      } else if (delta > EPS) {
-        ls.push({ principal: delta, juros: 0, entrada: ano + 0.5, porAno: new Map() })
+
+      const doAno = (doBem.get(bem) as Evento[]).filter((e) => Math.floor(e.t) === ano)
+      if (doAno.length === 0) {
+        acumular(ls, taxaAno, 0.5, ano)
+        const delta = s.s1 - s.s0
+        if (delta < -EPS) {
+          for (const l of tirar(ls, -delta)) saidas.push({ bem, ano, juros: l.juros, datada: l.entrada !== null, porAno: l.porAno })
+        } else if (delta > EPS) {
+          ls.push({ principal: delta, juros: 0, entrada: ano + 0.5, porAno: new Map() })
+        }
+        acumular(ls, taxaAno, 0.5, ano)
+        continue
       }
-      acumular(ls, taxaAno, 0.5, ano)
+
+      const entrou = doAno.filter((e) => e.valor > 0).reduce((t, e) => t + e.valor, 0)
+      const saiuBruto = doAno.filter((e) => e.valor < 0).reduce((t, e) => t - e.valor, 0)
+      const principalSai = entrou - (s.s1 - s.s0)
+      const agenda: { t: number; entra?: number; sai?: number }[] = []
+      for (const e of doAno) {
+        if (e.valor > 0) agenda.push({ t: e.t, entra: e.valor })
+        else if (principalSai > EPS && saiuBruto > EPS) agenda.push({ t: e.t, sai: (principalSai * -e.valor) / saiuBruto })
+      }
+      if (principalSai < -EPS) agenda.push({ t: ano + 0.5, entra: -principalSai })
+      else if (principalSai > EPS && saiuBruto <= EPS) agenda.push({ t: ano + 0.5, sai: principalSai })
+      agenda.sort((a, b) => a.t - b.t)
+
+      let t = ano
+      for (const ev of agenda) {
+        acumular(ls, taxaAno, ev.t - t, ano)
+        t = ev.t
+        if (ev.entra) ls.push({ principal: ev.entra, juros: 0, entrada: ev.t, porAno: new Map() })
+        if (ev.sai) {
+          for (const l of tirar(ls, ev.sai)) saidas.push({ bem, ano, juros: l.juros, datada: l.entrada !== null, porAno: l.porAno })
+        }
+      }
+      acumular(ls, taxaAno, ano + 1 - t, ano)
     }
   }
   return { saidas, abertos: lotes }
@@ -333,9 +480,10 @@ function calibrar(
   pago: Record<number, number | null>,
   informados: BenchmarksInformados,
   rendaFixa: boolean,
+  movimentos: MovimentosPorBem,
 ): { taxa: number | null; origem: OrigemDaTaxa; anosDaTaxa: Set<number> } {
   // Os anos que calibram: juro pago lido, e todo resgate do ano com data de entrada.
-  const base = simular(h, anos, bens, 1, informados)
+  const base = simular(h, anos, bens, 1, informados, movimentos)
   const anosDaTaxa = new Set<number>()
   for (const ano of anos) {
     const doAno = base.saidas.filter((s) => s.ano === ano)
@@ -348,7 +496,7 @@ function calibrar(
   if (anosDaTaxa.size > 0) {
     const alvo = [...anosDaTaxa].reduce((t, a) => t + (pago[a] as number), 0)
     const modelado = (k: number) =>
-      simular(h, anos, bens, k, informados)
+      simular(h, anos, bens, k, informados, movimentos)
         .saidas.filter((s) => anosDaTaxa.has(s.ano))
         .reduce((t, s) => t + s.juros, 0)
     let lo = 0
@@ -422,11 +570,12 @@ function competenciaAplicado(
   pago: Record<number, number | null>,
   informados: BenchmarksInformados,
   rendaFixa: boolean,
+  movimentos: MovimentosPorBem,
 ): Resultado {
-  const cal = calibrar(h, anos, bens, pago, informados, rendaFixa)
+  const cal = calibrar(h, anos, bens, pago, informados, rendaFixa, movimentos)
   if (cal.taxa === null) return { taxa: null, origem: cal.origem, noLimite: false, porBem: {} }
   const taxa = limitar(cal.taxa)
-  const sim = simular(h, anos, bens, taxa, informados)
+  const sim = simular(h, anos, bens, taxa, informados, movimentos)
 
   // O resgate de um ano que calibrou soma exatamente o que foi pago: o modelo só
   // decide COMO o juro se espalha pelos anos, não QUANTO foi. Fora de 0,5–2× o
@@ -459,14 +608,39 @@ function competenciaAplicado(
         else estimado += v
       }
       for (const l of sim.abertos.get(bem) ?? []) estimado += l.porAno.get(ano) ?? 0
-      linhas.push({ anoBase: ano, medido, estimado, fluxo: s.s1 - s.s0, saldoInicial: s.s0, saldoFinal: s.s1 })
+      linhas.push({
+        anoBase: ano,
+        medido,
+        estimado,
+        fluxo: s.s1 - s.s0,
+        saldoInicial: s.s0,
+        saldoFinal: s.s1,
+        ...(temNoAno(movimentos[bem], ano) ? { peloExtrato: true as const } : {}),
+      })
     }
     porBem[bem] = linhas
   }
   return { taxa, origem: cal.origem, noLimite: taxa !== cal.taxa, porBem }
 }
 
+/** O extrato traz dinheiro deste bem neste ano. */
+const temNoAno = (lista: readonly MovimentoDatado[] | undefined, ano: number) =>
+  eventos(lista).some((e) => Math.floor(e.t) === ano)
+
 // ---------------------------------------------------------- valor atualizado
+
+/**
+ * O que entrou e saiu do bem no ano, pelo extrato, e o saldo que rendeu — o do
+ * começo mais cada movimento pelo pedaço do ano em que ficou lá.
+ */
+function movimentoDoAno(lista: readonly MovimentoDatado[] | undefined, ano: number, s0: number): { fluxo: number; base: number } | null {
+  const doAno = eventos(lista).filter((e) => Math.floor(e.t) === ano)
+  if (doAno.length === 0) return null
+  return {
+    fluxo: doAno.reduce((t, e) => t + e.valor, 0),
+    base: s0 + doAno.reduce((t, e) => t + e.valor * (ano + 1 - e.t), 0),
+  }
+}
 
 function competenciaAtualizado(
   h: Historico,
@@ -475,10 +649,20 @@ function competenciaAtualizado(
   pago: Record<number, number | null>,
   informados: BenchmarksInformados,
   rendaFixa: boolean,
+  movimentos: MovimentosPorBem,
 ): Resultado {
   // O ano em que o saldo andou sozinho: bem o ano inteiro, e a alta cabe no que
   // o juro daria. Ali o saldo MEDE o juro, e é dele que sai a taxa.
   const sozinho = (s: Saldo, cdi: number) => s.s0 > 0 && s.s1 > 0 && s.s1 - s.s0 >= 0 && s.s1 - s.s0 <= s.s0 * cdi * 2
+  // O ano com movimento que o extrato conta: o que sobra do saldo, tirado o que
+  // entrou e saiu, é o juro — se couber no que o juro daria. Se não couber, falta
+  // movimento no extrato, e o ano volta a ser estimado.
+  const peloExtrato = (s: Saldo, cdi: number, bem: string, ano: number) => {
+    const m = movimentoDoAno(movimentos[bem], ano, s.s0)
+    if (!m || m.base <= EPS) return null
+    const juro = s.s1 - s.s0 - m.fluxo
+    return juro >= -EPS && juro <= m.base * cdi * 2 ? { juro: Math.max(0, juro), fluxo: m.fluxo, base: m.base } : null
+  }
   let alta = 0
   let esperado = 0
   for (const ano of anos) {
@@ -486,7 +670,12 @@ function competenciaAtualizado(
     if (cdi === null) continue
     for (const bem of bens) {
       const s = saldosDoAno(h, ano, bem)
-      if (s && sozinho(s, cdi)) {
+      if (!s) continue
+      const ex = peloExtrato(s, cdi, bem, ano)
+      if (ex) {
+        alta += ex.juro
+        esperado += ex.base * cdi
+      } else if (sozinho(s, cdi)) {
         alta += s.s1 - s.s0
         esperado += s.s0 * cdi
       }
@@ -511,7 +700,10 @@ function competenciaAtualizado(
       const cdi = taxaDoAno('cdi', ano, informados)
       const s = saldosDoAno(h, ano, bem)
       if (cdi === null || !s) continue
-      if (sozinho(s, cdi)) {
+      const ex = peloExtrato(s, cdi, bem, ano)
+      if (ex) {
+        linhas.push({ anoBase: ano, medido: ex.juro, estimado: 0, fluxo: ex.fluxo, saldoInicial: s.s0, saldoFinal: s.s1, peloExtrato: true })
+      } else if (sozinho(s, cdi)) {
         linhas.push({ anoBase: ano, medido: s.s1 - s.s0, estimado: 0, fluxo: 0, saldoInicial: s.s0, saldoFinal: s.s1 })
       } else {
         // Com dinheiro entrando ou saindo, o saldo não separa juro de movimento:
@@ -539,9 +731,15 @@ function competenciaAtualizado(
  */
 export function rendimentoPorCompetencia(
   h: Historico,
-  opcoes: { informados?: BenchmarksInformados; comoDeclara?: ComoDeclaraPorCnpj } = {},
+  opcoes: {
+    informados?: BenchmarksInformados
+    comoDeclara?: ComoDeclaraPorCnpj
+    /** As datas do extrato da B3, por bem. Sem elas, o meio do ano. */
+    movimentos?: MovimentosPorBem
+  } = {},
 ): RendimentoPorCompetencia {
   const informados = opcoes.informados ?? {}
+  const movimentos = opcoes.movimentos ?? {}
   const anos = Object.values(h)
     .map((d) => d.anoBase)
     .sort((a, b) => a - b)
@@ -594,8 +792,8 @@ export function rendimentoPorCompetencia(
     const rendaFixa = bens.some((id) => ehRendaFixa(info.get(id) as InfoBem))
     const r =
       comoDeclara === 'aplicado'
-        ? competenciaAplicado(h, anos, bens, pago, informados, rendaFixa)
-        : competenciaAtualizado(h, anos, bens, pago, informados, rendaFixa)
+        ? competenciaAplicado(h, anos, bens, pago, informados, rendaFixa, movimentos)
+        : competenciaAtualizado(h, anos, bens, pago, informados, rendaFixa, movimentos)
     Object.assign(porBem, r.porBem)
     potes.push({
       cnpj,
@@ -609,6 +807,7 @@ export function rendimentoPorCompetencia(
       origemDaTaxa: r.origem,
       taxaNoLimite: r.noLimite,
       pago,
+      comExtrato: bens.some((id) => eventos(movimentos[id]).length > 0),
     })
   }
   return { potes, porBem, semBem: semBem.sort((a, b) => a.anoBase - b.anoBase || b.valor - a.valor) }

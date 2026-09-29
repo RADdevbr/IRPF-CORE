@@ -1,6 +1,6 @@
 {
   "name": "@raddevbr/irpf-core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Núcleo comum da família IRPF: cofre cifrado, leitores de .DEC e .xlsx, histórico plurianual e tabelas fiscais",
   "license": "MIT",
   "type": "module",
@@ -22,6 +22,7 @@
     "./patrimonio": { "types": "./dist/patrimonio/index.d.ts", "default": "./dist/patrimonio/index.js" },
     "./pwa": { "types": "./dist/pwa/index.d.ts", "default": "./dist/pwa/index.js" },
     "./ponte": { "types": "./dist/ponte/index.d.ts", "default": "./dist/ponte/index.js" },
+    "./b3": { "types": "./dist/b3/index.d.ts", "default": "./dist/b3/index.js" },
     "./supabase/schema.sql": "./supabase/schema.sql"
   },
   "scripts": {

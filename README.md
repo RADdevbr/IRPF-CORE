@@ -32,9 +32,10 @@ errado com cara de certo.
 | `/historico` | O modelo plurianual: N declarações, patrimônio por classe, a identidade de cada bem entre anos, e o que só a pessoa sabe — inclusive onde cada bem está e quem deve |
 | `/fiscal` | Parâmetros por ano com vigência e fonte, INSS/IRRF, ajuste anual, deduções legais, fontes de renda, e a grade de dividendos com o Art. 6º-A |
 | `/bolsa` | Apuração de renda variável: preço médio, isenção mensal, compensação de prejuízo |
-| `/patrimonio` | Quanto o capital rendeu, e as referências (CDI, Selic, IPCA) para comparar; o juro da renda fixa por competência, calibrado pelo que cada CNPJ pagou |
+| `/patrimonio` | Quanto o capital rendeu, e as referências (CDI, Selic, IPCA) para comparar; o juro da renda fixa por competência, calibrado pelo que cada CNPJ pagou e datado pelo extrato da B3 quando ele existe |
 | `/pwa` | Registro do service worker |
 | `/ponte` | O contrato entre os apps: o pacote de histórico e o de base do ano seguinte |
+| `/b3` | O Extrato de Movimentação da B3: o leitor, o que cada linha é (negócio, provento, dinheiro entrando ou saindo), e a ligação de cada posição a um bem da declaração — com o aporte, a data de cada movimento e a custódia |
 
 A regra de fronteira, quando surgir a dúvida: **o núcleo guarda o modelo; a
 pergunta é do app que a faz.** «Quanto o patrimônio cresceu» é pergunta, e mora no
