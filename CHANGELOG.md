@@ -48,10 +48,14 @@ datas dele.
   vocabulário.
 - A ponte entre o extrato e os bens da declaração: cada posição (o papel numa
   instituição) ligada a um bem — pelo ticker, pela resposta da pessoa, ou com um
-  palpite pelo nome na renda fixa, que só vale confirmado (`ligarPosicoes`) —, e o
+  palpite pelo nome na renda fixa, que só vale confirmado e desempata pelo
+  dinheiro que anda com o saldo (`ligarPosicoes`) —, e o
   que sai dela: os movimentos de cada bem com data (`movimentosDosBens`), o aporte
   de cada ano (`aportesDoExtrato`) e a custódia pela coluna «Instituição»
   (`custodiaDoExtrato`), já com o nome que a família usa.
+- `ativoDaPosicao`: na renda fixa, o papel é o código do título («CDB -
+  CDB24AUR0002 - BANCO …» → `CDB24AUR0002`), e não o tipo — senão todos os CDBs da
+  mesma corretora seriam uma posição só.
 - `nomeDaInstituicao`: a razão social de uma instituição conhecida vira o nome
   curto («XP INVESTIMENTOS CCTVM S/A» → «XP Investimentos»). É o que faz a XP do
   extrato e a XP do `.DEC` serem a mesma linha.

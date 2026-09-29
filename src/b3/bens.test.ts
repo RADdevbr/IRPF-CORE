@@ -7,6 +7,7 @@ import type { Movimento } from './movimentacao.js'
 import { casarLista, dinheiroDaLinha, fluxosDeMovimentos } from './fluxos.js'
 import {
   aportesDoExtrato,
+  ativoDaPosicao,
   bensParaLigar,
   chaveDaPosicao,
   custodiaDoExtrato,
@@ -115,13 +116,26 @@ describe('o dinheiro de cada linha', () => {
 })
 
 describe('as posições do extrato', () => {
+  it('na renda fixa, o papel é o código do título — e não «CDB», que é todo CDB', () => {
+    expect(ativoDaPosicao('CDB - CDB24AUR0002 - BANCO AURORA S.A.')).toBe('CDB24AUR0002')
+    expect(ativoDaPosicao('LCA - BANCO AURORA S.A.')).toBe('BANCO AURORA S.A.')
+    expect(ativoDaPosicao('PETR4 - PETROBRAS')).toBe('PETR4')
+    expect(ativoDaPosicao('LCA BANCO X')).toBe('LCA BANCO X')
+    expect(ativoDaPosicao('Tesouro Selic 2029')).toBe('TESOURO SELIC 2029')
+    const dois = posicoesDoExtrato([
+      mov('Credito', '15/03/2021', 'APLICAÇÃO', 'CDB - CDB21AUR0001 - BANCO AURORA S.A.', 100_000),
+      mov('Credito', '01/07/2024', 'APLICAÇÃO', 'CDB - CDB24AUR0002 - BANCO AURORA S.A.', 100_000),
+    ])
+    expect(dois.map((p) => p.ativo)).toEqual(['CDB21AUR0001', 'CDB24AUR0002'])
+  })
+
   it('uma por papel e instituição, com o dinheiro e a última data de qualquer linha', () => {
     const ps = posicoesDoExtrato([
       ...EXTRATO,
       mov('Credito', '10/03/2024', 'COMPRA / VENDA', 'PETR4 - PETROLEO', 500, 'BTG PACTUAL CTVM S/A'),
     ])
     const petrXp = ps.find((p) => p.chave === chaveDaPosicao({ produto: 'PETR4', instituicao: 'XP INVESTIMENTOS CCTVM S/A' }))!
-    expect(petrXp).toMatchObject({ ativo: 'PETR4', aportado: 3000, resgatado: 4500, ultima: '2024-09-20', anos: [2024] })
+    expect(petrXp).toMatchObject({ ativo: 'PETR4', aportado: 3000, resgatado: 4500, porAno: { 2024: -1500 }, ultima: '2024-09-20', anos: [2024] })
     expect(ps.filter((p) => p.ativo === 'PETR4')).toHaveLength(2)
   })
 
@@ -164,6 +178,30 @@ describe('que posição é qual bem', () => {
     expect(lig.origem).toBe('nenhuma')
     expect(lig.sugerido?.id).toBe(idPosicao(CDB, 'cdb'))
     expect(movimentosDosBens([linha], {}, { [chaveDaPosicao(linha)]: lig })).toEqual({})
+  })
+
+  it('dois CDBs do mesmo banco empatam nas palavras — desempata o que anda com o dinheiro', () => {
+    const VELHO = 'CDB BANCO AURORA 2024'
+    const NOVO = 'CDB BANCO AURORA 2027'
+    const h = historico({
+      2022: [pos(VELHO, 100_000, 100_000, '45')],
+      2023: [pos(VELHO, 100_000, 100_000, '45')],
+      2024: [pos(VELHO, 100_000, 0, '45'), pos(NOVO, 0, 100_000, '45')],
+    })
+    const linhas = [
+      mov('Credito', '15/03/2021', 'APLICAÇÃO', 'CDB - CDB21AUR0001 - BANCO AURORA S.A.', 100_000),
+      mov('Debito', '15/03/2024', 'VENCIMENTO', 'CDB - CDB21AUR0001 - BANCO AURORA S.A.', 133_000),
+      mov('Credito', '01/07/2024', 'APLICAÇÃO', 'CDB - CDB24AUR0002 - BANCO AURORA S.A.', 100_000),
+    ]
+    const lig = ligarPosicoes(h, posicoesDoExtrato(linhas))
+    expect(lig[chaveDaPosicao(linhas[0])].sugerido?.id).toBe(idPosicao(VELHO, 'cdb'))
+    expect(lig[chaveDaPosicao(linhas[2])].sugerido?.id).toBe(idPosicao(NOVO, 'cdb'))
+  })
+
+  it('e se nem o dinheiro desempata, fica sem palpite', () => {
+    const h = historico({ 2024: [pos('CDB BANCO AURORA A', 0, 50_000, '45'), pos('CDB BANCO AURORA B', 0, 50_000, '45')] })
+    const linha = mov('Credito', '01/07/2024', 'APLICAÇÃO', 'CDB - X - BANCO AURORA S.A.', 50_000)
+    expect(ligarPosicoes(h, posicoesDoExtrato([linha]))[chaveDaPosicao(linha)].sugerido).toBeUndefined()
   })
 
   it('o tipo sozinho não é palpite: «CDB» casaria com todo CDB', () => {

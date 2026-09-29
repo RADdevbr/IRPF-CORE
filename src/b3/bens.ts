@@ -55,13 +55,37 @@ export interface PosicaoDoExtrato {
   /** Dinheiro que entrou (compra, aplicação) e que saiu (venda, resgate), somado. */
   aportado: number
   resgatado: number
+  /** O dinheiro de cada ano, entrou − saiu. Ano sem dinheiro não aparece. */
+  porAno: Record<number, number>
   /** A data da linha mais recente, de qualquer tipo, em aaaa-mm-dd. */
   ultima: string
 }
 
-/** A chave de uma linha: o ticker e a instituição sem acento, caixa nem pontuação. */
+/** O tipo de papel que a B3 põe antes do código na renda fixa: «CDB - CDB24AUR0002 - BANCO …». */
+const SO_O_TIPO = /^(CDB|LCI|LCA|LC|LF|LIG|LH|CRI|CRA|DEB|CCB|RDB|LFT|LTN|NTN)$/
+
+/**
+ * O que identifica o papel da posição: o ticker; na renda fixa, o código do
+ * título.
+ *
+ * O «ticker» de um CDB é só «CDB», e todos os CDBs da mesma corretora viravam uma
+ * posição — o que venceu e o que foi aplicado depois somavam o dinheiro um do
+ * outro, e nenhum dos dois casava com o bem certo. O código que vem depois do
+ * tipo separa um título do outro; sem código, o nome de quem emitiu.
+ */
+export function ativoDaPosicao(produto: string): string {
+  const ticker = tickerDoProduto(produto)
+  if (!SO_O_TIPO.test(ticker)) return ticker
+  const partes = produto
+    .split(' - ')
+    .map((x) => x.trim())
+    .filter(Boolean)
+  return (partes[1] ?? ticker).toUpperCase()
+}
+
+/** A chave de uma linha: o papel e a instituição sem acento, caixa nem pontuação. */
 export const chaveDaPosicao = (l: Pick<Movimento, 'produto' | 'instituicao'>): string =>
-  `${tickerDoProduto(l.produto)}@${nomeParaCasar(l.instituicao)}`
+  `${ativoDaPosicao(l.produto)}@${nomeParaCasar(l.instituicao)}`
 
 /**
  * As posições do extrato, com o dinheiro de cada uma.
@@ -80,12 +104,13 @@ export function posicoesDoExtrato(
     const chave = chaveDaPosicao(l)
     const p = porChave.get(chave) ?? {
       chave,
-      ativo: tickerDoProduto(l.produto),
+      ativo: ativoDaPosicao(l.produto),
       produto: l.produto.trim(),
       instituicao: l.instituicao.trim(),
       anos: [],
       aportado: 0,
       resgatado: 0,
+      porAno: {},
       ultima: '',
     }
     if (!p.anos.includes(l.ano)) p.anos.push(l.ano)
@@ -95,6 +120,7 @@ export function posicoesDoExtrato(
     if (d.tipo === 'dinheiro') {
       if (d.valor > 0) p.aportado += d.valor
       else p.resgatado -= d.valor
+      p.porAno[l.ano] = (p.porAno[l.ano] ?? 0) + d.valor
     }
     porChave.set(chave, p)
   }
@@ -115,6 +141,8 @@ export interface BemParaLigar {
   /** As descrições de todos os anos: o ticker pode estar numa e não na outra. */
   descricoes: string[]
   cnpj?: string
+  /** Saldo de 31/12 do ano anterior e do ano, por ano-base. */
+  saldos: Record<number, { s0: number; s1: number }>
 }
 
 /** Classes que o extrato da B3 pode ter: bolsa, fundo listado e renda fixa registrada. */
@@ -137,12 +165,14 @@ export function bensParaLigar(h: Historico): BemParaLigar[] {
   const porId = new Map<string, BemParaLigar>()
   for (const d of Object.values(h).sort((a, b) => a.anoBase - b.anoBase)) {
     for (const p of d.posicoes) {
-      const b = porId.get(p.id) ?? { id: p.id, descricao: p.descricao, classe: p.classe, anos: [], descricoes: [] }
+      const b = porId.get(p.id) ?? { id: p.id, descricao: p.descricao, classe: p.classe, anos: [], descricoes: [], saldos: {} }
       b.descricao = p.descricao
       b.classe = p.classe
       if (!b.anos.includes(d.anoBase)) b.anos.push(d.anoBase)
       if (!b.descricoes.includes(p.descricao)) b.descricoes.push(p.descricao)
       if (p.cnpj) b.cnpj = p.cnpj
+      const s = b.saldos[d.anoBase] ?? { s0: 0, s1: 0 }
+      b.saldos[d.anoBase] = { s0: s.s0 + p.saldoAnterior, s1: s.s1 + p.saldoAtual }
       porId.set(p.id, b)
     }
   }
@@ -248,9 +278,39 @@ export function ligarPosicoes(
 }
 
 /**
+ * Quantos anos o dinheiro da posição conversa com o saldo do bem: aplicação no ano
+ * em que o saldo sobe, resgate no ano em que ele cai — do mesmo tamanho, com folga
+ * para o juro que o resgate traz junto e o saldo pelo valor aplicado não mostra.
+ * E o dinheiro aplicado antes do primeiro ano do bem conta se o bem já começa com
+ * saldo.
+ */
+function conversa(p: PosicaoDoExtrato, b: BemParaLigar): number {
+  let pontos = 0
+  const primeiro = Math.min(...b.anos)
+  for (const [anoTexto, fluxo] of Object.entries(p.porAno)) {
+    const ano = Number(anoTexto)
+    const s = b.saldos[ano]
+    if (!s) {
+      if (ano < primeiro && fluxo > 0 && (b.saldos[primeiro]?.s0 ?? 0) > 0) pontos++
+      continue
+    }
+    const delta = s.s1 - s.s0
+    if (Math.abs(fluxo) < 0.01 || Math.sign(delta) !== Math.sign(fluxo)) continue
+    const razao = Math.abs(delta) / Math.abs(fluxo)
+    if (razao >= 0.5 && razao <= 1.5) pontos++
+  }
+  return pontos
+}
+
+/**
  * O palpite da renda fixa: o bem de renda fixa que mais divide palavras com o
  * produto. Precisa de duas palavras em comum — o tipo sozinho («CDB») casaria
- * com todo CDB — e de não empatar com outro bem.
+ * com todo CDB.
+ *
+ * O empate é o caso comum, e não a exceção: dois CDBs do mesmo banco dividem as
+ * mesmas palavras. Desempata quem conversa com o dinheiro da posição (ver
+ * `conversa`); o que ainda empata fica sem palpite — errar a ligação põe o juro
+ * de um papel no outro.
  */
 function sugestaoPeloNome(
   p: PosicaoDoExtrato,
@@ -259,7 +319,7 @@ function sugestaoPeloNome(
 ): Pick<Ligacao, 'sugerido'> {
   const produto = p.produto
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
     .trim()
   if (!TIPO_DE_RENDA_FIXA.test(produto)) return {}
@@ -269,14 +329,19 @@ function sugestaoPeloNome(
     .map((b) => {
       const texto = [...b.descricoes, b.cnpj ? (nomeDoCnpj[b.cnpj] ?? '') : ''].join(' ')
       const comuns = [...new Set(palavras(texto))].filter((w) => doProduto.has(w))
-      return { b, comuns }
+      return { b, comuns, conversa: conversa(p, b) }
     })
     .filter((x) => x.comuns.length >= 2)
-    .sort((a, c) => c.comuns.length - a.comuns.length)
+    .sort((a, c) => c.comuns.length - a.comuns.length || c.conversa - a.conversa)
   if (pontuados.length === 0) return {}
-  if (pontuados.length > 1 && pontuados[1].comuns.length === pontuados[0].comuns.length) return {}
-  const { b, comuns } = pontuados[0]
-  return { sugerido: { id: b.id, porque: `«${comuns.join(' ')}» no produto e no bem` } }
+  const [primeiro, segundo] = pontuados
+  if (segundo && segundo.comuns.length === primeiro.comuns.length && segundo.conversa === primeiro.conversa) return {}
+  const { b, comuns } = primeiro
+  const porque =
+    segundo && segundo.comuns.length === primeiro.comuns.length
+      ? `«${comuns.join(' ')}» no produto e no bem, e o saldo dele anda com o dinheiro do extrato`
+      : `«${comuns.join(' ')}» no produto e no bem`
+  return { sugerido: { id: b.id, porque } }
 }
 
 // ------------------------------------------------------- o que sai da ligação
@@ -307,7 +372,7 @@ export function movimentosDosBens(
     if (d.tipo !== 'dinheiro') continue
     const data = dataOrdenavel(l.data)
     if (!data) continue
-    ;(saida[bem] ??= []).push({ data, valor: d.valor, instituicao: l.instituicao.trim(), ativo: tickerDoProduto(l.produto) })
+    ;(saida[bem] ??= []).push({ data, valor: d.valor, instituicao: l.instituicao.trim(), ativo: ativoDaPosicao(l.produto) })
   }
   for (const lista of Object.values(saida)) lista.sort((a, b) => a.data.localeCompare(b.data))
   return saida
