@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  nomeDaInstituicao,
   sugerirInstituicao,
   emissorDaDescricao,
   respostasCanonicas,
@@ -295,5 +296,17 @@ describe('o CNPJ na lista de bens e o nome dos rendimentos', () => {
       { alvo: 'isentos', pagador: { id: 'cnpj:00000000000191', nome: 'BANCO DO BRASIL S.A.', cnpj: '00000000000191' }, valor: 1 },
     ]
     expect(nomesPorCnpj(hist(d))).toEqual({ '00000000000191': 'BANCO DO BRASIL S.A.' })
+  })
+})
+
+describe('o nome da instituição, venha de onde vier', () => {
+  it('a razão social de uma conhecida vira o nome curto — a XP do extrato é a XP do .DEC', () => {
+    expect(nomeDaInstituicao('XP INVESTIMENTOS CCTVM S/A')).toBe('XP Investimentos')
+    expect(nomeDaInstituicao('XP Investimentos Corretora de Câmbio, Títulos e Valores Mobiliários S.A.')).toBe('XP Investimentos')
+    expect(nomeDaInstituicao('BTG PACTUAL CTVM S/A')).toBe('BTG Pactual')
+  })
+
+  it('a que não está na lista fica como veio, só sem espaço sobrando', () => {
+    expect(nomeDaInstituicao('  CORRETORA  QUALQUER  S/A ')).toBe('CORRETORA QUALQUER S/A')
   })
 })

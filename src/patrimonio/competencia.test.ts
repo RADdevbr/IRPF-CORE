@@ -215,3 +215,121 @@ describe('como a instituição declara o saldo', () => {
     expect(sugerirComoDeclara(h, [ID_CDB]).porque).toMatch(/confira/)
   })
 })
+
+// ------------------------------------------------------------ com o extrato
+
+/** A data como fração do ano — a mesma conta que o modelo faz. */
+const fracao = (data: string) => {
+  const [a, m, d] = data.split('-').map(Number)
+  const inicio = Date.UTC(a, 0, 1)
+  return (Date.UTC(a, m - 1, d) - inicio) / (Date.UTC(a + 1, 0, 1) - inicio)
+}
+
+describe('o juro por competência, com as datas do extrato da B3', () => {
+  // O CDB entrou em julho de 2019, e a primeira declaração importada é a de 2021:
+  // sem o extrato, o lote que ela encontra não tem data, e o resgate de 2023 não
+  // diz nada sobre a taxa — não se sabe há quanto tempo o dinheiro estava lá.
+  const ENTROU = '2019-07-01'
+  const SAIU = '2023-07-03'
+  const pago = 100_000 * (
+    (1 + K * cdi(2019)) ** (1 - fracao(ENTROU)) *
+    (1 + K * cdi(2020)) *
+    (1 + K * cdi(2021)) *
+    (1 + K * cdi(2022)) *
+    (1 + K * cdi(2023)) ** fracao(SAIU) -
+    1
+  )
+  const h = () =>
+    historico({
+      2021: { posicoes: [bem(CDB, 100_000, 100_000, BANCO)] },
+      2022: { posicoes: [bem(CDB, 100_000, 100_000, BANCO)] },
+      2023: { posicoes: [bem(CDB, 100_000, 0, BANCO)], juros: [juro(BANCO, pago)] },
+    })
+  const movimentos = { [ID_CDB]: [{ data: ENTROU, valor: 100_000 }, { data: SAIU, valor: -(100_000 + pago) }] }
+
+  it('sem o extrato, o lote sem data não mede a taxa', () => {
+    const [pote] = rendimentoPorCompetencia(h()).potes
+    expect(pote.origemDaTaxa).not.toBe('resgates')
+    expect(pote.comExtrato).toBe(false)
+  })
+
+  it('com ele, o lote ganha a data em que entrou, e o resgate mede a taxa', () => {
+    const [pote] = rendimentoPorCompetencia(h(), { movimentos }).potes
+    expect(pote.origemDaTaxa).toBe('resgates')
+    expect(pote.taxa).toBeCloseTo(K, 3)
+    expect(pote.comExtrato).toBe(true)
+  })
+
+  it('e o juro dos anos da janela é medido, somando o que rendeu neles', () => {
+    const r = rendimentoPorCompetencia(h(), { movimentos })
+    const anos = r.porBem[ID_CDB]
+    const dentro = 100_000 * (1 + K * cdi(2019)) ** (1 - fracao(ENTROU)) * (1 + K * cdi(2020))
+    const esperado2021 = dentro * K * cdi(2021)
+    expect(anos.find((a) => a.anoBase === 2021)!.medido).toBeCloseTo(esperado2021, 0)
+    expect(anos.every((a) => a.estimado < 1)).toBe(true)
+    expect(anos.find((a) => a.anoBase === 2023)!.peloExtrato).toBe(true)
+    expect(anos.find((a) => a.anoBase === 2022)!.peloExtrato).toBeUndefined()
+  })
+
+  it('a aplicação rende a partir do dia dela, e não do meio do ano', () => {
+    const hh = historico({
+      2021: { posicoes: [bem(CDB, 0, 100_000, BANCO)] },
+      2022: { posicoes: [bem(CDB, 100_000, 100_000, BANCO)] },
+    })
+    const semData = rendimentoPorCompetencia(hh).porBem[ID_CDB].find((a) => a.anoBase === 2021)!
+    const comData = rendimentoPorCompetencia(hh, { movimentos: { [ID_CDB]: [{ data: '2021-11-01', valor: 100_000 }] } })
+      .porBem[ID_CDB].find((a) => a.anoBase === 2021)!
+    // 100% do CDI (sem juro pago que meça): meio ano contra dois meses
+    expect(semData.estimado).toBeCloseTo(100_000 * ((1 + cdi(2021)) ** 0.5 - 1), 0)
+    expect(comData.estimado).toBeCloseTo(100_000 * ((1 + cdi(2021)) ** (1 - fracao('2021-11-01')) - 1), 0)
+    expect(comData.peloExtrato).toBe(true)
+  })
+
+  it('a renovação que a declaração não vê — resgate e reaplicação no mesmo ano — passa a medir', () => {
+    // 2022: venceu em junho e foi reaplicado no dia seguinte. O saldo pelo valor
+    // aplicado não se move, e o juro pago em 2022 parecia cupom.
+    const pago22 = 100_000 * ((1 + K * cdi(2021)) ** (1 - fracao('2021-03-01')) * (1 + K * cdi(2022)) ** fracao('2022-06-30') - 1)
+    const hh = historico({
+      2021: { posicoes: [bem(CDB, 0, 100_000, BANCO)] },
+      2022: { posicoes: [bem(CDB, 100_000, 100_000, BANCO)], juros: [juro(BANCO, pago22)] },
+    })
+    const mm = {
+      [ID_CDB]: [
+        { data: '2021-03-01', valor: 100_000 },
+        { data: '2022-06-30', valor: -(100_000 + pago22) },
+        { data: '2022-07-01', valor: 100_000 },
+      ],
+    }
+    const [pote] = rendimentoPorCompetencia(hh, { movimentos: mm }).potes
+    expect(pote.origemDaTaxa).toBe('resgates')
+    expect(pote.taxa).toBeCloseTo(K, 3)
+  })
+
+  it('no valor atualizado, o ano com movimento deixa de ser estimado: o que sobra é juro', () => {
+    const hh = historico({
+      2021: { posicoes: [bem(CDB, 90_000, 100_000, BANCO)] },
+      2022: { posicoes: [bem(CDB, 100_000, 150_000, BANCO)] },
+    })
+    const r = rendimentoPorCompetencia(hh, {
+      comoDeclara: { [BANCO]: 'atualizado' },
+      movimentos: { [ID_CDB]: [{ data: '2022-07-01', valor: 40_000 }] },
+    })
+    const a22 = r.porBem[ID_CDB].find((a) => a.anoBase === 2022)!
+    expect(a22).toMatchObject({ medido: 10_000, estimado: 0, fluxo: 40_000, peloExtrato: true })
+  })
+
+  it('e se o que sobra não cabe no juro, falta movimento no extrato: volta a estimar', () => {
+    const hh = historico({
+      2021: { posicoes: [bem(CDB, 90_000, 100_000, BANCO)] },
+      2022: { posicoes: [bem(CDB, 100_000, 150_000, BANCO)] },
+    })
+    const r = rendimentoPorCompetencia(hh, {
+      comoDeclara: { [BANCO]: 'atualizado' },
+      movimentos: { [ID_CDB]: [{ data: '2022-07-01', valor: 1_000 }] },
+    })
+    const a22 = r.porBem[ID_CDB].find((a) => a.anoBase === 2022)!
+    expect(a22.medido).toBe(0)
+    expect(a22.estimado).toBeGreaterThan(0)
+    expect(a22.peloExtrato).toBeUndefined()
+  })
+})
