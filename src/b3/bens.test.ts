@@ -224,6 +224,7 @@ describe('o que sai da ligação', () => {
     const hh = historico({ 2024: [pos(PETR, 1000, 1000)] })
     const pp = posicoesDoExtrato(linhas)
     const c = custodiaDoExtrato(pp, ligarPosicoes(hh, pp))
-    expect(c[idPosicao(PETR, 'acoes')]).toEqual({ instituicao: 'BTG PACTUAL CTVM S/A', data: '2024-05-15' })
+    // e com o nome que a família usa, para ser a mesma linha que o .DEC dá
+    expect(c[idPosicao(PETR, 'acoes')]).toEqual({ instituicao: 'BTG Pactual', data: '2024-05-15' })
   })
 })

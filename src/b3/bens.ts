@@ -34,7 +34,7 @@ import {
   type Historico,
   type Vinculos,
 } from '../historico/historico.js'
-import { nomesPorCnpj } from '../historico/instituicao.js'
+import { nomeDaInstituicao, nomesPorCnpj } from '../historico/instituicao.js'
 import type { MovimentoDatado } from '../patrimonio/competencia.js'
 import { dinheiroDaLinha } from './fluxos.js'
 import { dataOrdenavel, type Movimento } from './movimentacao.js'
@@ -336,6 +336,7 @@ export function aportesDoExtrato(h: Historico, movimentos: Record<string, readon
 
 /** Onde o extrato diz que o bem está, e desde qual linha isso se sabe. */
 export interface CustodiaDoExtrato {
+  /** O nome como a família escreve (`nomeDaInstituicao`): a mesma XP do `.DEC`. */
   instituicao: string
   /** A data da linha mais recente que põe o bem ali, em aaaa-mm-dd. */
   data: string
@@ -357,7 +358,7 @@ export function custodiaDoExtrato(
     const bem = ligacoes[p.chave]?.bem
     if (!bem || !p.instituicao) continue
     const atual = saida[bem]
-    if (!atual || p.ultima > atual.data) saida[bem] = { instituicao: p.instituicao, data: p.ultima }
+    if (!atual || p.ultima > atual.data) saida[bem] = { instituicao: nomeDaInstituicao(p.instituicao), data: p.ultima }
   }
   return saida
 }

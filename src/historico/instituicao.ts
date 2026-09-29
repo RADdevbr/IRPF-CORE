@@ -331,6 +331,20 @@ const paraCasar = (s: string) =>
     .trim()
 
 /**
+ * O nome de uma instituição como a família o escreve: a razão social de uma da
+ * lista vira o nome curto («XP INVESTIMENTOS CCTVM S/A» → «XP Investimentos»);
+ * a que não está na lista fica como veio.
+ *
+ * É o que faz a mesma corretora ser uma linha só quando o nome chega por dois
+ * caminhos — a razão social dos rendimentos do `.DEC` e a coluna «Instituição»
+ * do extrato da B3 escrevem a XP de jeitos diferentes.
+ */
+export function nomeDaInstituicao(bruto: string): string {
+  const casado = paraCasar(bruto)
+  return CONHECIDAS.find((c) => c.re.test(casado))?.nome ?? bruto.replace(/\s+/g, ' ').trim()
+}
+
+/**
  * Palpite de emissor a partir do que sobra da descrição, que é texto livre.
  *
  * Tira o que descreve o PAPEL — tipo, vencimento, taxa, índice, agência e conta
@@ -451,7 +465,7 @@ export function sugerirInstituicao(
     return pelaTexto && { ...pelaTexto, motivo: `${pelaTexto.motivo} (a declaração traz o CNPJ ${fmtCnpj(cnpj)}, sem nome nos rendimentos)` }
   }
   const casado = paraCasar(razao)
-  const nome = CONHECIDAS.find((c) => c.re.test(casado))?.nome ?? razao
+  const nome = nomeDaInstituicao(razao)
   const naoEBanco = NAO_E_BANCO.test(casado)
   const traz = `a declaração traz o CNPJ de «${razao}»`
 

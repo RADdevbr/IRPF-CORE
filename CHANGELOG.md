@@ -51,7 +51,10 @@ datas dele.
   palpite pelo nome na renda fixa, que só vale confirmado (`ligarPosicoes`) —, e o
   que sai dela: os movimentos de cada bem com data (`movimentosDosBens`), o aporte
   de cada ano (`aportesDoExtrato`) e a custódia pela coluna «Instituição»
-  (`custodiaDoExtrato`).
+  (`custodiaDoExtrato`), já com o nome que a família usa.
+- `nomeDaInstituicao`: a razão social de uma instituição conhecida vira o nome
+  curto («XP INVESTIMENTOS CCTVM S/A» → «XP Investimentos»). É o que faz a XP do
+  extrato e a XP do `.DEC` serem a mesma linha.
 - `rendimentoPorCompetencia` aceita `movimentos`: com as datas do extrato, a
   aplicação rende a partir do dia dela, o lote que a primeira declaração já
   encontra ganha a data em que entrou — e o resgate dele passa a medir a taxa —,
