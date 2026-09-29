@@ -58,6 +58,7 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
   3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
   4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
   5: 'o CNPJ de cada bem e o grupo do bem lido no lugar certo — é o que sugere onde cada aplicação está, e o que faz «aplicar ao código» juntar só bens do mesmo tipo',
+  6: 'o rendimento de aplicação financeira por CNPJ — o que cada banco, corretora e fundo te pagou —, que é o que mede quanto cada custódia rendeu sem confundir juro com aplicação e resgate',
 })
 
 /**
@@ -97,6 +98,7 @@ const VERSOES_DA_LEITURA: readonly number[] = Object.freeze(
  * 3 — rendimentos isentos e não tributáveis somados como renda
  * 4 — renda por PAGADOR dentro de cada fonte (ver `porPagador`)
  * 5 — CNPJ do bem, e grupo e código do bem nas posições certas (ver `Posicao`)
+ * 6 — rendimento de aplicação financeira por CNPJ (ver `rendimentoDeAplicacao`)
  *
  * SAI da tabela acima em vez de ser escrita ao lado dela. Duas fontes para o
  * mesmo número desgarram: subir o carimbo sem escrever a frase fazia a tela
@@ -133,6 +135,33 @@ export interface Pagador {
   id: string
   nome: string
   cnpj?: string
+}
+
+/**
+ * O juro de aplicação financeira que um CNPJ pagou no ano.
+ *
+ * É o rendimento que o `.DEC` traz SEPARADO do bem: a renda fixa declarada pelo
+ * valor aplicado não mostra o juro no saldo, e ele só aparece aqui, por quem
+ * pagou. Sai de duas linhas, e só delas:
+ *
+ *   · tributação exclusiva, código 06 — CDB, Tesouro, debênture, fundo;
+ *   · isentos, código 12 — LCI, LCA, poupança, CRI e CRA.
+ *
+ * O resto das duas fichas fica de fora de propósito: JCP (88, código 10) e
+ * dividendo (84, código 09) são renda de empresa, e somá-los aqui faria a
+ * corretora que custodia ações parecer render juro. Os códigos conferidos são os
+ * de um arquivo real da declaração 2024; um ano em que eles mudem fica sem
+ * rendimento aqui, e não com o rendimento errado.
+ *
+ * Também entra o Registro 24 com CNPJ, que é como leiautes antigos traziam o
+ * rendimento de fundo.
+ */
+export interface RendimentoDeAplicacao {
+  cnpj: string
+  nome: string
+  valor: number
+  /** Código 12 dos isentos (LCI, LCA, poupança, CRI, CRA); senão, tributação exclusiva. */
+  isento: boolean
 }
 
 /** Quanto um pagador pagou dentro de uma fonte, num ano. */
@@ -178,6 +207,11 @@ export interface Declaracao {
    * IGUAL a `vals[alvo]`, e quem lê atribui a diferença ao padrão da ficha.
    */
   porPagador?: RendaPorPagador[]
+  /**
+   * O juro de aplicação financeira por CNPJ — ver `RendimentoDeAplicacao`.
+   * Ausente = leitura anterior à 6: não se sabe, e não é zero.
+   */
+  rendimentoDeAplicacao?: RendimentoDeAplicacao[]
   /** Soma das fontes que entram na base do imposto mínimo, naquele ano. */
   base: number
   /**
@@ -661,6 +695,36 @@ export function rendaPorPagador(lancamentos: Lancamento[]): RendaPorPagador[] {
   return [...acc.values()].sort((a, b) => b.valor - a.valor)
 }
 
+const CNPJ_14 = /^\d{14}$/
+
+/**
+ * O juro de aplicação financeira do ano, por CNPJ — ver `RendimentoDeAplicacao`.
+ *
+ * Soma por CNPJ e por isenção: o mesmo banco paga juro de CDB (tributado) e de
+ * LCA (isento) no mesmo ano, e as duas linhas são dinheiro diferente só para o
+ * imposto — para o rendimento, somam. Ficam separadas para quem quiser dizer
+ * de onde veio cada parte.
+ */
+export function rendimentoDeAplicacao(lancamentos: Lancamento[]): RendimentoDeAplicacao[] {
+  const acc = new Map<string, RendimentoDeAplicacao>()
+  for (const l of lancamentos) {
+    const isento = l.tipo === '84' && l.codigo === '12'
+    const tributado = (l.tipo === '88' && l.codigo === '06') || (l.tipo === '24' && l.alvo === 'cdb')
+    if ((!isento && !tributado) || l.valor <= 0) continue
+    const cnpj = l.cnpj.replace(/\D/g, '')
+    if (!CNPJ_14.test(cnpj)) continue
+    const chave = `${cnpj}\u0000${isento}`
+    const atual = acc.get(chave)
+    if (atual) {
+      atual.valor += l.valor
+      if (!atual.nome && l.fonte.trim()) atual.nome = l.fonte.trim()
+    } else {
+      acc.set(chave, { cnpj, nome: l.fonte.trim(), valor: l.valor, isento })
+    }
+  }
+  return [...acc.values()].sort((a, b) => b.valor - a.valor)
+}
+
 /**
  * Converte o resultado do parser numa declaração do histórico, já com a base do
  * imposto mínimo daquele ano.
@@ -710,6 +774,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     importadoEm: agora,
     vals,
     porPagador,
+    rendimentoDeAplicacao: rendimentoDeAplicacao(dec.lancamentos),
     ndep: dec.ndep,
     posicoes,
     base,
