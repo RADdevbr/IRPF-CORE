@@ -40,6 +40,13 @@ A regra de fronteira, quando surgir a dúvida: **o núcleo guarda o modelo; a
 pergunta é do app que a faz.** «Quanto o patrimônio cresceu» é pergunta, e mora no
 networthcontrol. «O que é uma declaração de IRPF» é modelo, e mora aqui.
 
+## Versão
+
+O núcleo segue o [Versionamento Semântico](https://semver.org/lang/pt-BR/) —
+`MAJOR.MINOR.PATCH` —, e cada versão está no [CHANGELOG](CHANGELOG.md), com a
+regra de quando cada número sobe. Os apps prendem o núcleo por commit, e mostram
+no rodapé a versão e o commit que vieram junto.
+
 ## Instalando
 
 ```sh
