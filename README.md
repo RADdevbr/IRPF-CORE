@@ -47,6 +47,9 @@ O núcleo segue o [Versionamento Semântico](https://semver.org/lang/pt-BR/) —
 regra de quando cada número sobe. Os apps prendem o núcleo por commit, e mostram
 no rodapé a versão e o commit que vieram junto.
 
+A tag `vX.Y.Z` sai sozinha: quando uma versão nova entra no `main`, o fluxo
+[Marcar versão](.github/workflows/marcar-versao.yml) marca o commit que a trouxe.
+
 ## Instalando
 
 ```sh
