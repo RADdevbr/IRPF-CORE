@@ -235,10 +235,13 @@ type TipoConhecida = 'banco' | 'corretora'
  * Os padrões pedem fronteira de palavra: «ITAU» não pode casar dentro de
  * «ITAUSA», que é outra companhia, e «INTER» não pode casar dentro de
  * «INTERNACIONAL». Nome que é também palavra comum («Caixa», «Ágora») só casa na
- * forma que não é palavra comum.
+ * forma que não é palavra comum. E casam o nome INTEIRO quando ele tem mais de
+ * uma palavra («BTG PACTUAL», «ITAU UNIBANCO»): o que sobra da descrição depois
+ * de tirar os nomes conhecidos é lido como outro nome, e um «PACTUAL» sobrando
+ * viraria um segundo banco.
  */
 const CONHECIDAS: readonly { nome: string; tipo: TipoConhecida; re: RegExp }[] = [
-  { nome: 'XP Investimentos', tipo: 'corretora', re: /\bXP\b/ },
+  { nome: 'XP Investimentos', tipo: 'corretora', re: /\bXP( INVESTIMENTOS)?\b/ },
   { nome: 'Rico', tipo: 'corretora', re: /\bRICO (INVEST|CORRETORA|CTVM)/ },
   { nome: 'Clear', tipo: 'corretora', re: /\bCLEAR (CORRETORA|CTVM)/ },
   { nome: 'NuInvest', tipo: 'corretora', re: /\bNU ?INVEST\b|\bEASYNVEST\b/ },
@@ -249,15 +252,15 @@ const CONHECIDAS: readonly { nome: string; tipo: TipoConhecida; re: RegExp }[] =
   { nome: 'Ágora', tipo: 'corretora', re: /\bAGORA (INVEST|CORRETORA|CTVM)/ },
   { nome: 'Avenue', tipo: 'corretora', re: /\bAVENUE\b/ },
   { nome: 'Nomad', tipo: 'corretora', re: /\bNOMAD\b/ },
-  { nome: 'Itaú', tipo: 'banco', re: /\bITAU\b/ },
+  { nome: 'Itaú', tipo: 'banco', re: /\bITAU( UNIBANCO)?\b/ },
   { nome: 'Bradesco', tipo: 'banco', re: /\bBRADESCO\b/ },
-  { nome: 'Santander', tipo: 'banco', re: /\bSANTANDER\b/ },
+  { nome: 'Santander', tipo: 'banco', re: /\bSANTANDER( BRASIL)?\b/ },
   { nome: 'Banco do Brasil', tipo: 'banco', re: /\bBANCO DO BRASIL\b|\bBB\b/ },
-  { nome: 'Caixa', tipo: 'banco', re: /\bCAIXA ECONOMICA\b|\bCEF\b/ },
+  { nome: 'Caixa', tipo: 'banco', re: /\bCAIXA ECONOMICA( FEDERAL)?\b|\bCEF\b/ },
   { nome: 'Nubank', tipo: 'banco', re: /\bNUBANK\b|\bNU PAGAMENTOS\b|\bNU FINANCEIRA\b/ },
   { nome: 'Banco Inter', tipo: 'banco', re: /\bBANCO INTER\b|\bINTER (DTVM|INVEST)/ },
-  { nome: 'C6 Bank', tipo: 'banco', re: /\bC6\b/ },
-  { nome: 'BTG Pactual', tipo: 'banco', re: /\bBTG\b/ },
+  { nome: 'C6 Bank', tipo: 'banco', re: /\bC6( BANK)?\b/ },
+  { nome: 'BTG Pactual', tipo: 'banco', re: /\bBTG( PACTUAL)?\b/ },
   { nome: 'Safra', tipo: 'banco', re: /\bSAFRA\b/ },
   { nome: 'Sicoob', tipo: 'banco', re: /\bSICOOB\b/ },
   { nome: 'Sicredi', tipo: 'banco', re: /\bSICREDI\b/ },
@@ -301,8 +304,11 @@ export function emissorDaDescricao(descricao: string): string | null {
     )
     // indexadores, prazos, agência e conta
     .replace(/\b(CDI|IPCA|SELIC|IGPM|IGP M|VENC|VENCIMENTO|AA|A A|AG|AGENCIA|CC|C C|NR|NUMERO|DV)\b/g, ' ')
-    // o que liga o nome ao resto da frase, e a forma societária
-    .replace(/\b(NA|NO|EM|VIA|POR|EMITIDO|EMISSAO|CUSTODIADO|CUSTODIA|SA|S A|LTDA)\b/g, ' ')
+    // o que liga o nome ao resto da frase, a forma societária e o que é genérico
+    .replace(
+      /\b(NA|NO|EM|VIA|POR|EMITIDO|EMISSAO|CUSTODIADOS?|CUSTODIADAS?|CUSTODIA|SA|S A|LTDA|CCTVM|CTVM|DTVM|CORRETORA|INVESTIMENTOS|MULTIPLO|PRE|POS|DI|PRAZO|JUROS)\b/g,
+      ' ',
+    )
     .replace(/\d+/g, ' ') // datas, taxas, percentuais, números de conta
     .replace(/\s+/g, ' ')
     .trim()
@@ -330,20 +336,22 @@ export interface SugestaoInstituicao {
 /**
  * O que o app acha de um bem, e por quê — sugestão, nunca afirmação.
  *
- * Três caminhos, nesta ordem:
+ * Onde o papel é de banco, nesta ordem:
  *
- *   1. A descrição cita uma CORRETORA: é onde está. Se cita também um banco e o
- *      papel é de banco, o banco é quem deve — o CDB comprado pela XP.
- *   2. Cita só BANCOS. Onde o papel é do banco, o primeiro banco citado é quem
- *      deve e, sem corretora no meio, também onde está. Dois bancos e nenhuma
- *      corretora («CDB BANCO PAN VIA BTG») é o caso em que a ordem decide, e a
- *      ordem é palpite: vai aproximada.
- *   3. Não cita ninguém conhecido. Onde o papel é de banco, o que sobra da
- *      descrição sem tipo, prazo e taxa costuma ser o nome do emissor — palpite,
+ *   1. Tirados os nomes conhecidos, SOBRA um nome na descrição. Ele é
+ *      provavelmente quem deve, e o conhecido citado é onde está — palpite,
  *      aproximado.
+ *   2. Não sobra nada, e cita um BANCO: ele é quem deve e, sem corretora citada,
+ *      também onde está; com corretora, ela é onde está — o CDB do BTG comprado
+ *      pela XP. Dois bancos e nenhuma corretora («CDB BANCO PAN VIA BTG») é o
+ *      caso em que a ordem decide, e a ordem é palpite: vai aproximada.
+ *   3. Cita só a CORRETORA: é onde está, e quem deve fica sem palpite.
  *
- * Ação e FII ficam só com o caminho 1: o banco citado ali é quase sempre a
- * COMPANHIA («AÇÕES ITAÚ UNIBANCO»), e não onde a ação está guardada.
+ * Nas outras classes ninguém pergunta quem deve: a corretora citada é onde está,
+ * e sem corretora, o primeiro banco citado.
+ *
+ * Em ação, FII e exterior, só a corretora conta: o banco citado ali é quase
+ * sempre a COMPANHIA («AÇÕES ITAÚ UNIBANCO»), e não onde o papel está guardado.
  */
 export function sugerirInstituicao(descricao: string, classe: ClassePatrimonio): SugestaoInstituicao | null {
   if (!estaEmInstituicao(classe)) return null
@@ -356,7 +364,26 @@ export function sugerirInstituicao(descricao: string, classe: ClassePatrimonio):
   const cita = (xs: { nome: string }[]) => xs.map((x) => `«${x.nome}»`).join(' e ')
 
   if (emissorEhBanco(classe)) {
+    // O que sobra da descrição depois de tirar os nomes conhecidos. Se sobra um
+    // nome, é outro banco — e é ele, não o conhecido, que provavelmente emitiu:
+    // «CDB BANCO AURORA 2028 BTG» é dívida do Aurora guardada no BTG. Tomar o
+    // BTG por emissor poria o FGC na conta do banco errado, com cara de certeza.
+    const sobra = emissorDaDescricao(achadas.reduce((t, c) => t.replace(new RegExp(c.re.source, 'g'), ' '), texto))
     const banco = bancos[0]
+    const deposito = classe === 'contaCorrente' || classe === 'poupanca'
+    if (sobra) {
+      const onde = corretora ?? banco
+      return {
+        // Conta e poupança estão no próprio banco. O CDB sem ninguém mais citado
+        // provavelmente também — mas é o mesmo palpite, e vai junto dele.
+        instituicao: onde?.nome ?? sobra,
+        emissor: sobra,
+        motivo: onde
+          ? `a descrição cita ${cita([onde])}, e o que sobra dela é «${sobra}» — quem deve, provavelmente`
+          : `sem ${deposito ? 'o banco' : 'o emissor'} entre os conhecidos, o que sobra da descrição é «${sobra}»`,
+        aproximada: true,
+      }
+    }
     if (banco) {
       const aproximada = !corretora && bancos.length > 1
       return {
@@ -366,23 +393,9 @@ export function sugerirInstituicao(descricao: string, classe: ClassePatrimonio):
         ...(aproximada ? { aproximada } : {}),
       }
     }
-    // Sem banco conhecido: o nome da corretora sai do texto antes do palpite,
-    // senão ele viraria parte do nome do emissor.
-    const semCorretora = corretora ? texto.replace(corretora.re, ' ') : texto
-    const palpite = emissorDaDescricao(semCorretora)
-    if (!palpite && !corretora) return null
-    const deposito = classe === 'contaCorrente' || classe === 'poupanca'
-    return {
-      // Conta e poupança estão no próprio banco. O CDB sem corretora citada
-      // provavelmente também — mas é o mesmo palpite, e vai junto dele.
-      instituicao: corretora?.nome ?? palpite ?? undefined,
-      ...(palpite ? { emissor: palpite } : {}),
-      motivo: palpite
-        ? `${corretora ? `a descrição cita ${cita([corretora])}; ` : ''}sem ${deposito ? 'o banco' : 'o emissor'} entre os conhecidos, o que sobra da descrição é «${palpite}»`
-        : `a descrição cita ${cita([corretora as { nome: string }])}, mas não diz quem deve`,
-      // Só o palpite é aproximado: a corretora citada é nome reconhecido.
-      ...(palpite ? { aproximada: true } : {}),
-    }
+    // Só a corretora: onde está é nome reconhecido, e quem deve fica sem palpite.
+    if (!corretora) return null
+    return { instituicao: corretora.nome, motivo: `a descrição cita ${cita([corretora])}, mas não diz quem deve` }
   }
 
   const variavel = classe === 'acoes' || classe === 'fii' || classe === 'exterior' || classe === 'desconhecido'

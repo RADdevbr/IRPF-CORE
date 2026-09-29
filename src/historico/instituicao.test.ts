@@ -49,6 +49,19 @@ describe('sugestão de instituição e emissor', () => {
     expect(s).toMatchObject({ instituicao: 'Banco Pan', emissor: 'Banco Pan', aproximada: true })
   })
 
+  it('banco conhecido E um nome desconhecido: o desconhecido é quem deve, e o palpite não entra em bloco', () => {
+    // Achado olhando a tela: o BTG estava na lista como banco, e virava emissor
+    // do CDB do Aurora guardado nele — o FGC na conta do banco errado, com cara
+    // de certeza, dentro do «aceitar tudo».
+    const s = sugerirInstituicao('CDB BANCO AURORA 2028 BTG', 'cdb')
+    expect(s).toMatchObject({ instituicao: 'BTG Pactual', emissor: 'BANCO AURORA', aproximada: true })
+  })
+
+  it('o nome inteiro do conhecido sai antes de ler a sobra: «PACTUAL» não é outro banco', () => {
+    expect(sugerirInstituicao('CDB BTG PACTUAL PRE 2027', 'cdb')).toMatchObject({ instituicao: 'BTG Pactual', emissor: 'BTG Pactual' })
+    expect(sugerirInstituicao('CDB BANCO SANTANDER BRASIL S.A.', 'cdb')?.aproximada).toBeUndefined()
+  })
+
   it('banco desconhecido: o que sobra da descrição, marcado como aproximado', () => {
     const s = sugerirInstituicao('CDB BANCO ABC BRASIL 12,5% A.A. VENC 15/03/2027 CUSTODIADO NA XP', 'cdb')
     expect(s).toMatchObject({ instituicao: 'XP Investimentos', emissor: 'BANCO ABC BRASIL', aproximada: true })
