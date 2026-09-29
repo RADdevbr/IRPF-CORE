@@ -463,9 +463,11 @@ describe('classificação pelo código do bem', () => {
 })
 
 describe('código × grupo (o layout do Registro 27 mudou em 2019)', () => {
-  it('rotuloCodigo esconde o subcódigo neutro e mostra o par quando ele informa', () => {
-    expect(rotuloCodigo('45', '01')).toBe('45') // esquema antigo: só o código
-    expect(rotuloCodigo('04', '02')).toBe('04·02') // esquema novo: grupo·código
+  it('rotuloCodigo mostra grupo·código no leiaute novo, e só o código no antigo', () => {
+    expect(rotuloCodigo('45', '01')).toBe('45') // antigo, lido pela versão anterior
+    expect(rotuloCodigo('45', '')).toBe('45') // antigo, lido por esta
+    expect(rotuloCodigo('04', '02')).toBe('04·02') // novo: grupo·código
+    expect(rotuloCodigo('06', '01')).toBe('06·01') // no novo o «01» informa: é conta
     expect(rotuloCodigo('', '02')).toBe('')
     expect(rotuloCodigo(undefined, undefined)).toBe('')
   })

@@ -554,8 +554,8 @@ describe('pagamentos que o próprio arquivo declara', () => {
 
 describe('o que falta a um ano lido por versão antiga', () => {
   it('lista só o que veio DEPOIS da versão que leu o ano', () => {
-    expect(oQueFaltaNaLeitura(3)).toEqual([GANHOS_DA_LEITURA[4]])
-    expect(oQueFaltaNaLeitura(2)).toEqual([GANHOS_DA_LEITURA[3], GANHOS_DA_LEITURA[4]])
+    expect(oQueFaltaNaLeitura(4)).toEqual([GANHOS_DA_LEITURA[5]])
+    expect(oQueFaltaNaLeitura(3)).toEqual([GANHOS_DA_LEITURA[4], GANHOS_DA_LEITURA[5]])
   })
 
   it('ano sem carimbo é o mais antigo de todos, e falta tudo', () => {

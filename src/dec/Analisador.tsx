@@ -169,8 +169,10 @@ export function Analisador({ linhaInicial = '' }: { linhaInicial?: string }) {
                 <>
                   {lido.posicoes.map((pos, i) => (
                     <div key={`p${i}`} style={{ color: C.textSec }}>
-                      <span style={{ color: C.orange }}>bem:</span> "{pos.descricao}" · código {pos.codigo || '—'} · saldo
-                      anterior {fmt(pos.saldoAnterior)} · saldo atual {fmt(pos.saldoAtual)}
+                      <span style={{ color: C.orange }}>bem:</span> "{pos.descricao}" ·{' '}
+                      {pos.subcodigo ? `grupo·código ${pos.codigo || '—'}·${pos.subcodigo}` : `código ${pos.codigo || '—'}`}
+                      {pos.cnpj && ` · CNPJ ${pos.cnpj}`} · saldo anterior {fmt(pos.saldoAnterior)} · saldo atual{' '}
+                      {fmt(pos.saldoAtual)}
                     </div>
                   ))}
                   {lido.lancamentos.map((l, i) => (

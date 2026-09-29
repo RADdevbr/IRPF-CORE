@@ -15,8 +15,15 @@ export type Regime = 'inBase' | 'foraBase' | 'depende'
 export interface PosicaoAno {
   id: string
   descricao: string
+  /** O grupo do bem no leiaute com grupo; o código antigo no leiaute sem. Ver `Posicao`. */
   codigo: string
+  /** O código dentro do grupo; vazio no leiaute antigo. */
   subcodigo?: string
+  /**
+   * O CNPJ da linha do bem, conferido. O que ele significa depende do grupo — ver
+   * `Posicao.cnpj`: na conta e na renda fixa é onde está, no fundo é o fundo.
+   */
+  cnpj?: string
   /** Linha original do .DEC. Fica no cofre cifrado, junto do resto. */
   bruta?: string
   classe: ClassePatrimonio
@@ -50,6 +57,7 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
   2: 'os pagamentos efetuados — plano de saúde, previdência, instrução —, que são despesa real e entram na conta',
   3: 'os rendimentos isentos e não tributáveis — LCI/LCA, poupança, incentivadas, FII —, e sem eles a análise cobra do patrimônio uma renda que a sua declaração informa',
   4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
+  5: 'o CNPJ de cada bem e o grupo do bem lido no lugar certo — é o que sugere onde cada aplicação está, e o que faz «aplicar ao código» juntar só bens do mesmo tipo',
 })
 
 /**
@@ -88,6 +96,7 @@ const VERSOES_DA_LEITURA: readonly number[] = Object.freeze(
  * 2 — pagamentos efetuados
  * 3 — rendimentos isentos e não tributáveis somados como renda
  * 4 — renda por PAGADOR dentro de cada fonte (ver `porPagador`)
+ * 5 — CNPJ do bem, e grupo e código do bem nas posições certas (ver `Posicao`)
  *
  * SAI da tabela acima em vez de ser escrita ao lado dela. Duas fontes para o
  * mesmo número desgarram: subir o carimbo sem escrever a frase fazia a tela
@@ -359,9 +368,9 @@ export const NOME_CLASSE: Record<ClassePatrimonio, string> = {
  * 21 com placa de veículo, 31 com ticker e quantidade, 32 com "participação de
  * X% no capital social", 61 com agência e conta.
  *
- * De 2019 em diante o campo passou a ser o GRUPO, e os valores dos dois
- * esquemas não colidem (antigos 21–79, novos 01–10 e 99), então esta tabela
- * pode ser consultada sem saber o ano.
+ * No leiaute com grupo (ver `Posicao`), `codigo` é o GRUPO, e os valores dos
+ * dois esquemas não colidem (antigos 11–99 exceto os grupos, novos 01–10 e 99 —
+ * e o 99 não está aqui), então esta tabela pode ser consultada sem saber o ano.
  *
  * Os códigos de FUNDOS (71, 72, 73, 74, 79) ficam DE FORA de propósito: a
  * família é clara, o subtipo não, e errar entre "fundo tributável" e "FII"
@@ -379,12 +388,15 @@ export const CLASSE_POR_CODIGO: Record<string, ClassePatrimonio> = {
   '61': 'contaCorrente',
 }
 
-/** Como o código aparece na tela: "45" no esquema antigo, "03·01" no novo. */
+/** Como o código aparece na tela: "45" no leiaute antigo, "03·01" (grupo·código) no novo. */
 export function rotuloCodigo(codigo?: string, subcodigo?: string): string {
   const c = (codigo ?? '').trim()
   if (!c) return ''
   const s = (subcodigo ?? '').trim()
-  return s && s !== '01' ? `${c}·${s}` : c
+  // O par só quando `codigo` é um grupo: no leiaute antigo não há código dentro
+  // de grupo, e o «01» que um ano lido pela versão anterior guardou ali não
+  // informa nada. No novo o «01» informa — 06·01 é conta, 07·01 é fundo.
+  return /^(0[1-9]|10|99)$/.test(c) && s ? `${c}·${s}` : c
 }
 
 /** Chave de agrupamento: bens com o mesmo par recebem a mesma classificação. */
@@ -673,6 +685,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
         descricao: p.descricao,
         codigo: p.codigo,
         subcodigo: p.subcodigo,
+        ...(p.cnpj ? { cnpj: p.cnpj } : {}),
         bruta: p.bruta,
         classe,
         regime: REGIME[classe],

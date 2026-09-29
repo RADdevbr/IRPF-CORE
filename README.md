@@ -29,7 +29,7 @@ errado com cara de certo.
 | `/cofre/conta` | Tudo o que fala com o Supabase — **importe sob demanda** (ver abaixo) |
 | `/dec` | Leitor posicional do `.DEC` e o anonimizador |
 | `/xlsx` | Leitor de `.xlsx` sem dependência nenhuma, e o construtor que os testes usam |
-| `/historico` | O modelo plurianual: N declarações, patrimônio por classe, a identidade de cada bem entre anos, e o que só a pessoa sabe |
+| `/historico` | O modelo plurianual: N declarações, patrimônio por classe, a identidade de cada bem entre anos, e o que só a pessoa sabe — inclusive onde cada bem está e quem deve |
 | `/fiscal` | Parâmetros por ano com vigência e fonte, INSS/IRRF, ajuste anual, deduções legais, fontes de renda, e a grade de dividendos com o Art. 6º-A |
 | `/bolsa` | Apuração de renda variável: preço médio, isenção mensal, compensação de prejuízo |
 | `/patrimonio` | Quanto o capital rendeu, e as referências (CDI, Selic, IPCA) para comparar |
