@@ -1,0 +1,38 @@
+name: Marcar versão
+
+# Ao entrar no main, cria a tag v<versão do package.json> — se ela ainda não
+# existir — no commit do main que trouxe essa versão para o package.json. O
+# merge da versão já é a marcação: ninguém precisa lembrar de rodar `git tag`, e
+# a tag aponta para o código que a versão descreve, não para o que veio depois.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  marcar:
+    name: Tag da versão
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Criar a tag, se faltar
+        run: |
+          versao=$(node -p "require('./package.json').version")
+          tag="v$versao"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag já existe, em $(git rev-list -n1 "$tag")."
+            exit 0
+          fi
+          alvo=$(git log --first-parent --format=%H -S"\"version\": \"$versao\"" -1 -- package.json)
+          alvo=${alvo:-$GITHUB_SHA}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" "$alvo" -m "$tag — ver CHANGELOG.md"
+          git push origin "$tag"
+          echo "Criada $tag em $alvo."
