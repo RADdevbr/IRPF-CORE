@@ -66,6 +66,7 @@ export function semelhanca(a: string, b: string): number {
 }
 
 const REAL = 0.01
+const QUASE = 1
 
 /**
  * CNPJ escrito no meio da descrição do bem.
@@ -95,10 +96,19 @@ export function pontuar(velha: ComAno, nova: ComAno): { pontos: number; motivos:
 
   // O sinal forte, e o único que o próprio arquivo afirma.
   const consecutivos = nova.anoBase - velha.anoBase === 1
-  const saldoBate = consecutivos && nova.saldoAnterior > 0 && Math.abs(nova.saldoAnterior - velha.saldoAtual) < REAL
+  const distancia = Math.abs(nova.saldoAnterior - velha.saldoAtual)
+  const saldoBate = consecutivos && nova.saldoAnterior > 0 && distancia < REAL
+  // Até R$ 1 de diferença é arredondamento — o programa da Receita, o informe
+  // do banco e a pessoa redigitando o saldo cortam o centavo cada um de um
+  // jeito. Vale um ponto a menos que o exato: sozinho não liga, e com a mesma
+  // classe liga.
+  const saldoQuaseBate = consecutivos && nova.saldoAnterior > 0 && !saldoBate && distancia <= QUASE
   if (saldoBate) {
     pontos += 6
     motivos.push('o saldo anterior declarado bate com o saldo do ano passado')
+  } else if (saldoQuaseBate) {
+    pontos += 5
+    motivos.push('o saldo anterior declarado bate com o do ano passado a menos de R$ 1')
   }
 
   // CNPJ é o identificador que não depende de como o nome foi digitado. Sozinho
@@ -111,7 +121,7 @@ export function pontuar(velha: ComAno, nova: ComAno): { pontos: number; motivos:
     if (cnpjV === cnpjN) {
       pontos += 3
       motivos.push('mesmo CNPJ na descrição')
-    } else if (!saldoBate) {
+    } else if (!saldoBate && !saldoQuaseBate) {
       // CNPJs diferentes com o arquivo calado: são dois bens, não um
       pontos -= 3
       motivos.push('CNPJ diferente na descrição')
@@ -127,7 +137,7 @@ export function pontuar(velha: ComAno, nova: ComAno): { pontos: number; motivos:
   // Número comprido na descrição costuma ser vencimento ou nº de contrato — é
   // exatamente o que separa dois papéis do mesmo banco. Sem o saldo do arquivo
   // para afirmar, números que não batem derrubam a semelhança em vez de somar.
-  if (!saldoBate) {
+  if (!saldoBate && !saldoQuaseBate) {
     const numeros = (t: string) => new Set(normaliza(t).split(' ').filter((x) => /^\d{4,}$/.test(x)))
     const nv = numeros(velha.descricao)
     const nn = numeros(nova.descricao)

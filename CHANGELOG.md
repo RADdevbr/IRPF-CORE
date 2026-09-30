@@ -54,6 +54,14 @@ O imposto retido na fonte deixa de passar por dinheiro poupado, e a leitura do
   (`AnoCapital.foraDaDeclaracao`) — sem ela, o patrimônio que cresceu com esse
   dinheiro passava por rendimento do capital.
 - O 13º entra na composição da renda como trabalho (`composicaoDoAno`).
+- `continuidadeEntreAnos` (`historico/continuidade.ts`): o que não fecha de
+  uma declaração para a seguinte, bem a bem, depois das ligações — o bem que
+  sumiu com saldo (em vez de ficar com saldo zero), o que entrou com saldo
+  anterior sem par, o saldo anterior diferente do que a declaração passada
+  disse, o bem zerado e reaberto com outro nome no mesmo ano e a descrição que
+  mudou num bem já ligado. Com o par que o arquivo aponta, quando aponta, e a
+  diferença entre o patrimônio de um ano e a soma dos saldos anteriores do
+  seguinte. Só aponta: não liga nada sozinho.
 - Tabela da B3: `AMORTIZACAO PROGRAMADA`, `AMORTIZACAO EXTRAORDINARIA`,
   `AMORT. EXTRAORDINARIA`, `ANTECIPACAO` e `EVENTO GENERICO` como devolução
   do principal de debênture, CRI e CRA (vêm com «Debito» e o PU do evento), e
@@ -61,6 +69,10 @@ O imposto retido na fonte deixa de passar por dinheiro poupado, e a leitura do
 
 ### Corrigido
 
+- Ligação automática entre anos: o saldo anterior que bate com o do ano
+  passado a menos de R$ 1 conta 5 pontos (o exato continua 6). Sozinho não
+  liga; com a mesma classe, liga. O centavo cortado de jeitos diferentes pelo
+  programa, pelo informe e pela redigitação deixava bens do mesmo nome sem par.
 - `analiseCapital`: poupado era renda bruta − gasto. O imposto que a fonte
   reteve nunca chegou à conta, e o crescimento que ele «não explicava» era
   cobrado do capital — o rendimento encolhia do tamanho do imposto. Agora é

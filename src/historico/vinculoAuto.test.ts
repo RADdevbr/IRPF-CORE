@@ -81,6 +81,18 @@ describe('pontuação de um par', () => {
     expect(r.motivos[0]).toMatch(/saldo anterior/)
   })
 
+  it('saldo que bate a menos de R$ 1 é arredondamento: com a mesma classe, liga; sozinho, não', () => {
+    // códigos e palavras diferentes: só o saldo e a classe falam
+    const velha = comAno(pos('ALFA XPTO', 2_640.37, 0, '45', '01'), 2024)
+    const nova = comAno(pos('BETA ZETA', 2_700, 2_640, '45', '02'), 2025)
+    const r = pontuar(velha, nova)
+    expect(r.motivos[0]).toMatch(/a menos de R\$ 1/)
+    expect(r.pontos).toBe(LIMIAR) // 5 do saldo + 1 da mesma classe
+    expect(pontuar({ ...velha, classe: 'desconhecido' }, { ...nova, classe: 'desconhecido' }).pontos).toBeLessThan(LIMIAR)
+    // a R$ 5 já não é arredondamento
+    expect(pontuar(velha, { ...nova, saldoAnterior: 2_635 }).motivos.join()).not.toMatch(/saldo anterior/)
+  })
+
   it('o saldo só vale entre anos consecutivos — com buraco no meio não afirma nada', () => {
     const velha = comAno(pos('APLICACAO ALFA', 100_000), 2023)
     const nova = comAno(pos('RESERVA BETA', 150_000, 100_000), 2025)
