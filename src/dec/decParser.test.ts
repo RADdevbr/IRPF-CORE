@@ -270,6 +270,25 @@ describe('parseDec — leitura posicional', () => {
     expect(r2.retencoes).toEqual([])
   })
 
+  it('lê o ajuste do Registro 20 só quando a conta do Resumo fecha', () => {
+    const reg20 = (devido: number, pago: number, restituir: number, pagar: number) => {
+      const b = blank(900)
+      put(b, 1, '20', 2)
+      numField(b, 209, devido)
+      numField(b, 352, pago)
+      numField(b, 365, restituir)
+      numField(b, 378, pagar)
+      return b.join('')
+    }
+    // os números do arquivo real: devido 48.922,03, pago 43.334,41, a pagar 5.587,62
+    const r = parseDec('IRPF 2024\r\n' + reg20(4892203, 4333441, 0, 558762) + '\r\n')
+    expect(r.ajuste).toEqual({ devido: 48922.03, pago: 43334.41, aRestituir: 0, aPagar: 5587.62 })
+    // coluna no lugar errado: a conta não fecha, e o ajuste não vem
+    expect(parseDec('IRPF 2024\r\n' + reg20(4892203, 4333441, 0, 999) + '\r\n').ajuste).toBeUndefined()
+    // restituição
+    expect(parseDec('IRPF 2024\r\n' + reg20(1000000, 1500000, 500000, 0) + '\r\n').ajuste).toMatchObject({ aRestituir: 5000, aPagar: 0 })
+  })
+
   it('ignora campos zerados (não gera lançamento)', () => {
     const semIR = 'IRPF 2025\r\n' + reg21('FONTE X', 10000000, 0) + '\r\n'
     const r = parseDec(semIR)

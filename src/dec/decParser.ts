@@ -136,6 +136,27 @@ export interface Retencao {
   irDecimoTerceiro: number
 }
 
+/**
+ * O ajuste anual, do Registro 20 (os totais da ficha Resumo).
+ *
+ *   imposto devido (209–221) | imposto pago no ano (352–364)
+ *   | a restituir (365–377) | a pagar (378–390)
+ *
+ * Conferido num arquivo real da declaração 2024: as deduções somavam a
+ * diferença entre o rendimento tributável e a base, o pago era o IR retido mais
+ * o carnê-leão, e o saldo a pagar era o devido menos o pago, ao centavo.
+ *
+ * O leitor só devolve o ajuste quando essa conta fecha: um leiaute de outro ano
+ * que tenha deslocado as colunas daria um saldo qualquer — e o saldo do ajuste
+ * vira imposto do ano seguinte na conta do patrimônio.
+ */
+export interface AjusteAnual {
+  devido: number
+  pago: number
+  aPagar: number
+  aRestituir: number
+}
+
 export interface DecResult {
   ano: string | null
   registros: DecRegistro[]
@@ -144,6 +165,8 @@ export interface DecResult {
   pagamentos: Pagamento[]
   /** Ausente em resultado montado à mão (teste, arquivo de outro leitor): não se sabe. */
   retencoes?: Retencao[]
+  /** O Registro 20, quando a conta dele fecha — ver `AjusteAnual`. */
+  ajuste?: AjusteAnual
   ndep: number
   linhas: string[]
   totalLinhas: number
@@ -220,6 +243,7 @@ const REGISTROS: Record<string, RegistroSpec> = {
  * para que não seja possível passar a ler um registro e esquecer daqui.
  */
 export const LEITURA: Record<string, string> = {
+  '20': 'totais do Resumo — o imposto do ajuste',
   '21': 'rendimento tributável de PJ',
   '22': 'rendimento de PF, exterior e carnê-leão',
   '24': 'rendimento de aplicação financeira',
@@ -350,6 +374,7 @@ export function parseDec(text: string): DecResult {
   const posicoes: Posicao[] = []
   const pagamentos: Pagamento[] = []
   const retencoes: Retencao[] = []
+  let ajuste: AjusteAnual | undefined
   let ndep = 0
   const comGrupo = leiauteComGrupo(linhas)
 
@@ -360,6 +385,14 @@ export function parseDec(text: string): DecResult {
     else tipos.set(tipo, { count: 1, amostra: l.slice(0, 60) })
 
     if (tipo === '25') ndep += 1
+
+    if (tipo === '20' && l.length >= 390) {
+      const a = { devido: num(l, 209, 221), pago: num(l, 352, 364), aRestituir: num(l, 365, 377), aPagar: num(l, 378, 390) }
+      // a conta do próprio Resumo: devido − pago = a pagar − a restituir
+      const fecha = Math.abs(a.devido - a.pago - (a.aPagar - a.aRestituir)) < 0.02
+      const umSo = a.aPagar === 0 || a.aRestituir === 0
+      if (fecha && umSo && a.devido + a.pago > 0) ajuste = a
+    }
 
     // Registro 27 — Bens e Direitos. A descrição começa na pos. 20, mas seu
     // tamanho varia (FII/ações têm descrição longa + campos extras depois), então
@@ -500,5 +533,5 @@ export function parseDec(text: string): DecResult {
     .map(([tipo, v]) => ({ tipo, count: v.count, amostra: v.amostra }))
     .sort((a, b) => b.count - a.count)
 
-  return { ano, registros, lancamentos, posicoes, pagamentos, retencoes, ndep, linhas, totalLinhas: linhas.length }
+  return { ano, registros, lancamentos, posicoes, pagamentos, retencoes, ...(ajuste ? { ajuste } : {}), ndep, linhas, totalLinhas: linhas.length }
 }

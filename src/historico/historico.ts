@@ -5,7 +5,7 @@
 // cresceu, se a lei nova teria pegado os anos passados, e — o ponto do pedido —
 // QUANTO do patrimônio, se resgatado, joga rendimento na base do IRPFM.
 
-import type { DecResult, Lancamento, Pagamento, Retencao } from '../dec/decParser.js'
+import type { AjusteAnual, DecResult, Lancamento, Pagamento, Retencao } from '../dec/decParser.js'
 import { sugerirCategoria } from '../fiscal/deducoes.js'
 import { FIELDS, ehImpostoRetido } from '../fiscal/fontes.js'
 
@@ -60,6 +60,7 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
   5: 'o CNPJ de cada bem e o grupo do bem lido no lugar certo — é o que sugere onde cada aplicação está, e o que faz «aplicar ao código» juntar só bens do mesmo tipo',
   6: 'o rendimento de aplicação financeira por CNPJ — o que cada banco, corretora e fundo te pagou —, que é o que mede quanto cada custódia rendeu sem confundir juro com aplicação e resgate',
   7: 'o INSS e o 13º de cada salário, e o imposto retido sobre o 13º — sem eles, o imposto que nunca chegou à sua conta passa por dinheiro poupado, e o rendimento do capital encolhe do mesmo tanto',
+  8: 'o imposto do ajuste anual — o saldo a pagar sai do bolso no ano seguinte, e a restituição entra; sem ele, cabe a você lembrar de pô-lo no gasto',
 })
 
 /**
@@ -200,6 +201,19 @@ export function impostoNaFonte(d: Pick<Declaracao, 'vals' | 'retencoes'>): numbe
   return retido + (r ? r.previdencia + r.irDecimoTerceiro : 0)
 }
 
+/**
+ * O que o ajuste da declaração de um ano moveu no ano SEGUINTE: + o saldo pago,
+ * − a restituição recebida. 0 sem ajuste lido.
+ *
+ * É imposto como o retido na fonte, só que um ano depois: quem vive de mais de
+ * uma fonte costuma pagar em abril o que as fontes não reteram, e esse dinheiro
+ * sai do patrimônio do ano em que é pago, não do ano a que se refere.
+ */
+export function saldoDoAjuste(d: Pick<Declaracao, 'ajuste'> | undefined): number {
+  const a = d?.ajuste
+  return a ? a.aPagar - a.aRestituir : 0
+}
+
 /** Quanto um pagador pagou dentro de uma fonte, num ano. */
 export interface RendaPorPagador {
   /** A chave da ficha, em `fiscal/fontes.ts` — `salario`, `divBR`, `cdb`… */
@@ -253,6 +267,12 @@ export interface Declaracao {
    * Ausente = leitura anterior à 7: não se sabe, e não é zero.
    */
   retencoes?: RetencoesDoAno
+  /**
+   * O ajuste anual desta declaração — ver `AjusteAnual`, no leitor. O saldo é
+   * pago (ou restituído) no ANO SEGUINTE. Ausente = leitura anterior à 8, ou
+   * Registro 20 cuja conta não fechou.
+   */
+  ajuste?: AjusteAnual
   /** Soma das fontes que entram na base do imposto mínimo, naquele ano. */
   base: number
   /**
@@ -817,6 +837,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     porPagador,
     rendimentoDeAplicacao: rendimentoDeAplicacao(dec.lancamentos),
     ...(dec.retencoes ? { retencoes: somarRetencoes(dec.retencoes) } : {}),
+    ...(dec.ajuste ? { ajuste: dec.ajuste } : {}),
     ndep: dec.ndep,
     posicoes,
     base,

@@ -122,6 +122,25 @@ describe('um ano de cada vez', () => {
     expect(b.impostoNaFonte).toBe(60_000)
   })
 
+  it('o saldo do ajuste do ano passado sai das fontes deste ano; a restituição entra', () => {
+    const comAjuste = (ex: string, ajuste: DecResult['ajuste'], bens: Posicao[]): DecResult => ({
+      ano: ex, registros: [], lancamentos: [lanc('salario', 300_000)], posicoes: bens, pagamentos: [], ...(ajuste ? { ajuste } : {}), ndep: 0, linhas: [], totalLinhas: 0,
+    })
+    let h: Historico = {}
+    h = upsertDeclaracao(h, montarDeclaracao(comAjuste('2024', { devido: 50_000, pago: 44_000, aPagar: 6_000, aRestituir: 0 }, [pos('CDB', 1_000_000)]), '2024.DEC', 'agora')!)
+    h = upsertDeclaracao(h, montarDeclaracao(comAjuste('2025', { devido: 40_000, pago: 45_000, aPagar: 0, aRestituir: 5_000 }, [pos('CDB', 1_200_000, 1_000_000)]), '2025.DEC', 'agora')!)
+    h = upsertDeclaracao(h, montarDeclaracao(comAjuste('2026', undefined, [pos('CDB', 1_400_000, 1_200_000)]), '2026.DEC', 'agora')!)
+    const r = analisarConsistencia(h).anos
+    // 2024 paga o que a declaração de 2023 deixou a pagar
+    expect(r.find((x) => x.anoBase === 2024)!.ajusteDoAnoAnterior).toBe(6_000)
+    expect(r.find((x) => x.anoBase === 2024)!.fontes).toBe(294_000)
+    // 2025 recebe a restituição da declaração de 2024
+    expect(r.find((x) => x.anoBase === 2025)!.ajusteDoAnoAnterior).toBe(-5_000)
+    expect(r.find((x) => x.anoBase === 2025)!.fontes).toBe(305_000)
+    // o primeiro ano não tem ajuste anterior a pagar
+    expect(r.find((x) => x.anoBase === 2023)!.ajusteDoAnoAnterior).toBe(0)
+  })
+
   it('patrimônio que cresce mais do que a renda explica vira diferença a descoberto', () => {
     const h = historico(
       { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
@@ -584,8 +603,8 @@ describe('pagamentos que o próprio arquivo declara', () => {
 
 describe('o que falta a um ano lido por versão antiga', () => {
   it('lista só o que veio DEPOIS da versão que leu o ano', () => {
-    expect(oQueFaltaNaLeitura(6)).toEqual([GANHOS_DA_LEITURA[7]])
-    expect(oQueFaltaNaLeitura(4)).toEqual([GANHOS_DA_LEITURA[5], GANHOS_DA_LEITURA[6], GANHOS_DA_LEITURA[7]])
+    expect(oQueFaltaNaLeitura(7)).toEqual([GANHOS_DA_LEITURA[8]])
+    expect(oQueFaltaNaLeitura(5)).toEqual([GANHOS_DA_LEITURA[6], GANHOS_DA_LEITURA[7], GANHOS_DA_LEITURA[8]])
   })
 
   it('ano sem carimbo é o mais antigo de todos, e falta tudo', () => {

@@ -19,7 +19,7 @@
 //    parece crescimento que a renda não cobre. Por isso dívidas são informadas
 //    à mão, por ano, e o app avisa quando não foram.
 
-import { LEITURA_ATUAL, impostoNaFonte, type Historico } from './historico.js'
+import { LEITURA_ATUAL, impostoNaFonte, saldoDoAjuste, type Historico } from './historico.js'
 
 /** O que só a pessoa sabe — o arquivo não conta. */
 export interface EntradaAno {
@@ -45,11 +45,12 @@ export interface EntradaAno {
    */
   rendaForaDaDeclaracao?: number
   /**
-   * Custo de vida, doações feitas e o imposto pago à parte (o saldo do ajuste, o
-   * DARF) — o que saiu e não virou bem.
+   * Custo de vida, doações feitas e o imposto pago à parte que a declaração não
+   * traz (DARF de ganho de capital, de bolsa) — o que saiu e não virou bem.
    *
-   * O imposto retido na FONTE não entra aqui: a declaração o traz, e a conta o
-   * tira sozinha (ver `impostoNaFonte`). Pedi-lo à pessoa era pedir um número
+   * O imposto retido na FONTE não entra aqui, nem o saldo do ajuste anual: a
+   * declaração traz os dois, e a conta os tira sozinha (ver `impostoNaFonte` e
+   * `saldoDoAjuste`). Pedi-lo à pessoa era pedir um número
    * que ninguém soma de cabeça — e quem deixava de fora via o imposto virar
    * poupança, e o rendimento do capital sumir do mesmo tanto.
    */
@@ -123,6 +124,12 @@ export interface AnoAnalisado {
    * fontes: foi declarado como renda e nunca chegou à conta.
    */
   impostoNaFonte: number
+  /**
+   * O ajuste da declaração do ano ANTERIOR, que se paga (+) ou se recebe (−)
+   * neste. Sai das fontes junto com o da fonte. 0 sem o ano anterior importado
+   * ou sem o ajuste lido (leitura 8).
+   */
+  ajusteDoAnoAnterior: number
   /** Parte da renda que a declaração trata como tributável (base ou fonte). */
   rendimentosTributaveis: number
   /** Ficha de isentos e não tributáveis — renda recebida que a lei não tributa. */
@@ -413,11 +420,14 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     const decimoTerceiro = d.retencoes?.decimoTerceiro ?? 0
     const rendimentos = rendimentosDeclarados(d.vals) + decimoTerceiro
     const imposto = impostoNaFonte(d)
+    // o ajuste vem de UMA declaração atrás, e só se ela é do ano imediatamente
+    // anterior: com buraco no meio, o saldo pago é de um ano que não está aqui
+    const ajusteDoAnoAnterior = anterior && d.anoBase - anterior.anoBase === 1 ? saldoDoAjuste(anterior) : 0
     const rendimentosTributaveis = soma(d.vals, CHAVES_TRIBUTAVEIS)
     const rendimentosIsentos = d.vals.isentos || 0
     const receitasNaoRecorrentes = e.receitasNaoRecorrentes ?? 0
     const rendaForaDaDeclaracao = e.rendaForaDaDeclaracao ?? 0
-    const fontes = rendimentos - imposto + receitasNaoRecorrentes + rendaForaDaDeclaracao
+    const fontes = rendimentos - imposto - ajusteDoAnoAnterior + receitasNaoRecorrentes + rendaForaDaDeclaracao
 
     const despesas = e.despesas ?? 0
     const necessidade = evolucao + despesas
@@ -441,6 +451,7 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       rendimentos,
       decimoTerceiro,
       impostoNaFonte: imposto,
+      ajusteDoAnoAnterior,
       rendimentosTributaveis,
       rendimentosIsentos,
       receitasNaoRecorrentes,

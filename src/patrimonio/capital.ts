@@ -70,7 +70,10 @@ export interface AnoCapital {
    */
   aluguel: number
   gasto: number
-  /** IR retido, carnê-leão, INSS e IR do 13º — ver `impostoNaFonte`. */
+  /**
+   * IR retido, carnê-leão, INSS e IR do 13º (ver `impostoNaFonte`), mais o saldo
+   * do ajuste do ano anterior pago neste — ou menos a restituição recebida.
+   */
   impostos: number
   /**
    * Renda que a declaração não traz, informada à mão. Fica fora de `renda` (que
@@ -121,7 +124,8 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
     const comp = composicaoDoAno(d, opts)
     const renda = a.rendimentos
     const gasto = a.despesas
-    const impostos = a.impostoNaFonte
+    // o da fonte e o saldo do ajuste do ano passado, pago (ou recebido) neste
+    const impostos = a.impostoNaFonte + a.ajusteDoAnoAnterior
     const foraDaDeclaracao = a.rendaForaDaDeclaracao
     const poupado = renda + foraDaDeclaracao - impostos - gasto
     const naoRecorrente = a.receitasNaoRecorrentes
