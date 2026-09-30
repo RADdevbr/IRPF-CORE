@@ -210,6 +210,59 @@ describe('que posição é qual bem', () => {
     expect(ligarPosicoes(h, posicoesDoExtrato([linha]))[chaveDaPosicao(linha)].sugerido).toBeUndefined()
   })
 
+  describe('o palpite pelo dinheiro, quando o nome não diz nada', () => {
+    // O CRA que a B3 chama pelo código e a declaração pela securitizadora: não
+    // dividem palavra nenhuma. O CNPJ da linha do bem é o da corretora.
+    const CNPJ_XP = '02332886000104'
+    const CNPJ_BTG = '30306294000145'
+    const comPagadores = (h: Historico): Historico => {
+      const d = h['2024']
+      return {
+        ...h,
+        '2024': {
+          ...d,
+          porPagador: [
+            { alvo: 'cri', pagador: { id: `cnpj:${CNPJ_XP}`, cnpj: CNPJ_XP, nome: 'XP INVESTIMENTOS CCTVM S.A.' }, valor: 1 },
+            { alvo: 'cdb', pagador: { id: `cnpj:${CNPJ_BTG}`, cnpj: CNPJ_BTG, nome: 'BANCO BTG PACTUAL S.A.' }, valor: 1 },
+          ],
+        },
+      }
+    }
+    const CRA = 'CERTIFICADO DE RECEBIVEIS SECURITIZADORA AGRO 2029'
+    const linha = mov('Credito', '10/03/2024', 'APLICAÇÃO', 'CRA - CRA024001X9 - ECO SEC', 30_000)
+    const cra = (cnpj?: string, atual = 31_500, anterior = 0) => pos(CRA, anterior, atual, '45', cnpj)
+    const classeCri = (h: Historico): Historico => {
+      const d = h['2024']
+      return { ...h, '2024': { ...d, posicoes: d.posicoes.map((p) => (p.descricao === CRA ? { ...p, classe: 'cri' as const } : p)) } }
+    }
+    const ligar = (h: Historico) => ligarPosicoes(classeCri(comPagadores(h)), posicoesDoExtrato([linha]))[chaveDaPosicao(linha)]
+
+    it('o único bem do tipo, na mesma casa, que nasce no ano do tamanho da aplicação', () => {
+      const l = ligar(historico({ 2024: [cra(CNPJ_XP)] }))
+      expect(l.bem).toBeNull()
+      expect(l.sugerido?.id).toBe(idPosicao(CRA, 'cri'))
+      expect(l.sugerido?.porque).toMatch(/mesma instituição/)
+    })
+
+    it('em outra casa, ou sem CNPJ para dizer a casa, não', () => {
+      expect(ligar(historico({ 2024: [cra(CNPJ_BTG)] })).sugerido).toBeUndefined()
+      expect(ligar(historico({ 2024: [cra()] })).sugerido).toBeUndefined()
+    })
+
+    it('o bem que já existia, ou de outro tamanho, não', () => {
+      expect(ligar(historico({ 2024: [cra(CNPJ_XP, 31_500, 10_000)] })).sugerido).toBeUndefined()
+      expect(ligar(historico({ 2024: [cra(CNPJ_XP, 60_000)] })).sugerido).toBeUndefined()
+    })
+
+    it('dois que passam empatam, e empate fica sem palpite', () => {
+      const outro = 'CERTIFICADO SECURITIZADORA OUTRA 2030'
+      const h = historico({ 2024: [cra(CNPJ_XP), pos(outro, 0, 30_900, '45', CNPJ_XP)] })
+      const d = h['2024']
+      const h2 = { ...h, '2024': { ...d, posicoes: d.posicoes.map((p) => ({ ...p, classe: 'cri' as const })) } }
+      expect(ligarPosicoes(comPagadores(h2), posicoesDoExtrato([linha]))[chaveDaPosicao(linha)].sugerido).toBeUndefined()
+    })
+  })
+
   it('a resposta manda, inclusive para dizer «nenhum», e segue o vínculo entre anos', () => {
     const h = h2024()
     const ps = posicoesDoExtrato(EXTRATO)

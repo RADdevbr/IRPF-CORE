@@ -34,7 +34,7 @@ import {
   type Historico,
   type Vinculos,
 } from '../historico/historico.js'
-import { nomeDaInstituicao, nomesPorCnpj } from '../historico/instituicao.js'
+import { idInstituicao, nomeDaInstituicao, nomesPorCnpj } from '../historico/instituicao.js'
 import type { MovimentoDatado } from '../patrimonio/competencia.js'
 import { dinheiroDaLinha } from './fluxos.js'
 import { dataOrdenavel, type Movimento } from './movimentacao.js'
@@ -274,7 +274,92 @@ export function ligarPosicoes(
 
     saida[p.chave] = { bem: null, origem: 'nenhuma', ...sugestaoPeloNome(p, bens, nomeDoCnpj) }
   }
+
+  // Segunda passada: a renda fixa que o nome não ligou tenta pelo dinheiro — o
+  // bem do mesmo tipo de título que nasce no ano e do tamanho da aplicação. Só
+  // entre os bens que nenhuma outra posição já levou.
+  const tomados = new Set(Object.values(saida).flatMap((l) => [l.bem, l.sugerido?.id]).filter((x): x is string => !!x))
+  for (const p of posicoes) {
+    const l = saida[p.chave]
+    if (l.bem !== null || l.origem === 'resposta' || l.sugerido) continue
+    const s = sugestaoPeloValor(p, bens, tomados, nomeDoCnpj)
+    if (s.sugerido) {
+      saida[p.chave] = { ...l, ...s }
+      tomados.add(s.sugerido.id)
+    }
+  }
   return saida
+}
+
+/** Que classes de bem cada tipo de título da B3 pode ser. */
+const FAMILIA: [RegExp, ReadonlySet<ClassePatrimonio>][] = [
+  [/^(CRI|CRA)\b/, new Set<ClassePatrimonio>(['cri', 'desconhecido'])],
+  [/^(LCI|LCA|LIG)\b/, new Set<ClassePatrimonio>(['lci', 'desconhecido'])],
+  [/^(CDB|RDB|LC|LF)\b/, new Set<ClassePatrimonio>(['cdb', 'desconhecido'])],
+  [/^(DEB|DEBENTURE)\b/, new Set<ClassePatrimonio>(['debentureComum', 'debentureInc', 'desconhecido'])],
+  [/^(TESOURO|NTN|LTN|LFT)\b/, new Set<ClassePatrimonio>(['tesouro', 'desconhecido'])],
+]
+
+/**
+ * O palpite pelo dinheiro, para a renda fixa sem palavra em comum com o bem —
+ * o CRA que a B3 chama pelo código e a declaração pela securitizadora.
+ *
+ * Precisa de tudo isto, e de ser o ÚNICO bem que passa: mesmo tipo de título;
+ * a mesma casa — o CNPJ da linha do bem é, pelos rendimentos, da instituição
+ * do extrato (bem sem CNPJ não entra: o tipo e o tamanho sozinhos casariam o
+ * CDB de um banco com o de outro); o bem nasce no ano da primeira aplicação da
+ * posição (sem saldo no ano anterior); e o saldo de 31/12 daquele ano fica
+ * entre o aplicado e 30% acima (o juro de alguns meses). Dois bens que passam
+ * empatam — e empate fica sem palpite, porque a ligação errada põe o juro de
+ * um título no outro.
+ */
+function sugestaoPeloValor(
+  p: PosicaoDoExtrato,
+  bens: readonly BemParaLigar[],
+  tomados: ReadonlySet<string>,
+  nomeDoCnpj: Record<string, string>,
+): Pick<Ligacao, 'sugerido'> {
+  const produto = p.produto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim()
+  const familia = FAMILIA.find(([re]) => re.test(produto))?.[1]
+  if (!familia) return {}
+  const anosComDinheiro = Object.entries(p.porAno)
+    .filter(([, v]) => v > 0)
+    .map(([a]) => Number(a))
+    .sort((a, b) => a - b)
+  if (anosComDinheiro.length === 0) return {}
+  const ano = anosComDinheiro[0]
+  const aplicado = p.porAno[ano]
+  const passam = bens.filter((b) => {
+    if (tomados.has(b.id) || !familia.has(b.classe)) return false
+    const casa = b.cnpj ? nomeDoCnpj[b.cnpj] : undefined
+    if (!casa || !mesmaCasa(casa, p.instituicao)) return false
+    const s = b.saldos[ano]
+    if (!s || s.s0 > 0.005 || Math.min(...b.anos) !== ano) return false
+    const razao = s.s1 / aplicado
+    return razao >= 0.97 && razao <= 1.3
+  })
+  if (passam.length !== 1) return {}
+  return {
+    sugerido: {
+      id: passam[0].id,
+      porque: `mesmo tipo de título na mesma instituição, e o bem nasce em ${ano} com o saldo do tamanho do que entrou pelo extrato`,
+    },
+  }
+}
+
+/**
+ * A instituição do CNPJ do bem e a do extrato são a mesma: o mesmo nome curto
+ * (`nomeDaInstituicao` junta as grafias da lista) ou, fora da lista, uma palavra
+ * que distingue em comum — «BTG PACTUAL» e «BANCO BTG PACTUAL S/A».
+ */
+function mesmaCasa(a: string, b: string): boolean {
+  if (idInstituicao(nomeDaInstituicao(a)) === idInstituicao(nomeDaInstituicao(b))) return true
+  const de = new Set(palavras(a))
+  return palavras(b).some((w) => de.has(w))
 }
 
 /**
