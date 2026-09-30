@@ -45,6 +45,15 @@ export interface PosicaoB3 {
 /** Abas que o leitor não usa: a renda fixa e o Tesouro entram pela declaração, pelo saldo. */
 const FORA_DA_RENDA_VARIAVEL = /renda fixa|tesouro|emprestimo|provento|aluguel|custodia remunerada|resumo/
 
+/**
+ * O código de negociação de bolsa: quatro letras e o número — PETR4, HGLG11,
+ * BOVA11, AAPL34 —, às vezes com uma letra no fim (unit, recibo). É o que
+ * `aMercado` casa com a descrição do bem; o que não tem essa forma (a linha de
+ * Tesouro numa aba mista, a planilha qualquer com «Produto» e «Valor») não é
+ * papel de bolsa.
+ */
+const CODIGO_DE_NEGOCIACAO = /^[A-Z]{4}\d{1,2}[A-Z]?$/
+
 /** «Posição em 31/12/2024», «posicao-2024-12-31.xlsx», «Data: 31/12/2024». */
 function dataDoTexto(texto: string): string | null {
   const iso = texto.match(/(20\d{2})-(\d{2})-(\d{2})/)
@@ -101,7 +110,7 @@ export function lerPosicao(abas: readonly Aba[], nome = ''): PosicaoB3 | null {
       const valor = paraNumero(linha[col.valor])
       if (valor === null || valor <= 0) continue
       const ativo = tickerDoProduto(codigo || produto)
-      if (!ativo) continue
+      if (!CODIGO_DE_NEGOCIACAO.test(ativo)) continue
       itens.push({
         produto: produto || codigo,
         ativo,

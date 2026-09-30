@@ -80,6 +80,9 @@ capital a mercado, pela posição da B3.
 - `lerPosicao` (`b3/posicao.ts`): o relatório de posição da B3 — ação, FII,
   ETF e BDR com preço de fechamento e valor atualizado, de qualquer aba de
   renda variável, e a data da posição pelo nome do arquivo ou pelo cabeçalho.
+  Só entra linha com código de negociação (quatro letras e o número): a linha
+  de Tesouro numa aba mista, ou uma planilha qualquer com «Produto» e «Valor»,
+  não é posição de bolsa.
 - `aMercado` (`patrimonio/mercado.ts`): com a posição de 31/12, o valor de
   mercado de cada bem de bolsa (pelo ticker), o ganho não realizado do ano e a
   valorização — o ganho de um 31/12 menos o do anterior. `analiseCapital` e

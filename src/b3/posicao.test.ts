@@ -32,6 +32,10 @@ describe('a posição da B3', () => {
     expect(p?.itens[0].ativo).toBe('ITSA4')
   })
 
+  it('planilha com «Produto» e «Valor» mas sem código de negociação não é posição', () => {
+    expect(lerPosicao([aba('X', [['Produto', 'Valor'], ['A', '1'], ['Tesouro Selic 2029', '10000']])])).toBeNull()
+  })
+
   it('o extrato de movimentação não passa por posição', () => {
     expect(lerPosicao([aba('Movimentação', [['Entrada/Saída', 'Data', 'Movimentação', 'Produto', 'Instituição', 'Valor da Operação'], ['Credito', '10/03/2024', 'Rendimento', 'HGLG11', 'XP', '10']])])).toBeNull()
   })
