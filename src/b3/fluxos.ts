@@ -25,6 +25,7 @@ import { chaveAporte, type Aportes, type Historico } from '../historico/historic
 import { lerFluxo, type Movimento } from './movimentacao.js'
 import { respostaGuardada } from './leitura.js'
 import { casarAtivo, classificarParaCarteira, papelNoPatrimonio, type PapelNaCarteira } from './papel.js'
+import { leituraNoPatrimonio, type EfeitoNoPatrimonio } from './efeito.js'
 import { tickerDoProduto } from './produto.js'
 
 export interface FluxoAtivo {
@@ -87,19 +88,15 @@ export type DinheiroDaLinha =
   | { tipo: 'semFluxo' }
 
 export function dinheiroDaLinha(l: Movimento, papeis: Record<string, PapelNaCarteira> = {}): DinheiroDaLinha {
-  // «indefinido» guardado é a AUSÊNCIA de resposta, não uma resposta: tratá-lo
-  // como escolha da pessoa faria o palpite do vocabulário nunca rodar, e todo
-  // resgate de renda fixa cairia fora — que é onde este caminho mais serve.
-  const respondido = respostaGuardada(papeis, l.movimentacao)
-  const papel =
-    (respondido && respondido !== 'indefinido' ? respondido : null) ??
-    papelNoPatrimonio(l.movimentacao) ??
-    classificarParaCarteira(l.movimentacao).papel
-  // 'quantidade' (desdobro, bonificação) troca papel por papel e não move
-  // dinheiro; 'ignorar' é provento, que entra pelo caminho da renda
-  if (papel === 'ignorar' || papel === 'quantidade') return { tipo: 'fora' }
-  if (papel === 'indefinido') return { tipo: 'indefinida' }
+  const efeito = efeitoDaLinha(l.movimentacao, papeis)
+  if (efeito === null) return { tipo: 'indefinida' }
+  // provento entra pelo caminho da renda; o resto não move o dinheiro do papel
+  if (efeito !== 'fluxo' && efeito !== 'devolucao') return { tipo: 'fora' }
   if (l.valor === null) return { tipo: 'fora' }
+  // A devolução é dinheiro saindo do papel QUALQUER que seja o lado: a B3
+  // escreve «Credito» porque o dinheiro foi creditado no bolso. Ler pelo lado
+  // punha cada amortização como aporte (ver `efeito.ts`).
+  if (efeito === 'devolucao') return { tipo: 'dinheiro', valor: -Math.abs(l.valor) }
   // Sem saber se entrou ou saiu, a linha não tem lado: contá-la como aporte
   // (o padrão silencioso de antes) transformava resgate em dinheiro novo, que
   // é exatamente o erro que este caminho existe para corrigir.
@@ -107,6 +104,28 @@ export function dinheiroDaLinha(l: Movimento, papeis: Record<string, PapelNaCart
   if (fluxo === 'desconhecido') return { tipo: 'semFluxo' }
   return { tipo: 'dinheiro', valor: fluxo === 'entrada' ? Math.abs(l.valor) : -Math.abs(l.valor) }
 }
+
+/**
+ * O efeito de um tipo de movimentação no dinheiro do papel: a resposta da
+ * pessoa, senão a tabela da B3 (`leituraNoPatrimonio`), senão os palpites
+ * antigos. `null` = ninguém sabe, e a linha fica fora das contas.
+ *
+ * A resposta é guardada no vocabulário da carteira (`PapelNaCarteira`), que é
+ * o que as telas perguntam; aqui ela vira efeito.
+ */
+export function efeitoDaLinha(movimentacao: string, papeis: Record<string, PapelNaCarteira> = {}): EfeitoNoPatrimonio | null {
+  // «indefinido» guardado é a AUSÊNCIA de resposta, não uma resposta: tratá-lo
+  // como escolha da pessoa faria o palpite da tabela nunca rodar.
+  const respondido = respostaGuardada(papeis, movimentacao)
+  if (respondido && respondido !== 'indefinido') return efeitoDoPapel(respondido)
+  const leitura = leituraNoPatrimonio(movimentacao)
+  if (leitura) return leitura.efeito
+  return efeitoDoPapel(papelNoPatrimonio(movimentacao) ?? classificarParaCarteira(movimentacao).papel)
+}
+
+/** A resposta da carteira, lida como efeito no dinheiro do papel. */
+const efeitoDoPapel = (papel: PapelNaCarteira): EfeitoNoPatrimonio | null =>
+  papel === 'negocio' ? 'fluxo' : papel === 'ignorar' ? 'provento' : papel === 'quantidade' ? 'semDinheiro' : null
 
 /**
  * Os mesmos fluxos, lidos do Extrato de Movimentação como `lerMovimentacao` o entrega.
