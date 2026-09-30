@@ -5,8 +5,12 @@
 // trabalhando.
 //
 //   poupado          = renda declarada − gasto informado
-//   embutido         = crescimento do patrimônio − poupado
+//   embutido         = crescimento do patrimônio − poupado − entradas não recorrentes
 //   rendimento total = embutido + a renda que já veio do capital
+//
+// A entrada não recorrente (herança, doação recebida) é dinheiro de FORA da
+// carteira, como a renda do trabalho. Deixá-la no embutido a fazia passar por
+// rendimento do capital: quem herdou parecia ter tido um ano excepcional.
 //
 // O "embutido" precisa dessa soma no fim para virar retorno comparável: o
 // dividendo que caiu na conta e foi reinvestido aparece nas DUAS pontas (é
@@ -63,7 +67,9 @@ export interface AnoCapital {
   gasto: number
   /** renda − gasto: o que sobrou do seu bolso para virar patrimônio. */
   poupado: number
-  /** Crescimento que o que você poupou não explica. */
+  /** Entradas não recorrentes informadas (herança, doação recebida): dinheiro de fora, e não do capital. */
+  naoRecorrente: number
+  /** Crescimento que o que você poupou e as entradas não recorrentes não explicam. */
   embutido: number
   /** embutido + renda de capital: o que o patrimônio produziu no ano. */
   rendimento: number
@@ -94,7 +100,8 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
     const renda = a.rendimentos
     const gasto = a.despesas
     const poupado = renda - gasto
-    const embutido = a.evolucao - poupado
+    const naoRecorrente = a.receitasNaoRecorrentes
+    const embutido = a.evolucao - poupado - naoRecorrente
     const rendimento = embutido + comp.capital
     const medio = (a.liquidoInicial + a.liquidoFinal) / 2
 
@@ -116,6 +123,7 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
         .reduce((t, f) => t + f.valor, 0),
       gasto,
       poupado,
+      naoRecorrente,
       embutido,
       rendimento,
       retorno: medio > 0 ? rendimento / medio : null,

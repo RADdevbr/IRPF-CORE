@@ -100,6 +100,16 @@ describe('rendimento do capital', () => {
     expect(a.retorno).toBeCloseTo(200_000 / 1_150_000, 6)
   })
 
+  it('herança informada é dinheiro de fora: não vira rendimento do capital', () => {
+    const r = analiseCapital(base(), { 2024: { despesas: 200_000, receitasNaoRecorrentes: 80_000 } })
+    const a = r.anos.find((x) => x.anoBase === 2024)!
+    expect(a.naoRecorrente).toBe(80_000)
+    expect(a.embutido).toBe(20_000) // 300k − 200k poupados − 80k herdados
+    expect(a.rendimento).toBe(120_000)
+    // e a conta fecha: poupado + não recorrente + embutido = crescimento
+    expect(a.poupado + a.naoRecorrente + a.embutido).toBe(a.crescimento)
+  })
+
   it('dividendo da PJ contado como trabalho sai do rendimento do capital', () => {
     const r = analiseCapital(base(), { 2024: { despesas: 200_000 } }, { dividendosSaoTrabalho: true })
     const a = r.anos.find((x) => x.anoBase === 2024)!

@@ -32,6 +32,14 @@ A versão sobe no mesmo PR que muda o núcleo, com a entrada aqui. O teste
 
 ## [Não publicado]
 
+## [1.2.0] — 2026-09-30
+
+### Adicionado
+
+- `analiseCapital` devolve `naoRecorrente` — herança e doação recebida
+  informadas —, e o `embutido` passa a descontá-lo. Era dinheiro de fora contado
+  como rendimento do capital.
+
 ## [1.1.0] — 2026-09-29
 
 O extrato da B3 passa a ser do núcleo, e o juro por competência passa a usar as
