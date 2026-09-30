@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { composicaoRenda, sugerirOrigens, type OrigemPorPagador } from './renda.js'
+import { composicaoDoAno, composicaoRenda, sugerirOrigens, type OrigemPorPagador } from './renda.js'
 import type { RendaPorPagador } from '../historico/historico.js'
 
 const pag = (alvo: string, id: string, valor: number): RendaPorPagador => ({
@@ -24,6 +24,12 @@ describe('origem por pagador', () => {
     expect(c.capital).toBe(120_000)
     expect(c.total).toBe(580_000)
     expect(c.fracaoCapital).toBeCloseTo(120_000 / 580_000, 6)
+  })
+
+  it('o 13º do Registro 21 entra como trabalho', () => {
+    const c = composicaoDoAno({ vals, porPagador, retencoes: { decimoTerceiro: 9_000 } }, { origens: { [CLINICA]: 'trabalho', [ITAUSA]: 'capital' } })
+    expect(c.trabalho).toBe(469_000)
+    expect(c.fontes.find((f) => f.chave === 'decimoTerceiro')).toMatchObject({ valor: 9_000, origem: 'trabalho' })
   })
 
   it('a ficha dividida vira duas fatias, com identidade distinta', () => {

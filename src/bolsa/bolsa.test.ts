@@ -88,6 +88,23 @@ describe('eventos que mexem na quantidade', () => {
     perto(r.meses[5].resultado.comum, 600)
   })
 
+  it('amortização devolve capital: sai do custo, não da quantidade, e a venda seguinte ganha mais', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 100, 100), venda(6, 'A', 100, 100)],
+      eventos: [{ ano: 2026, mes: 3, ticker: 'A', delta: 0, devolucao: 1_000 }],
+    })
+    // custo de 10.000 − 1.000 devolvidos = 9.000; vende por 10.000 → ganho de 1.000
+    perto(r.meses[5].resultado.fii + r.meses[5].resultado.comum, 1_000)
+  })
+
+  it('devolução maior que o custo zera o custo, e não o deixa negativo', () => {
+    const r = apurar({
+      operacoes: [compra(1, 'A', 10, 10)],
+      eventos: [{ ano: 2026, mes: 3, ticker: 'A', delta: 0, devolucao: 500 }],
+    })
+    expect(r.posicaoFinal).toEqual([{ ticker: 'A', quantidade: 10, custoMedio: 0 }])
+  })
+
   it('grupamento 2:1 corta a quantidade e dobra o custo unitário', () => {
     const r = apurar({
       operacoes: [compra(1, 'A', 100, 10)],

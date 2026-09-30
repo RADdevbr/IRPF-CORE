@@ -208,6 +208,10 @@ export function lerMovimentacao(abas: Aba[]): Movimentacao | null {
     if (iCab < 0) continue
 
     const cab = aba.linhas[iCab]
+    // O de Negociação também tem «Movimentação» e «Data» no cabeçalho, e lido
+    // como movimentação dava mil linhas sem produto e sem lado. Ele tem leitor
+    // próprio (`lerNegociacao`).
+    if (acharColuna(cab, 'data do negocio') >= 0 && acharColuna(cab, 'produto') < 0) continue
     const col = {
       fluxo: acharColuna(cab, 'entrada/saida', 'entrada / saida', 'entrada'),
       data: acharColuna(cab, 'data'),

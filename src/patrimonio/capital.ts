@@ -4,9 +4,14 @@
 // patrimônio cresceu além disso não veio do seu bolso, veio do próprio dinheiro
 // trabalhando.
 //
-//   poupado          = renda declarada − gasto informado
+//   poupado          = renda declarada + renda fora da declaração − imposto na fonte − gasto informado
 //   embutido         = crescimento do patrimônio − poupado − entradas não recorrentes
 //   rendimento total = embutido + a renda que já veio do capital
+//
+// O imposto na fonte (IR retido, INSS, IR do 13º) sai do poupado porque a
+// declaração o lista como renda e ele nunca chegou à conta. Deixá-lo dentro
+// punha um dinheiro que não existe como «poupado», e o crescimento que ele não
+// explicava era cobrado do capital: o rendimento encolhia do tamanho do imposto.
 //
 // A entrada não recorrente (herança, doação recebida) é dinheiro de FORA da
 // carteira, como a renda do trabalho. Deixá-la no embutido a fazia passar por
@@ -65,7 +70,17 @@ export interface AnoCapital {
    */
   aluguel: number
   gasto: number
-  /** renda − gasto: o que sobrou do seu bolso para virar patrimônio. */
+  /**
+   * IR retido, carnê-leão, INSS e IR do 13º (ver `impostoNaFonte`), mais o saldo
+   * do ajuste do ano anterior pago neste — ou menos a restituição recebida.
+   */
+  impostos: number
+  /**
+   * Renda que a declaração não traz, informada à mão. Fica fora de `renda` (que
+   * é o que a declaração diz) e entra no poupado: é dinheiro de fora da carteira.
+   */
+  foraDaDeclaracao: number
+  /** renda + fora da declaração − impostos − gasto: o que sobrou do seu bolso para virar patrimônio. */
   poupado: number
   /** Entradas não recorrentes informadas (herança, doação recebida): dinheiro de fora, e não do capital. */
   naoRecorrente: number
@@ -73,7 +88,27 @@ export interface AnoCapital {
   embutido: number
   /** embutido + renda de capital: o que o patrimônio produziu no ano. */
   rendimento: number
-  /** rendimento ÷ patrimônio médio do ano. Sem patrimônio, null. */
+  /**
+   * O gasto que a conta pede, quando o informado não fecha. `null` quando fecha.
+   *
+   * Embutido negativo diz que o patrimônio cresceu MENOS do que sobrou da renda:
+   * saiu dinheiro que ninguém contou. Ou o gasto foi maior — é o número mais
+   * chutado da conta —, ou algum bem foi vendido abaixo do custo. Este é o gasto
+   * que zera o embutido: PISO, porque o capital quase sempre rende algo além do
+   * que distribui. A tela o mostra ao lado do informado em vez de corrigir.
+   */
+  gastoQueFecha: number | null
+  /**
+   * O que a bolsa valorizou no ano e a declaração não conta — ação, FII e ETF a
+   * mercado, pela posição da B3 (ver `aMercado`). `null` sem as posições dos dois
+   * 31/12. Fica FORA de `rendimento`, que é o que a declaração mostra, e entra no
+   * retorno.
+   */
+  valorizacao: number | null
+  /**
+   * (rendimento + valorização) ÷ patrimônio médio do ano — a mercado quando há a
+   * valorização. Sem patrimônio, null.
+   */
   retorno: number | null
   /** Gasto do ano não informado: o rendimento aqui é PISO, não estimativa. */
   semGasto: boolean
@@ -91,7 +126,15 @@ export interface AnaliseCapital {
   totalPoupado: number
 }
 
-export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: OpcoesOrigem = {}): AnaliseCapital {
+/** O ganho não realizado de cada 31/12 e a valorização do ano — ver `aMercado`. */
+export type ValorizacaoPorAno = Record<number, { ganho: number; valorizacao: number | null }>
+
+export function analiseCapital(
+  h: Historico,
+  entradas: Entradas = {},
+  opts: OpcoesOrigem = {},
+  mercado: ValorizacaoPorAno = {},
+): AnaliseCapital {
   const consistencia = analisarConsistencia(h, entradas)
 
   const anos: AnoCapital[] = consistencia.anos.map((a) => {
@@ -99,11 +142,20 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
     const comp = composicaoDoAno(d, opts)
     const renda = a.rendimentos
     const gasto = a.despesas
-    const poupado = renda - gasto
+    // o da fonte e o saldo do ajuste do ano passado, pago (ou recebido) neste
+    const impostos = a.impostoNaFonte + a.ajusteDoAnoAnterior
+    const foraDaDeclaracao = a.rendaForaDaDeclaracao
+    const poupado = renda + foraDaDeclaracao - impostos - gasto
     const naoRecorrente = a.receitasNaoRecorrentes
     const embutido = a.evolucao - poupado - naoRecorrente
     const rendimento = embutido + comp.capital
-    const medio = (a.liquidoInicial + a.liquidoFinal) / 2
+    const m = mercado[a.anoBase]
+    const valorizacao = m?.valorizacao ?? null
+    // a mercado, o patrimônio dos dois 31/12 soma o ganho que a declaração não mostra
+    const medio =
+      valorizacao !== null
+        ? (a.liquidoInicial + (mercado[a.anoBase - 1]?.ganho ?? 0) + a.liquidoFinal + (m?.ganho ?? 0)) / 2
+        : (a.liquidoInicial + a.liquidoFinal) / 2
 
     return {
       anoBase: a.anoBase,
@@ -122,11 +174,17 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
         .filter((f) => f.chave === 'aluguel')
         .reduce((t, f) => t + f.valor, 0),
       gasto,
+      impostos,
+      foraDaDeclaracao,
       poupado,
       naoRecorrente,
       embutido,
       rendimento,
-      retorno: medio > 0 ? rendimento / medio : null,
+      valorizacao,
+      // Sem gasto informado não há o que confrontar: o embutido negativo ali é
+      // só o gasto que falta, e a tela já pede o gasto.
+      gastoQueFecha: !a.semDespesas && embutido < -1 ? gasto - embutido : null,
+      retorno: medio > 0 ? (rendimento + (valorizacao ?? 0)) / medio : null,
       semGasto: a.semDespesas,
       semAnoAnterior: a.semAnoAnterior,
       anosCobertos: a.anosCobertos,
@@ -272,8 +330,9 @@ export function retornoVsIndices(
   entradas: Entradas = {},
   benchmarks: BenchmarksInformados = {},
   opts: OpcoesOrigem = {},
+  mercado: ValorizacaoPorAno = {},
 ): RetornoVsIndices {
-  const analise = analiseCapital(h, entradas, opts)
+  const analise = analiseCapital(h, entradas, opts, mercado)
   const temCdi = ultimoFechamento('cdi', benchmarks) !== null
   const temSelic = ultimoFechamento('selic', benchmarks) !== null
   const indiceCdi = temCdi ? 'cdi' : 'selic'

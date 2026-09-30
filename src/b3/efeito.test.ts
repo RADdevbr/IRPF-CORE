@@ -33,13 +33,26 @@ describe('a tabela da B3: o que cada tipo faz com o dinheiro do papel', () => {
       'RESGATE ANTECIPADO',
       'RESGATE ANTECIPADO/',
       'VENCIMENTO',
+      'COMPRA/VENDA DEFINITIVA A TERMO',
     ]) {
       expect(efeito(t), t).toBe('fluxo')
     }
   })
 
   it('evento em dinheiro que devolve capital: sai do papel, com «Credito» na linha', () => {
-    for (const t of ['Amortização', 'AMORTIZAÇÃO', 'Resgate', 'Restituição de Capital', 'Leilão de Fração', 'VENCIMENTO/RESGATE SALDO EM CONTA']) {
+    for (const t of [
+      'Amortização',
+      'AMORTIZAÇÃO',
+      'Resgate',
+      'Restituição de Capital',
+      'Leilão de Fração',
+      'VENCIMENTO/RESGATE SALDO EM CONTA',
+      'AMORTIZACAO PROGRAMADA',
+      'AMORTIZAÇÃO EXTRAORDINÁRIA',
+      'AMORT. EXTRAORDINÁRIA',
+      'ANTECIPACAO',
+      'EVENTO GENÉRICO',
+    ]) {
       expect(efeito(t), t).toBe('devolucao')
     }
   })
@@ -134,6 +147,15 @@ describe('o dinheiro de cada linha', () => {
     expect(dinheiroDaLinha(linha('Credito', 'Transferência - Liquidação', 3000))).toEqual({ tipo: 'dinheiro', valor: 3000 })
     expect(dinheiroDaLinha(linha('Debito', 'RESGATE ANTECIPADO', 5000))).toEqual({ tipo: 'dinheiro', valor: -5000 })
     expect(dinheiroDaLinha(linha('Debito', 'VENCIMENTO', 10_000))).toEqual({ tipo: 'dinheiro', valor: -10_000 })
+  })
+
+  it('o evento do emissor de CRI e CRA vem como «Debito» e sai do papel do mesmo jeito', () => {
+    // as linhas do dossiê: quantidade que a pessoa tem vezes o PU do evento
+    expect(dinheiroDaLinha(linha('Debito', 'EVENTO GENÉRICO', 439, 'CRI - CRI0000000X', 7))).toEqual({ tipo: 'dinheiro', valor: -439 })
+    expect(dinheiroDaLinha(linha('Debito', 'ANTECIPACAO', 1730, 'CRA - CRA0000000Y', 2))).toEqual({ tipo: 'dinheiro', valor: -1730 })
+    expect(dinheiroDaLinha(linha('Debito', 'AMORTIZACAO PROGRAMADA', 15, 'CRA - CRA0000000Y', 2))).toEqual({ tipo: 'dinheiro', valor: -15 })
+    // sem valor, fica de fora como qualquer outro
+    expect(dinheiroDaLinha(linha('Debito', 'EVENTO GENÉRICO', null, 'CRA - CRA0000000Y', 1))).toEqual({ tipo: 'fora' })
   })
 
   it('vencimento sem valor fica de fora: o dinheiro não está no extrato', () => {

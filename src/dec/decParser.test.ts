@@ -22,6 +22,19 @@ function reg21(nome: string, rendCents: number, irCents: number): string {
   numField(b, 127, irCents)
   return b.join('')
 }
+// O resto do 21: INSS 101-113, 13º 114-126, IR do 13º 148-160.
+function reg21Completo(nome: string, c: { rend: number; ir: number; inss: number; decimo: number; irDecimo: number }): string {
+  const b = blank(170)
+  put(b, 1, '21', 2)
+  put(b, 28, nome, 60)
+  numField(b, 88, c.rend)
+  numField(b, 101, c.inss)
+  numField(b, 114, c.decimo)
+  numField(b, 127, c.ir)
+  put(b, 140, '        ', 8)
+  numField(b, 148, c.irDecimo)
+  return b.join('')
+}
 // REGISTRO 33: dividendos — nome 34-93, valor 94-106.
 function reg33(nome: string, lucroCents: number): string {
   const b = blank(127)
@@ -234,6 +247,46 @@ describe('parseDec — leitura posicional', () => {
     expect(cnpjValido('34508872000188')).toBeUndefined()
     expect(cnpjValido('00000000000000')).toBeUndefined()
     expect(cnpjValido('123')).toBeUndefined()
+  })
+
+  it('lê o INSS, o 13º e o IR do 13º do registro 21 — ao lado, e não como renda', () => {
+    const r = parseDec(
+      'IRPF 2024\r\n' +
+        reg21Completo('EMPRESA X', { rend: 7436921, ir: 1120120, inss: 721315, decimo: 762875, irDecimo: 169454 }) + '\r\n' +
+        reg21Completo('MINHA PJ', { rend: 1566000, ir: 0, inss: 172260, decimo: 0, irDecimo: 0 }) + '\r\n',
+    )
+    expect(r.retencoes).toEqual([
+      { linha: 2, cnpj: expect.any(String), fonte: 'EMPRESA X', previdencia: 7213.15, decimoTerceiro: 7628.75, irDecimoTerceiro: 1694.54 },
+      { linha: 3, cnpj: expect.any(String), fonte: 'MINHA PJ', previdencia: 1722.6, decimoTerceiro: 0, irDecimoTerceiro: 0 },
+    ])
+    // nada disso vira lançamento: somaria em `vals`, e daí na base do IRPFM
+    expect(r.lancamentos.map((l) => l.alvo).sort()).toEqual(['salario', 'salario', 'salario_ir'])
+  })
+
+  it('desconto maior que o salário é coluna no lugar errado: a linha fica sem retenção', () => {
+    const r = parseDec('IRPF 2024\r\n' + reg21Completo('X', { rend: 100000, ir: 0, inss: 5000000, decimo: 0, irDecimo: 0 }) + '\r\n')
+    expect(r.retencoes).toEqual([])
+    const r2 = parseDec('IRPF 2024\r\n' + reg21Completo('X', { rend: 100000, ir: 0, inss: 0, decimo: 1000, irDecimo: 9000 }) + '\r\n')
+    expect(r2.retencoes).toEqual([])
+  })
+
+  it('lê o ajuste do Registro 20 só quando a conta do Resumo fecha', () => {
+    const reg20 = (devido: number, pago: number, restituir: number, pagar: number) => {
+      const b = blank(900)
+      put(b, 1, '20', 2)
+      numField(b, 209, devido)
+      numField(b, 352, pago)
+      numField(b, 365, restituir)
+      numField(b, 378, pagar)
+      return b.join('')
+    }
+    // os números do arquivo real: devido 48.922,03, pago 43.334,41, a pagar 5.587,62
+    const r = parseDec('IRPF 2024\r\n' + reg20(4892203, 4333441, 0, 558762) + '\r\n')
+    expect(r.ajuste).toEqual({ devido: 48922.03, pago: 43334.41, aRestituir: 0, aPagar: 5587.62 })
+    // coluna no lugar errado: a conta não fecha, e o ajuste não vem
+    expect(parseDec('IRPF 2024\r\n' + reg20(4892203, 4333441, 0, 999) + '\r\n').ajuste).toBeUndefined()
+    // restituição
+    expect(parseDec('IRPF 2024\r\n' + reg20(1000000, 1500000, 500000, 0) + '\r\n').ajuste).toMatchObject({ aRestituir: 5000, aPagar: 0 })
   })
 
   it('ignora campos zerados (não gera lançamento)', () => {
