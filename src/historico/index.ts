@@ -9,6 +9,7 @@
 export * from './historico.js'
 export * from './vinculoAuto.js'
 export * from './continuidade.js'
+export * from './classePorCodigo.js'
 export * from './consistencia.js'
 export * from './instituicao.js'
 export { BotaoVinculo, PainelVinculo } from './VinculoBem.js'
