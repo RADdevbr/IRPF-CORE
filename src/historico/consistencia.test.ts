@@ -111,6 +111,10 @@ describe('um ano de cada vez', () => {
     expect(a.decimoTerceiro).toBe(20_000)
     expect(a.impostoNaFonte).toBe(79_000)
     expect(a.fontes).toBe(241_000) // 320k − 79k
+    // a renda que a declaração não traz entra à mão, e soma às fontes
+    const comFora = analisarConsistencia(h, { 2024: { rendaForaDaDeclaracao: 30_000 } }).anos.find((x) => x.anoBase === 2024)!
+    expect(comFora.rendaForaDaDeclaracao).toBe(30_000)
+    expect(comFora.fontes).toBe(271_000)
     // ano lido antes da versão 7: sem 13º e sem INSS, mas o IR retido já estava lá
     const antigo = upsertDeclaracao(h, { ...h['2024'], retencoes: undefined })
     const b = analisarConsistencia(antigo).anos.find((x) => x.anoBase === 2024)!

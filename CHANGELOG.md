@@ -49,6 +49,10 @@ O imposto retido na fonte deixa de passar por dinheiro poupado, e a leitura do
   embutido quando o patrimônio cresceu menos do que sobrou da renda (piso: com
   ele, o capital rende pelo menos o que distribuiu).
 - `AnoAnalisado.decimoTerceiro` e `AnoAnalisado.impostoNaFonte`.
+- `EntradaAno.rendaForaDaDeclaracao`: renda que a declaração não traz,
+  informada à mão. Soma às fontes da consistência e ao poupado
+  (`AnoCapital.foraDaDeclaracao`) — sem ela, o patrimônio que cresceu com esse
+  dinheiro passava por rendimento do capital.
 - O 13º entra na composição da renda como trabalho (`composicaoDoAno`).
 - Tabela da B3: `AMORTIZACAO PROGRAMADA`, `AMORTIZACAO EXTRAORDINARIA`,
   `AMORT. EXTRAORDINARIA`, `ANTECIPACAO` e `EVENTO GENERICO` como devolução

@@ -4,7 +4,7 @@
 // patrimônio cresceu além disso não veio do seu bolso, veio do próprio dinheiro
 // trabalhando.
 //
-//   poupado          = renda declarada − imposto na fonte − gasto informado
+//   poupado          = renda declarada + renda fora da declaração − imposto na fonte − gasto informado
 //   embutido         = crescimento do patrimônio − poupado − entradas não recorrentes
 //   rendimento total = embutido + a renda que já veio do capital
 //
@@ -72,7 +72,12 @@ export interface AnoCapital {
   gasto: number
   /** IR retido, carnê-leão, INSS e IR do 13º — ver `impostoNaFonte`. */
   impostos: number
-  /** renda − impostos − gasto: o que sobrou do seu bolso para virar patrimônio. */
+  /**
+   * Renda que a declaração não traz, informada à mão. Fica fora de `renda` (que
+   * é o que a declaração diz) e entra no poupado: é dinheiro de fora da carteira.
+   */
+  foraDaDeclaracao: number
+  /** renda + fora da declaração − impostos − gasto: o que sobrou do seu bolso para virar patrimônio. */
   poupado: number
   /** Entradas não recorrentes informadas (herança, doação recebida): dinheiro de fora, e não do capital. */
   naoRecorrente: number
@@ -117,7 +122,8 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
     const renda = a.rendimentos
     const gasto = a.despesas
     const impostos = a.impostoNaFonte
-    const poupado = renda - impostos - gasto
+    const foraDaDeclaracao = a.rendaForaDaDeclaracao
+    const poupado = renda + foraDaDeclaracao - impostos - gasto
     const naoRecorrente = a.receitasNaoRecorrentes
     const embutido = a.evolucao - poupado - naoRecorrente
     const rendimento = embutido + comp.capital
@@ -141,6 +147,7 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
         .reduce((t, f) => t + f.valor, 0),
       gasto,
       impostos,
+      foraDaDeclaracao,
       poupado,
       naoRecorrente,
       embutido,

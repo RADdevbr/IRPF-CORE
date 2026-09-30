@@ -36,6 +36,15 @@ export interface EntradaAno {
   /** Venda de bens, empréstimos tomados, doações e heranças recebidas, resgates. */
   receitasNaoRecorrentes?: number
   /**
+   * Renda do ano que a declaração não traz — o trabalho recebido por fora, o
+   * dinheiro de conta no exterior, o que caiu na conta de quem não declara.
+   *
+   * Entra do lado do que a pessoa pôs, e não do capital: sem ela, o patrimônio
+   * que cresceu com esse dinheiro fazia a conta dizer que foi o capital que
+   * rendeu. Recorrente, ao contrário da herança: a projeção a leva adiante.
+   */
+  rendaForaDaDeclaracao?: number
+  /**
    * Custo de vida, doações feitas e o imposto pago à parte (o saldo do ajuste, o
    * DARF) — o que saiu e não virou bem.
    *
@@ -84,13 +93,13 @@ const comMarca = (e: EntradaAno, campo: CampoEstimavel, valor: boolean): Entrada
 export function definirCampo(
   entradas: Entradas,
   ano: number,
-  campo: 'despesas' | 'dividas' | 'receitasNaoRecorrentes',
+  campo: 'despesas' | 'dividas' | 'receitasNaoRecorrentes' | 'rendaForaDaDeclaracao',
   valor: number,
 ): Entradas {
   const chave = String(ano)
   const atual = entradas[chave] ?? {}
   const base: EntradaAno =
-    campo === 'receitasNaoRecorrentes' ? { ...atual } : comMarca(atual, campo, false)
+    campo === 'receitasNaoRecorrentes' || campo === 'rendaForaDaDeclaracao' ? { ...atual } : comMarca(atual, campo, false)
   return { ...entradas, [chave]: { ...base, [campo]: valor } }
 }
 
@@ -119,6 +128,8 @@ export interface AnoAnalisado {
   /** Ficha de isentos e não tributáveis — renda recebida que a lei não tributa. */
   rendimentosIsentos: number
   receitasNaoRecorrentes: number
+  /** Renda informada à mão que a declaração não traz. Soma às fontes. */
+  rendaForaDaDeclaracao: number
   fontes: number
   despesas: number
   necessidade: number
@@ -405,7 +416,8 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     const rendimentosTributaveis = soma(d.vals, CHAVES_TRIBUTAVEIS)
     const rendimentosIsentos = d.vals.isentos || 0
     const receitasNaoRecorrentes = e.receitasNaoRecorrentes ?? 0
-    const fontes = rendimentos - imposto + receitasNaoRecorrentes
+    const rendaForaDaDeclaracao = e.rendaForaDaDeclaracao ?? 0
+    const fontes = rendimentos - imposto + receitasNaoRecorrentes + rendaForaDaDeclaracao
 
     const despesas = e.despesas ?? 0
     const necessidade = evolucao + despesas
@@ -432,6 +444,7 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       rendimentosTributaveis,
       rendimentosIsentos,
       receitasNaoRecorrentes,
+      rendaForaDaDeclaracao,
       fontes,
       despesas,
       necessidade,

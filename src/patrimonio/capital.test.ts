@@ -128,6 +128,17 @@ describe('rendimento do capital', () => {
     expect(a.gastoQueFecha).toBe(null)
   })
 
+  it('renda fora da declaração é dinheiro de fora: entra no poupado, e não no rendimento do capital', () => {
+    const r = analiseCapital(base(), { 2024: { despesas: 200_000, rendaForaDaDeclaracao: 60_000 } })
+    const a = r.anos.find((x) => x.anoBase === 2024)!
+    expect(a.renda).toBe(400_000) // a renda continua sendo a da declaração
+    expect(a.foraDaDeclaracao).toBe(60_000)
+    expect(a.poupado).toBe(260_000) // 400k + 60k − 200k
+    expect(a.embutido).toBe(40_000) // 300k − 260k
+    expect(a.rendimento).toBe(140_000) // e não os 200k de quando ela passava por rendimento
+    expect(a.poupado + a.naoRecorrente + a.embutido).toBe(a.crescimento)
+  })
+
   it('quando o patrimônio cresce menos do que sobrou, a linha diz o gasto que fecharia a conta', () => {
     // 400k de renda e 50k de gasto informado: sobram 350k, e o patrimônio só
     // cresceu 300k — saíram 50k que ninguém contou
