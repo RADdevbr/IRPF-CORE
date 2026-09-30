@@ -109,6 +109,12 @@ const normal = (s: string) =>
  * Os textos vieram de um extrato de movimentação real. Quem não estiver aqui
  * continua indo para o classificador da bolsa e, se ele também não souber, a
  * tela pergunta — o app não chuta.
+ *
+ * O dinheiro de cada linha, no patrimônio, já não sai daqui: sai da tabela
+ * inteira da B3 (`leituraNoPatrimonio`, em `efeito.ts`), que sabe o que esta
+ * não sabe — que o «Resgate» pago pelo emissor e a amortização vêm como
+ * «Credito» e são dinheiro SAINDO do papel. Esta fica para quem pergunta
+ * «compra ou venda?» linha a linha, no vocabulário da carteira.
  */
 const VOCABULARIO_B3: { casa: (t: string) => boolean; papel: PapelNaCarteira }[] = [
   // provento: é renda recebida, não compra. Entra pelo outro caminho.

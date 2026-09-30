@@ -32,6 +32,34 @@ A versão sobe no mesmo PR que muda o núcleo, com a entrada aqui. O teste
 
 ## [Não publicado]
 
+## [1.3.0] — 2026-09-30
+
+A tabela inteira do Extrato de Movimentação da B3, e o sinal certo para o
+dinheiro que o emissor devolve.
+
+### Adicionado
+
+- `leituraNoPatrimonio` (`b3/efeito.ts`): o que cada tipo de «Movimentação» faz
+  com o dinheiro do papel — `fluxo` (o lado da linha diz se entrou ou saiu),
+  `devolucao`, `provento`, `semDinheiro` ou `custo`, com o porquê em uma frase.
+  São 41 tipos, pesquisados no manual da Central Depositária da B3 e em
+  exportações reais, mais os estados que a B3 põe no fim do nome («-
+  Transferido», «- Excluído», «- Exercido», «- Não Exercido», «- Solicitada»,
+  «- Reativado»). `chaveDoTipo` junta as grafias do mesmo tipo («COMPRA /
+  VENDA» e «COMPRA/VENDA», «RESGATE ANTECIPADO/»).
+- `efeitoDaLinha`: a resposta da pessoa, senão a tabela, senão os palpites
+  antigos.
+
+### Corrigido
+
+- Amortização, «Resgate» pago pelo emissor, restituição de capital, leilão de
+  fração e resgate creditado em conta vêm como «Credito» — o dinheiro foi
+  creditado no bolso — e eram lidos como aporte no papel. Agora
+  `dinheiroDaLinha` os conta como dinheiro saindo, qualquer que seja o lado.
+- Transferência de custódia, provento «- Transferido», atualização, direitos,
+  subscrição, empréstimo e a taxa semestral do Tesouro deixam de ser pergunta:
+  nenhum deles move o dinheiro do papel.
+
 ## [1.2.0] — 2026-09-30
 
 ### Adicionado
