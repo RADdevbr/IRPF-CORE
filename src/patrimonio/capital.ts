@@ -4,9 +4,14 @@
 // patrimônio cresceu além disso não veio do seu bolso, veio do próprio dinheiro
 // trabalhando.
 //
-//   poupado          = renda declarada − gasto informado
+//   poupado          = renda declarada − imposto na fonte − gasto informado
 //   embutido         = crescimento do patrimônio − poupado − entradas não recorrentes
 //   rendimento total = embutido + a renda que já veio do capital
+//
+// O imposto na fonte (IR retido, INSS, IR do 13º) sai do poupado porque a
+// declaração o lista como renda e ele nunca chegou à conta. Deixá-lo dentro
+// punha um dinheiro que não existe como «poupado», e o crescimento que ele não
+// explicava era cobrado do capital: o rendimento encolhia do tamanho do imposto.
 //
 // A entrada não recorrente (herança, doação recebida) é dinheiro de FORA da
 // carteira, como a renda do trabalho. Deixá-la no embutido a fazia passar por
@@ -65,7 +70,9 @@ export interface AnoCapital {
    */
   aluguel: number
   gasto: number
-  /** renda − gasto: o que sobrou do seu bolso para virar patrimônio. */
+  /** IR retido, carnê-leão, INSS e IR do 13º — ver `impostoNaFonte`. */
+  impostos: number
+  /** renda − impostos − gasto: o que sobrou do seu bolso para virar patrimônio. */
   poupado: number
   /** Entradas não recorrentes informadas (herança, doação recebida): dinheiro de fora, e não do capital. */
   naoRecorrente: number
@@ -73,6 +80,16 @@ export interface AnoCapital {
   embutido: number
   /** embutido + renda de capital: o que o patrimônio produziu no ano. */
   rendimento: number
+  /**
+   * O gasto que a conta pede, quando o informado não fecha. `null` quando fecha.
+   *
+   * Embutido negativo diz que o patrimônio cresceu MENOS do que sobrou da renda:
+   * saiu dinheiro que ninguém contou. Ou o gasto foi maior — é o número mais
+   * chutado da conta —, ou algum bem foi vendido abaixo do custo. Este é o gasto
+   * que zera o embutido: PISO, porque o capital quase sempre rende algo além do
+   * que distribui. A tela o mostra ao lado do informado em vez de corrigir.
+   */
+  gastoQueFecha: number | null
   /** rendimento ÷ patrimônio médio do ano. Sem patrimônio, null. */
   retorno: number | null
   /** Gasto do ano não informado: o rendimento aqui é PISO, não estimativa. */
@@ -99,7 +116,8 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
     const comp = composicaoDoAno(d, opts)
     const renda = a.rendimentos
     const gasto = a.despesas
-    const poupado = renda - gasto
+    const impostos = a.impostoNaFonte
+    const poupado = renda - impostos - gasto
     const naoRecorrente = a.receitasNaoRecorrentes
     const embutido = a.evolucao - poupado - naoRecorrente
     const rendimento = embutido + comp.capital
@@ -122,10 +140,14 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
         .filter((f) => f.chave === 'aluguel')
         .reduce((t, f) => t + f.valor, 0),
       gasto,
+      impostos,
       poupado,
       naoRecorrente,
       embutido,
       rendimento,
+      // Sem gasto informado não há o que confrontar: o embutido negativo ali é
+      // só o gasto que falta, e a tela já pede o gasto.
+      gastoQueFecha: !a.semDespesas && embutido < -1 ? gasto - embutido : null,
       retorno: medio > 0 ? rendimento / medio : null,
       semGasto: a.semDespesas,
       semAnoAnterior: a.semAnoAnterior,

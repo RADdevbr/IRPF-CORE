@@ -61,6 +61,10 @@ interface Fonte {
  */
 const FONTES: Fonte[] = [
   { chave: 'salario', rotulo: 'Salário / pró-labore', origem: 'trabalho' },
+  // Não mora em `vals`: vem de `Declaracao.retencoes` (leitura 7), e quem a põe
+  // aqui é `composicaoDoAno`. Tributação exclusiva, fora da base do IRPFM — mas
+  // é salário, e entra no bolso.
+  { chave: 'decimoTerceiro', rotulo: '13º salário', origem: 'trabalho' },
   // A ficha 09 junta o lucro da própria PJ com o provento de ação e ETF.
   { chave: 'divBR', rotulo: 'Lucros e dividendos', origem: 'capital', perguntar: true },
   { chave: 'divFII', rotulo: 'Dividendos de FII', origem: 'capital' },
@@ -236,10 +240,12 @@ export function composicaoRenda(
  * nova. Uma porta, e ninguém esquece.
  */
 export function composicaoDoAno(
-  d: { vals: Record<string, number>; porPagador?: RendaPorPagador[] } | undefined,
+  d: { vals: Record<string, number>; porPagador?: RendaPorPagador[]; retencoes?: { decimoTerceiro: number } } | undefined,
   opts: OpcoesOrigem = {},
 ): ComposicaoRenda {
-  return composicaoRenda(d?.vals ?? {}, { ...opts, porPagador: d?.porPagador })
+  const decimo = d?.retencoes?.decimoTerceiro ?? 0
+  const vals = decimo > 0 ? { ...d?.vals, decimoTerceiro: decimo } : (d?.vals ?? {})
+  return composicaoRenda(vals, { ...opts, porPagador: d?.porPagador })
 }
 
 // ------------------------------------------------------------- a sugestão

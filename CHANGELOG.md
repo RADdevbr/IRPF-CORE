@@ -32,6 +32,42 @@ A versão sobe no mesmo PR que muda o núcleo, com a entrada aqui. O teste
 
 ## [Não publicado]
 
+## [1.4.0] — 2026-09-30
+
+O imposto retido na fonte deixa de passar por dinheiro poupado, e a leitura do
+`.DEC` sobe para 7.
+
+### Adicionado
+
+- Leitura 7 do `.DEC`: do Registro 21, além do salário e do IR retido, o INSS
+  (101–113), o 13º (114–126) e o IR do 13º (148–160), em `DecResult.retencoes`
+  e somados por ano em `Declaracao.retencoes`. Ficam fora de `vals` de
+  propósito: não sobem a base do IRPFM nem viram renda de quem descontou.
+  Posições conferidas num arquivo real da declaração 2024.
+- `impostoNaFonte`: IR retido, carnê-leão, INSS e IR do 13º do ano.
+- `AnoCapital.impostos` e `AnoCapital.gastoQueFecha` — o gasto que zera o
+  embutido quando o patrimônio cresceu menos do que sobrou da renda (piso: com
+  ele, o capital rende pelo menos o que distribuiu).
+- `AnoAnalisado.decimoTerceiro` e `AnoAnalisado.impostoNaFonte`.
+- O 13º entra na composição da renda como trabalho (`composicaoDoAno`).
+- Tabela da B3: `AMORTIZACAO PROGRAMADA`, `AMORTIZACAO EXTRAORDINARIA`,
+  `AMORT. EXTRAORDINARIA`, `ANTECIPACAO` e `EVENTO GENERICO` como devolução
+  do principal de debênture, CRI e CRA (vêm com «Debito» e o PU do evento), e
+  `COMPRA/VENDA DEFINITIVA A TERMO` como fluxo.
+
+### Corrigido
+
+- `analiseCapital`: poupado era renda bruta − gasto. O imposto que a fonte
+  reteve nunca chegou à conta, e o crescimento que ele «não explicava» era
+  cobrado do capital — o rendimento encolhia do tamanho do imposto. Agora é
+  renda − imposto na fonte − gasto.
+- `analisarConsistencia`: as fontes do ano descontam o imposto na fonte e somam
+  o 13º, como a Receita faz na análise da evolução patrimonial. O campo de
+  gasto passa a ser custo de vida, doações e imposto pago à parte (ajuste,
+  DARF) — o retido a conta tira sozinha.
+- `AMORTIZACAO PROGRAMADA` caía no palpite antigo e virava provento; o
+  principal devolvido contava como renda.
+
 ## [1.3.0] — 2026-09-30
 
 A tabela inteira do Extrato de Movimentação da B3, e o sinal certo para o

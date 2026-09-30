@@ -109,12 +109,41 @@ export interface Pagamento {
   bruta: string
 }
 
+/**
+ * O resto do Registro 21: o que a fonte descontou e o 13º.
+ *
+ *   rendimento (88–100) | INSS (101–113) | 13º (114–126) | IR retido (127–139)
+ *   | data de saída (140–147) | IR retido sobre o 13º (148–160)
+ *
+ * Conferido num arquivo real da declaração 2024: o INSS do pró-labore dava 11%
+ * do rendimento ao centavo, e a soma dos 13º batia com o código 0001 da
+ * tributação exclusiva.
+ *
+ * Não vira `Lancamento` de propósito. O que é lançamento soma em `vals`, e daí
+ * na base do IRPFM e na renda por pagador: o INSS entraria como renda da
+ * empresa que o descontou, e o 13º, que é tributação exclusiva, subiria a base
+ * de um imposto que não o alcança.
+ */
+export interface Retencao {
+  linha: number
+  cnpj: string
+  fonte: string
+  /** Contribuição previdenciária oficial descontada na fonte. */
+  previdencia: number
+  /** 13º salário, líquido do INSS — fora do rendimento da linha. */
+  decimoTerceiro: number
+  /** IR retido sobre o 13º. */
+  irDecimoTerceiro: number
+}
+
 export interface DecResult {
   ano: string | null
   registros: DecRegistro[]
   lancamentos: Lancamento[]
   posicoes: Posicao[]
   pagamentos: Pagamento[]
+  /** Ausente em resultado montado à mão (teste, arquivo de outro leitor): não se sabe. */
+  retencoes?: Retencao[]
   ndep: number
   linhas: string[]
   totalLinhas: number
@@ -320,6 +349,7 @@ export function parseDec(text: string): DecResult {
   const lancamentos: Lancamento[] = []
   const posicoes: Posicao[] = []
   const pagamentos: Pagamento[] = []
+  const retencoes: Retencao[] = []
   let ndep = 0
   const comGrupo = leiauteComGrupo(linhas)
 
@@ -447,6 +477,18 @@ export function parseDec(text: string): DecResult {
     if (!spec) return
     const fonte = spec.nome ? slice1(l, spec.nome[0], spec.nome[1]).trim() : ''
     const cnpj = spec.cnpj ? slice1(l, spec.cnpj[0], spec.cnpj[1]).trim() : ''
+    if (tipo === '21') {
+      const rendimento = num(l, 88, 100)
+      const previdencia = num(l, 101, 113)
+      const decimoTerceiro = num(l, 114, 126)
+      const irDecimoTerceiro = num(l, 148, 160)
+      // Desconto maior que o salário é campo lido no lugar errado — um leiaute
+      // que deslocou as colunas. Fica de fora a linha, e não o número torto.
+      const cabe = previdencia <= rendimento + decimoTerceiro && irDecimoTerceiro <= decimoTerceiro
+      if (cabe && previdencia + decimoTerceiro + irDecimoTerceiro > 0) {
+        retencoes.push({ linha: i + 1, cnpj, fonte, previdencia, decimoTerceiro, irDecimoTerceiro })
+      }
+    }
     spec.campos.forEach((c) => {
       const valor = num(l, c.ini, c.fim)
       if (valor <= 0) return
@@ -458,5 +500,5 @@ export function parseDec(text: string): DecResult {
     .map(([tipo, v]) => ({ tipo, count: v.count, amostra: v.amostra }))
     .sort((a, b) => b.count - a.count)
 
-  return { ano, registros, lancamentos, posicoes, pagamentos, ndep, linhas, totalLinhas: linhas.length }
+  return { ano, registros, lancamentos, posicoes, pagamentos, retencoes, ndep, linhas, totalLinhas: linhas.length }
 }

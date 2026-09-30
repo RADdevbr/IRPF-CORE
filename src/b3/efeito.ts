@@ -71,6 +71,10 @@ const TIPOS: Record<string, LeituraDoTipo> = {
   'TRANSFERENCIA - LIQUIDACAO': { efeito: 'fluxo', porque: NEGOCIO_EM_BOLSA },
   'COMPRA/VENDA': { efeito: 'fluxo', porque: RENDA_FIXA },
   'COMPRA/VENDA DEFINITIVA/CESSAO': { efeito: 'fluxo', porque: RENDA_FIXA },
+  'COMPRA/VENDA DEFINITIVA A TERMO': {
+    efeito: 'fluxo',
+    porque: 'compra ou venda de renda fixa no mercado secundário, liquidada numa data combinada',
+  },
   'MDA COMPRA/VENDA DEFINITIVA MERCADO PRIMARIO': {
     efeito: 'fluxo',
     porque: 'compra de debênture, CRI ou CRA na emissão (visto só em leitores do arquivo)',
@@ -91,6 +95,31 @@ const TIPOS: Record<string, LeituraDoTipo> = {
     porque: 'resgate pago pelo emissor: o crédito é o dinheiro saindo do papel (sem valor, é conversão, e fica de fora)',
   },
   'RESTITUICAO DE CAPITAL': { efeito: 'devolucao', porque: 'redução de capital paga em dinheiro: sai do papel' },
+  // Os eventos do emissor de debênture, CRI e CRA. Chegam com «Debito» na linha
+  // e com a quantidade que você tem vezes o PU do evento: é o principal (e, no
+  // título por índice, a correção dele) voltando para o bolso. Vistos num
+  // extrato real, de CRI e CRA.
+  'AMORTIZACAO PROGRAMADA': {
+    efeito: 'devolucao',
+    porque: 'parcela do principal que a escritura de debênture, CRI ou CRA já previa: sai do papel',
+  },
+  'AMORTIZACAO EXTRAORDINARIA': {
+    efeito: 'devolucao',
+    porque: 'o emissor devolveu parte do principal antes do previsto: sai do papel',
+  },
+  'AMORT. EXTRAORDINARIA': {
+    efeito: 'devolucao',
+    porque: 'o emissor devolveu parte do principal antes do previsto: sai do papel',
+  },
+  ANTECIPACAO: {
+    efeito: 'devolucao',
+    porque: 'pré-pagamento ou resgate antecipado pelo emissor do CRA, CRI ou debênture: o principal volta antes do vencimento',
+  },
+  'EVENTO GENERICO': {
+    efeito: 'devolucao',
+    porque:
+      'pagamento do emissor que não cabe nos eventos padrão da B3 — na prática, amortização extraordinária ou pré-pagamento de CRI e CRA, muitas vezes inadimplidos: o dinheiro sai do papel',
+  },
   'LEILAO DE FRACAO': {
     efeito: 'devolucao',
     porque: 'a fração que sobrou de um evento foi vendida em leilão, e o dinheiro saiu do papel',

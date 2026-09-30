@@ -19,7 +19,7 @@
 //    parece crescimento que a renda não cobre. Por isso dívidas são informadas
 //    à mão, por ano, e o app avisa quando não foram.
 
-import { LEITURA_ATUAL, type Historico } from './historico.js'
+import { LEITURA_ATUAL, impostoNaFonte, type Historico } from './historico.js'
 
 /** O que só a pessoa sabe — o arquivo não conta. */
 export interface EntradaAno {
@@ -35,7 +35,15 @@ export interface EntradaAno {
   dividas?: number
   /** Venda de bens, empréstimos tomados, doações e heranças recebidas, resgates. */
   receitasNaoRecorrentes?: number
-  /** Custo de vida, impostos pagos, doações feitas — o que saiu e não virou bem. */
+  /**
+   * Custo de vida, doações feitas e o imposto pago à parte (o saldo do ajuste, o
+   * DARF) — o que saiu e não virou bem.
+   *
+   * O imposto retido na FONTE não entra aqui: a declaração o traz, e a conta o
+   * tira sozinha (ver `impostoNaFonte`). Pedi-lo à pessoa era pedir um número
+   * que ninguém soma de cabeça — e quem deixava de fora via o imposto virar
+   * poupança, e o rendimento do capital sumir do mesmo tanto.
+   */
   despesas?: number
   /** Nota livre, para lembrar de onde veio o número. */
   nota?: string
@@ -97,7 +105,15 @@ export interface AnoAnalisado {
   liquidoInicial: number
   liquidoFinal: number
   evolucao: number
+  /** Tudo o que a declaração informa como recebido no ano, com o 13º (leitura 7). */
   rendimentos: number
+  /** O 13º salário do ano, já sem o INSS dele. 0 em leitura anterior à 7. */
+  decimoTerceiro: number
+  /**
+   * Imposto que saiu na fonte — IR retido, carnê-leão, INSS, IR do 13º. Sai das
+   * fontes: foi declarado como renda e nunca chegou à conta.
+   */
+  impostoNaFonte: number
   /** Parte da renda que a declaração trata como tributável (base ou fonte). */
   rendimentosTributaveis: number
   /** Ficha de isentos e não tributáveis — renda recebida que a lei não tributa. */
@@ -383,11 +399,13 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
     const liquidoFinal = d.patrimonio - dividasFinal
     const evolucao = liquidoFinal - liquidoInicial
 
-    const rendimentos = rendimentosDeclarados(d.vals)
+    const decimoTerceiro = d.retencoes?.decimoTerceiro ?? 0
+    const rendimentos = rendimentosDeclarados(d.vals) + decimoTerceiro
+    const imposto = impostoNaFonte(d)
     const rendimentosTributaveis = soma(d.vals, CHAVES_TRIBUTAVEIS)
     const rendimentosIsentos = d.vals.isentos || 0
     const receitasNaoRecorrentes = e.receitasNaoRecorrentes ?? 0
-    const fontes = rendimentos + receitasNaoRecorrentes
+    const fontes = rendimentos - imposto + receitasNaoRecorrentes
 
     const despesas = e.despesas ?? 0
     const necessidade = evolucao + despesas
@@ -409,6 +427,8 @@ export function analisarConsistencia(h: Historico, entradas: Entradas = {}): Con
       liquidoFinal,
       evolucao,
       rendimentos,
+      decimoTerceiro,
+      impostoNaFonte: imposto,
       rendimentosTributaveis,
       rendimentosIsentos,
       receitasNaoRecorrentes,

@@ -92,6 +92,32 @@ describe('um ano de cada vez', () => {
     expect(a.classificacao).toBe('compatível')
   })
 
+  it('o imposto na fonte não é recurso: sai das fontes; o 13º entra', () => {
+    const d: DecResult = {
+      ano: '2025',
+      registros: [],
+      lancamentos: [lanc('salario', 300_000), lanc('salario_ir', 60_000)],
+      posicoes: [pos('CDB', 1_200_000, 1_000_000)],
+      pagamentos: [],
+      retencoes: [{ linha: 1, cnpj: '', fonte: 'X', previdencia: 15_000, decimoTerceiro: 20_000, irDecimoTerceiro: 4_000 }],
+      ndep: 0,
+      linhas: [],
+      totalLinhas: 0,
+    }
+    let h = historico({ exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] })
+    h = upsertDeclaracao(h, montarDeclaracao(d, '2025.DEC', 'agora')!)
+    const a = analisarConsistencia(h).anos.find((x) => x.anoBase === 2024)!
+    expect(a.rendimentos).toBe(320_000)
+    expect(a.decimoTerceiro).toBe(20_000)
+    expect(a.impostoNaFonte).toBe(79_000)
+    expect(a.fontes).toBe(241_000) // 320k − 79k
+    // ano lido antes da versão 7: sem 13º e sem INSS, mas o IR retido já estava lá
+    const antigo = upsertDeclaracao(h, { ...h['2024'], retencoes: undefined })
+    const b = analisarConsistencia(antigo).anos.find((x) => x.anoBase === 2024)!
+    expect(b.decimoTerceiro).toBe(0)
+    expect(b.impostoNaFonte).toBe(60_000)
+  })
+
   it('patrimônio que cresce mais do que a renda explica vira diferença a descoberto', () => {
     const h = historico(
       { exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] },
@@ -554,8 +580,8 @@ describe('pagamentos que o próprio arquivo declara', () => {
 
 describe('o que falta a um ano lido por versão antiga', () => {
   it('lista só o que veio DEPOIS da versão que leu o ano', () => {
-    expect(oQueFaltaNaLeitura(5)).toEqual([GANHOS_DA_LEITURA[6]])
-    expect(oQueFaltaNaLeitura(3)).toEqual([GANHOS_DA_LEITURA[4], GANHOS_DA_LEITURA[5], GANHOS_DA_LEITURA[6]])
+    expect(oQueFaltaNaLeitura(6)).toEqual([GANHOS_DA_LEITURA[7]])
+    expect(oQueFaltaNaLeitura(4)).toEqual([GANHOS_DA_LEITURA[5], GANHOS_DA_LEITURA[6], GANHOS_DA_LEITURA[7]])
   })
 
   it('ano sem carimbo é o mais antigo de todos, e falta tudo', () => {

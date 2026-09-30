@@ -5,7 +5,7 @@
 // cresceu, se a lei nova teria pegado os anos passados, e — o ponto do pedido —
 // QUANTO do patrimônio, se resgatado, joga rendimento na base do IRPFM.
 
-import type { DecResult, Lancamento, Pagamento } from '../dec/decParser.js'
+import type { DecResult, Lancamento, Pagamento, Retencao } from '../dec/decParser.js'
 import { sugerirCategoria } from '../fiscal/deducoes.js'
 import { FIELDS, ehImpostoRetido } from '../fiscal/fontes.js'
 
@@ -59,6 +59,7 @@ export const GANHOS_DA_LEITURA: Readonly<Record<number, string>> = Object.freeze
   4: 'a renda por fonte pagadora, que é o que separa o seu trabalho do que o capital rende sozinho',
   5: 'o CNPJ de cada bem e o grupo do bem lido no lugar certo — é o que sugere onde cada aplicação está, e o que faz «aplicar ao código» juntar só bens do mesmo tipo',
   6: 'o rendimento de aplicação financeira por CNPJ — o que cada banco, corretora e fundo te pagou —, que é o que mede quanto cada custódia rendeu sem confundir juro com aplicação e resgate',
+  7: 'o INSS e o 13º de cada salário, e o imposto retido sobre o 13º — sem eles, o imposto que nunca chegou à sua conta passa por dinheiro poupado, e o rendimento do capital encolhe do mesmo tanto',
 })
 
 /**
@@ -164,6 +165,41 @@ export interface RendimentoDeAplicacao {
   isento: boolean
 }
 
+/** A soma do ano do que as fontes descontaram do salário, e do 13º. */
+export interface RetencoesDoAno {
+  /** INSS descontado na fonte. */
+  previdencia: number
+  /** 13º salário, já sem o INSS dele. */
+  decimoTerceiro: number
+  irDecimoTerceiro: number
+}
+
+/** Soma as linhas do Registro 21 do ano. */
+export function somarRetencoes(linhas: readonly Retencao[]): RetencoesDoAno {
+  return linhas.reduce(
+    (t, r) => ({
+      previdencia: t.previdencia + r.previdencia,
+      decimoTerceiro: t.decimoTerceiro + r.decimoTerceiro,
+      irDecimoTerceiro: t.irDecimoTerceiro + r.irDecimoTerceiro,
+    }),
+    { previdencia: 0, decimoTerceiro: 0, irDecimoTerceiro: 0 },
+  )
+}
+
+/**
+ * O imposto que saiu na fonte, no ano: IR retido (e o carnê-leão, que a mesma
+ * ficha traz), o INSS e o IR do 13º.
+ *
+ * É dinheiro que a declaração lista como renda e que nunca chegou à conta. Sem
+ * tirá-lo, a conta do patrimônio o trata como poupado — e, como ele não está em
+ * bem nenhum, o que «sobra» sai do rendimento do capital.
+ */
+export function impostoNaFonte(d: Pick<Declaracao, 'vals' | 'retencoes'>): number {
+  const retido = Object.entries(d.vals).reduce((t, [k, v]) => t + (ehImpostoRetido(k) && v > 0 ? v : 0), 0)
+  const r = d.retencoes
+  return retido + (r ? r.previdencia + r.irDecimoTerceiro : 0)
+}
+
 /** Quanto um pagador pagou dentro de uma fonte, num ano. */
 export interface RendaPorPagador {
   /** A chave da ficha, em `fiscal/fontes.ts` — `salario`, `divBR`, `cdb`… */
@@ -212,6 +248,11 @@ export interface Declaracao {
    * Ausente = leitura anterior à 6: não se sabe, e não é zero.
    */
   rendimentoDeAplicacao?: RendimentoDeAplicacao[]
+  /**
+   * O que o Registro 21 diz além do salário — ver `Retencao`, no leitor.
+   * Ausente = leitura anterior à 7: não se sabe, e não é zero.
+   */
+  retencoes?: RetencoesDoAno
   /** Soma das fontes que entram na base do imposto mínimo, naquele ano. */
   base: number
   /**
@@ -775,6 +816,7 @@ export function montarDeclaracao(dec: DecResult, arquivo: string, agora: string,
     vals,
     porPagador,
     rendimentoDeAplicacao: rendimentoDeAplicacao(dec.lancamentos),
+    ...(dec.retencoes ? { retencoes: somarRetencoes(dec.retencoes) } : {}),
     ndep: dec.ndep,
     posicoes,
     base,

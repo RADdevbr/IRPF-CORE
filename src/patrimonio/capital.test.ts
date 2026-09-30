@@ -110,6 +110,35 @@ describe('rendimento do capital', () => {
     expect(a.poupado + a.naoRecorrente + a.embutido).toBe(a.crescimento)
   })
 
+  it('o imposto na fonte sai do poupado, e não do rendimento do capital', () => {
+    // mesmo ano, agora com o que o Registro 21 diz: 60k de IR retido, 15k de
+    // INSS, 20k de 13º com 4k de IR sobre ele
+    const d = dec('2025', [lanc('salario', 300_000), lanc('salario_ir', 60_000), lanc('divBR', 100_000)], [pos('CDB', 1_300_000, 1_000_000)])
+    d.retencoes = [{ linha: 1, cnpj: '', fonte: 'EMPRESA', previdencia: 15_000, decimoTerceiro: 20_000, irDecimoTerceiro: 4_000 }]
+    let h = historico({ exercicio: '2024', rendas: [], bens: [pos('CDB', 1_000_000)] })
+    h = upsertDeclaracao(h, montarDeclaracao(d, '2025.DEC', 'agora')!)
+    const a = analiseCapital(h, { 2024: { despesas: 200_000 } }).anos.find((x) => x.anoBase === 2024)!
+    expect(a.renda).toBe(420_000) // o 13º é renda: entrou no bolso
+    expect(a.rendaDeTrabalho).toBe(320_000)
+    expect(a.impostos).toBe(79_000) // 60k + 15k + 4k
+    expect(a.poupado).toBe(141_000) // 420k − 79k − 200k
+    expect(a.embutido).toBe(159_000) // 300k − 141k
+    expect(a.rendimento).toBe(259_000)
+    expect(a.poupado + a.naoRecorrente + a.embutido).toBe(a.crescimento)
+    expect(a.gastoQueFecha).toBe(null)
+  })
+
+  it('quando o patrimônio cresce menos do que sobrou, a linha diz o gasto que fecharia a conta', () => {
+    // 400k de renda e 50k de gasto informado: sobram 350k, e o patrimônio só
+    // cresceu 300k — saíram 50k que ninguém contou
+    const r = analiseCapital(base(), { 2024: { despesas: 50_000 } })
+    const a = r.anos.find((x) => x.anoBase === 2024)!
+    expect(a.embutido).toBe(-50_000)
+    expect(a.gastoQueFecha).toBe(100_000) // piso: com ele o embutido zera
+    // sem gasto informado não há o que confrontar
+    expect(analiseCapital(base()).anos.find((x) => x.anoBase === 2024)!.gastoQueFecha).toBe(null)
+  })
+
   it('dividendo da PJ contado como trabalho sai do rendimento do capital', () => {
     const r = analiseCapital(base(), { 2024: { despesas: 200_000 } }, { dividendosSaoTrabalho: true })
     const a = r.anos.find((x) => x.anoBase === 2024)!
