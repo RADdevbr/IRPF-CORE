@@ -98,7 +98,17 @@ export interface AnoCapital {
    * que distribui. A tela o mostra ao lado do informado em vez de corrigir.
    */
   gastoQueFecha: number | null
-  /** rendimento ÷ patrimônio médio do ano. Sem patrimônio, null. */
+  /**
+   * O que a bolsa valorizou no ano e a declaração não conta — ação, FII e ETF a
+   * mercado, pela posição da B3 (ver `aMercado`). `null` sem as posições dos dois
+   * 31/12. Fica FORA de `rendimento`, que é o que a declaração mostra, e entra no
+   * retorno.
+   */
+  valorizacao: number | null
+  /**
+   * (rendimento + valorização) ÷ patrimônio médio do ano — a mercado quando há a
+   * valorização. Sem patrimônio, null.
+   */
   retorno: number | null
   /** Gasto do ano não informado: o rendimento aqui é PISO, não estimativa. */
   semGasto: boolean
@@ -116,7 +126,15 @@ export interface AnaliseCapital {
   totalPoupado: number
 }
 
-export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: OpcoesOrigem = {}): AnaliseCapital {
+/** O ganho não realizado de cada 31/12 e a valorização do ano — ver `aMercado`. */
+export type ValorizacaoPorAno = Record<number, { ganho: number; valorizacao: number | null }>
+
+export function analiseCapital(
+  h: Historico,
+  entradas: Entradas = {},
+  opts: OpcoesOrigem = {},
+  mercado: ValorizacaoPorAno = {},
+): AnaliseCapital {
   const consistencia = analisarConsistencia(h, entradas)
 
   const anos: AnoCapital[] = consistencia.anos.map((a) => {
@@ -131,7 +149,13 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
     const naoRecorrente = a.receitasNaoRecorrentes
     const embutido = a.evolucao - poupado - naoRecorrente
     const rendimento = embutido + comp.capital
-    const medio = (a.liquidoInicial + a.liquidoFinal) / 2
+    const m = mercado[a.anoBase]
+    const valorizacao = m?.valorizacao ?? null
+    // a mercado, o patrimônio dos dois 31/12 soma o ganho que a declaração não mostra
+    const medio =
+      valorizacao !== null
+        ? (a.liquidoInicial + (mercado[a.anoBase - 1]?.ganho ?? 0) + a.liquidoFinal + (m?.ganho ?? 0)) / 2
+        : (a.liquidoInicial + a.liquidoFinal) / 2
 
     return {
       anoBase: a.anoBase,
@@ -156,10 +180,11 @@ export function analiseCapital(h: Historico, entradas: Entradas = {}, opts: Opco
       naoRecorrente,
       embutido,
       rendimento,
+      valorizacao,
       // Sem gasto informado não há o que confrontar: o embutido negativo ali é
       // só o gasto que falta, e a tela já pede o gasto.
       gastoQueFecha: !a.semDespesas && embutido < -1 ? gasto - embutido : null,
-      retorno: medio > 0 ? rendimento / medio : null,
+      retorno: medio > 0 ? (rendimento + (valorizacao ?? 0)) / medio : null,
       semGasto: a.semDespesas,
       semAnoAnterior: a.semAnoAnterior,
       anosCobertos: a.anosCobertos,
@@ -305,8 +330,9 @@ export function retornoVsIndices(
   entradas: Entradas = {},
   benchmarks: BenchmarksInformados = {},
   opts: OpcoesOrigem = {},
+  mercado: ValorizacaoPorAno = {},
 ): RetornoVsIndices {
-  const analise = analiseCapital(h, entradas, opts)
+  const analise = analiseCapital(h, entradas, opts, mercado)
   const temCdi = ultimoFechamento('cdi', benchmarks) !== null
   const temSelic = ultimoFechamento('selic', benchmarks) !== null
   const indiceCdi = temCdi ? 'cdi' : 'selic'
