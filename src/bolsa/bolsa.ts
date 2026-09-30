@@ -102,6 +102,11 @@ export interface Operacao {
  * Evento que muda a quantidade sem mudar o custo total: desdobro, grupamento,
  * bonificação em ativos. O custo médio por ação muda por consequência, nunca
  * por lançamento próprio.
+ *
+ * Ou o contrário: a DEVOLUÇÃO de capital — amortização de FII, restituição de
+ * capital em dinheiro —, que tira dinheiro do papel sem tirar quantidade. O
+ * valor devolvido sai do custo de aquisição, que é onde a lei o põe: não é
+ * ganho no dia, e é ganho maior na venda.
  */
 export interface EventoQuantidade {
   ano: number
@@ -109,8 +114,10 @@ export interface EventoQuantidade {
   /** `dd/mm/aaaa`, mesmo contrato de `Operacao.data`. */
   data?: string
   ticker: string
-  /** Positivo no desdobro e na bonificação; negativo no grupamento. */
+  /** Positivo no desdobro e na bonificação; negativo no grupamento. 0 na devolução. */
   delta: number
+  /** Dinheiro devolvido pelo emissor, que sai do custo total do papel (nunca abaixo de zero). */
+  devolucao?: number
 }
 
 export interface Posicao {
@@ -410,7 +417,10 @@ export function apurarBolsa(e: EntradaBolsa): ApuracaoBolsa {
 
     if ('delta' in lanc) {
       const c = carteira.get(lanc.ticker)
-      if (c) c.quantidade += lanc.delta
+      if (c) {
+        c.quantidade += lanc.delta
+        if (lanc.devolucao) c.custoTotal = Math.max(0, c.custoTotal - lanc.devolucao)
+      }
       return
     }
 
